@@ -1,0 +1,140 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"weirdstats/internal/config"
+	"weirdstats/internal/gps"
+	"weirdstats/internal/ingest"
+	"weirdstats/internal/processor"
+	"weirdstats/internal/storage"
+	"weirdstats/internal/strava"
+	"weirdstats/internal/webhook"
+	"weirdstats/internal/worker"
+)
+
+func main() {
+	cfg, err := config.Load(".env")
+	if err != nil {
+		log.Fatalf("load config: %v", err)
+	}
+
+	store, err := storage.Open(cfg.DatabasePath)
+	if err != nil {
+		log.Fatalf("open db: %v", err)
+	}
+	defer store.Close()
+
+	if err := store.InitSchema(context.Background()); err != nil {
+		log.Fatalf("init schema: %v", err)
+	}
+
+	seedStravaToken(store, cfg)
+
+	stravaClient := &strava.Client{
+		BaseURL:     cfg.StravaBaseURL,
+		AccessToken: cfg.StravaAccessToken,
+	}
+	if cfg.StravaRefreshToken != "" || (cfg.StravaClientID != "" && cfg.StravaClientSecret != "") {
+		stravaClient.TokenSource = &strava.RefreshTokenSource{
+			Store:        store,
+			UserID:       1,
+			ClientID:     cfg.StravaClientID,
+			ClientSecret: cfg.StravaClientSecret,
+			BaseURL:      cfg.StravaAuthBaseURL,
+		}
+	}
+	ingestor := &ingest.Ingestor{Store: store, Strava: stravaClient}
+	statsProcessor := &processor.StopStatsProcessor{
+		Store:   store,
+		Options: gps.StopOptions{SpeedThreshold: 0.5, MinDuration: time.Minute},
+	}
+	pipeline := &processor.PipelineProcessor{Ingest: ingestor, Stats: statsProcessor}
+	queueWorker := &worker.Worker{Store: store, Processor: pipeline}
+
+	mux := http.NewServeMux()
+	mux.Handle("/webhook", &webhook.Handler{
+		Store:         store,
+		VerifyToken:   cfg.StravaVerifyToken,
+		SigningSecret: cfg.StravaWebhookSecret,
+	})
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+
+	server := &http.Server{
+		Addr:         cfg.ServerAddr,
+		Handler:      mux,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("http server error: %v", err)
+			stop()
+		}
+	}()
+
+	go runWorker(ctx, queueWorker, time.Duration(cfg.WorkerPollIntervalMS)*time.Millisecond)
+
+	<-ctx.Done()
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_ = server.Shutdown(shutdownCtx)
+}
+
+func seedStravaToken(store *storage.Store, cfg config.Config) {
+	if cfg.StravaRefreshToken == "" && cfg.StravaAccessToken == "" {
+		return
+	}
+	expiresAt := time.Now().Add(-time.Minute)
+	if cfg.StravaAccessExpiry > 0 {
+		expiresAt = time.Unix(cfg.StravaAccessExpiry, 0)
+	}
+	if err := store.UpsertStravaToken(context.Background(), storage.StravaToken{
+		UserID:       1,
+		AccessToken:  cfg.StravaAccessToken,
+		RefreshToken: cfg.StravaRefreshToken,
+		ExpiresAt:    expiresAt,
+	}); err != nil {
+		log.Printf("seed strava token: %v", err)
+	}
+}
+
+func runWorker(ctx context.Context, queueWorker *worker.Worker, idleDelay time.Duration) {
+	if idleDelay <= 0 {
+		idleDelay = 2 * time.Second
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		processed, err := queueWorker.ProcessNext(ctx)
+		if err != nil {
+			log.Printf("worker error: %v", err)
+		}
+		if !processed {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(idleDelay):
+			}
+		}
+	}
+}
