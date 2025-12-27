@@ -43,6 +43,24 @@ type StravaToken struct {
 	UpdatedAt    time.Time
 }
 
+type HideRule struct {
+	ID        int64
+	UserID    int64
+	Name      string
+	Condition string
+	Enabled   bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type ActivityWithStats struct {
+	Activity
+	StopCount             int
+	StopTotalSeconds      int
+	TrafficLightStopCount int
+	HasStats              bool
+}
+
 func Open(path string) (*Store, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
@@ -102,6 +120,15 @@ CREATE TABLE IF NOT EXISTS strava_tokens (
 	access_token TEXT NOT NULL,
 	refresh_token TEXT NOT NULL,
 	expires_at INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS hide_rules (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL,
+	name TEXT NOT NULL,
+	condition TEXT NOT NULL,
+	enabled INTEGER NOT NULL,
+	created_at INTEGER NOT NULL,
 	updated_at INTEGER NOT NULL
 );
 `
@@ -333,6 +360,158 @@ WHERE user_id = ?
 	return token, nil
 }
 
+func (s *Store) ListHideRules(ctx context.Context, userID int64) ([]HideRule, error) {
+	if userID == 0 {
+		userID = 1
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, user_id, name, condition, enabled, created_at, updated_at
+FROM hide_rules
+WHERE user_id = ?
+ORDER BY created_at DESC
+`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var rules []HideRule
+	for rows.Next() {
+		var rule HideRule
+		var enabled int
+		var createdAt int64
+		var updatedAt int64
+		if err := rows.Scan(
+			&rule.ID,
+			&rule.UserID,
+			&rule.Name,
+			&rule.Condition,
+			&enabled,
+			&createdAt,
+			&updatedAt,
+		); err != nil {
+			return nil, err
+		}
+		rule.Enabled = enabled != 0
+		rule.CreatedAt = time.Unix(createdAt, 0)
+		rule.UpdatedAt = time.Unix(updatedAt, 0)
+		rules = append(rules, rule)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return rules, nil
+}
+
+func (s *Store) CreateHideRule(ctx context.Context, rule HideRule) (int64, error) {
+	if rule.UserID == 0 {
+		rule.UserID = 1
+	}
+	now := time.Now()
+	if rule.CreatedAt.IsZero() {
+		rule.CreatedAt = now
+	}
+	if rule.UpdatedAt.IsZero() {
+		rule.UpdatedAt = now
+	}
+	res, err := s.db.ExecContext(ctx, `
+INSERT INTO hide_rules (user_id, name, condition, enabled, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?)
+`, rule.UserID, rule.Name, rule.Condition, boolToInt(rule.Enabled), rule.CreatedAt.Unix(), rule.UpdatedAt.Unix())
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func (s *Store) UpdateHideRuleEnabled(ctx context.Context, ruleID int64, enabled bool) error {
+	if ruleID == 0 {
+		return errors.New("rule id required")
+	}
+	_, err := s.db.ExecContext(ctx, `
+UPDATE hide_rules
+SET enabled = ?, updated_at = ?
+WHERE id = ?
+`, boolToInt(enabled), time.Now().Unix(), ruleID)
+	return err
+}
+
+func (s *Store) DeleteHideRule(ctx context.Context, ruleID int64) error {
+	if ruleID == 0 {
+		return errors.New("rule id required")
+	}
+	_, err := s.db.ExecContext(ctx, `
+DELETE FROM hide_rules
+WHERE id = ?
+`, ruleID)
+	return err
+}
+
+func (s *Store) DeleteUserData(ctx context.Context, userID int64) error {
+	if userID == 0 {
+		userID = 1
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	if _, err := tx.ExecContext(ctx, `
+DELETE FROM activity_points
+WHERE activity_id IN (SELECT id FROM activities WHERE user_id = ?)
+`, userID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+DELETE FROM activity_stats
+WHERE activity_id IN (SELECT id FROM activities WHERE user_id = ?)
+`, userID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+DELETE FROM activity_queue
+WHERE activity_id IN (SELECT id FROM activities WHERE user_id = ?)
+`, userID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+DELETE FROM activities
+WHERE user_id = ?
+`, userID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+DELETE FROM webhook_events
+WHERE owner_id = ?
+`, userID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+DELETE FROM strava_tokens
+WHERE user_id = ?
+`, userID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+DELETE FROM hide_rules
+WHERE user_id = ?
+`, userID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func boolToInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
+}
+
 func (s *Store) DequeueActivity(ctx context.Context) (queueID int64, activityID int64, err error) {
 	row := s.db.QueryRowContext(ctx, `
 SELECT id, activity_id
@@ -382,6 +561,69 @@ ORDER BY seq
 		return nil, err
 	}
 	return points, nil
+}
+
+func (s *Store) ListActivitiesWithStats(ctx context.Context, userID int64, limit int) ([]ActivityWithStats, error) {
+	if userID == 0 {
+		userID = 1
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT a.id,
+	a.user_id,
+	a.type,
+	a.name,
+	a.start_time,
+	a.description,
+	s.stop_count,
+	s.stop_total_seconds,
+	s.traffic_light_stop_count
+FROM activities a
+LEFT JOIN activity_stats s ON s.activity_id = a.id
+WHERE a.user_id = ?
+ORDER BY a.start_time DESC
+LIMIT ?
+`, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var activities []ActivityWithStats
+	for rows.Next() {
+		var item ActivityWithStats
+		var startTime int64
+		var stopCount sql.NullInt64
+		var stopTotalSeconds sql.NullInt64
+		var trafficLightStopCount sql.NullInt64
+		if err := rows.Scan(
+			&item.ID,
+			&item.UserID,
+			&item.Type,
+			&item.Name,
+			&startTime,
+			&item.Description,
+			&stopCount,
+			&stopTotalSeconds,
+			&trafficLightStopCount,
+		); err != nil {
+			return nil, err
+		}
+		item.StartTime = time.Unix(startTime, 0)
+		if stopCount.Valid {
+			item.HasStats = true
+			item.StopCount = int(stopCount.Int64)
+			item.StopTotalSeconds = int(stopTotalSeconds.Int64)
+			item.TrafficLightStopCount = int(trafficLightStopCount.Int64)
+		}
+		activities = append(activities, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return activities, nil
 }
 
 func (s *Store) UpsertActivityStats(ctx context.Context, activityID int64, stats stats.StopStats) error {

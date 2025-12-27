@@ -9,6 +9,7 @@ Run
    - SERVER_ADDR (default: :8080)
    - STRAVA_BASE_URL (default: https://www.strava.com/api/v3)
    - STRAVA_AUTH_BASE_URL (default: https://www.strava.com)
+   - STRAVA_REDIRECT_URL (default: http://localhost:8080/connect/strava/callback)
    - WORKER_POLL_INTERVAL_MS (default: 2000)
    - STRAVA_CLIENT_ID
    - STRAVA_CLIENT_SECRET
@@ -20,10 +21,16 @@ Run
    - MAPS_API_KEY
 2) Start the server:
    - go run ./cmd/weirdstats
-3) Validate:
+3) Live reload (Air):
+   - go install github.com/air-verse/air@latest
+   - air
+4) Validate:
    - curl http://localhost:8080/healthz
-4) Run tests:
+5) Run tests:
    - go test ./...
+
+Notes (Air)
+- Air watches all `.go` files in the repository by default.
 
 Notes
 - Without Strava credentials, the server still runs and the webhook will enqueue but activity fetching will fail when the worker processes items.

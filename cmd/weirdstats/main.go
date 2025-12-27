@@ -16,6 +16,7 @@ import (
 	"weirdstats/internal/processor"
 	"weirdstats/internal/storage"
 	"weirdstats/internal/strava"
+	"weirdstats/internal/web"
 	"weirdstats/internal/webhook"
 	"weirdstats/internal/worker"
 )
@@ -59,7 +60,23 @@ func main() {
 	pipeline := &processor.PipelineProcessor{Ingest: ingestor, Stats: statsProcessor}
 	queueWorker := &worker.Worker{Store: store, Processor: pipeline}
 
+	webServer, err := web.NewServer(store, web.StravaConfig{
+		ClientID:     cfg.StravaClientID,
+		ClientSecret: cfg.StravaClientSecret,
+		AuthBaseURL:  cfg.StravaAuthBaseURL,
+		RedirectURL:  cfg.StravaRedirectURL,
+	})
+	if err != nil {
+		log.Fatalf("load templates: %v", err)
+	}
+
 	mux := http.NewServeMux()
+	mux.HandleFunc("/", webServer.Landing)
+	mux.HandleFunc("/connect/strava", webServer.ConnectStrava)
+	mux.HandleFunc("/connect/strava/callback", webServer.StravaCallback)
+	mux.HandleFunc("/profile", webServer.Profile)
+	mux.HandleFunc("/profile/", webServer.Profile)
+	mux.HandleFunc("/profile/settings", webServer.Settings)
 	mux.Handle("/webhook", &webhook.Handler{
 		Store:         store,
 		VerifyToken:   cfg.StravaVerifyToken,

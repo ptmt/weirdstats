@@ -1,0 +1,9 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/weirdstats ./cmd/weirdstats"
+  bin = "tmp/weirdstats"
+  delay = 200
+  include_ext = ["go"]
+  exclude_dir = ["tmp", "testdata", "vendor"]

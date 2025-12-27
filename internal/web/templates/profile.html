@@ -1,0 +1,110 @@
+{{define "content"}}
+  <div class="nav">
+    <div class="brand">
+      <div class="logo">ws</div>
+      <h1>weirdstats</h1>
+    </div>
+    <div class="nav-links">
+      <a href="/">Landing</a>
+      <a href="/profile/">Profile</a>
+      <a href="/profile/settings">Settings</a>
+      {{if .StravaConnected}}
+        <span class="pill">Strava Connected</span>
+      {{else}}
+        <a class="btn" href="/connect/strava">Connect Strava</a>
+      {{end}}
+    </div>
+  </div>
+
+  <section class="hero-copy">
+    <style>
+      .hero-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-bottom: 32px;
+      }
+      .hero-copy h2 {
+        font-family: "Georgia", "Palatino", serif;
+        font-size: clamp(28px, 3.6vw, 40px);
+        margin: 0;
+      }
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 18px;
+      }
+      .activity-card {
+        display: grid;
+        gap: 12px;
+      }
+      .activity-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .stat-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .tag {
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: rgba(242, 92, 61, 0.15);
+        color: var(--accent-dark);
+        font-weight: 600;
+      }
+    </style>
+    <span class="pill">Profile overview</span>
+    {{if .Message}}
+      <div class="card">
+        <strong>{{.Message}}</strong>
+      </div>
+    {{end}}
+    <h2>Your parsed activities</h2>
+    <p class="muted">Every activity below shows the latest stop and traffic light stats we extracted.</p>
+  </section>
+
+  {{if .Activities}}
+    <section class="stats-grid">
+      {{range .Activities}}
+        <article class="card activity-card">
+          <div>
+            <strong>{{.Name}}</strong>
+            <div class="activity-meta">
+              <span>{{.Type}}</span>
+              <span>{{.StartTime}}</span>
+            </div>
+          </div>
+          <div class="muted">{{.Description}}</div>
+          {{if .HasStats}}
+            <div class="stat-row">
+              <span class="tag">{{.StopCount}} stops</span>
+              <span class="tag">{{.StopTotal}} paused</span>
+              <span class="tag">{{.LightStops}} light stops</span>
+            </div>
+          {{else}}
+            <div class="muted">Stats not processed yet.</div>
+          {{end}}
+        </article>
+      {{end}}
+    </section>
+  {{else}}
+    <section class="card">
+      <h2 class="section-title">No activities yet</h2>
+      {{if .StravaConnected}}
+        <p class="muted">Your activities will appear here once they're synced from Strava.</p>
+      {{else}}
+        <p class="muted">Connect Strava to start pulling your activities and generating stop stats.</p>
+        <a class="btn" href="/connect/strava">Connect Strava</a>
+      {{end}}
+    </section>
+  {{end}}
+
+  <div class="footer">Tip: the worker runs in the background and fills in stats after ingest.</div>
+{{end}}

@@ -1,0 +1,152 @@
+{{define "base"}}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{.Title}}</title>
+    <style>
+      :root {
+        --bg: #f4efe7;
+        --ink: #1b1b1b;
+        --muted: #6f6a62;
+        --accent: #f25c3d;
+        --accent-dark: #b53b22;
+        --teal: #1f6f6a;
+        --card: #fff9f2;
+        --border: #e6ded1;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: "Trebuchet MS", "Gill Sans", "Verdana", sans-serif;
+        color: var(--ink);
+        background: radial-gradient(circle at top left, #f6e6cf 0%, var(--bg) 45%, #f2efe9 100%);
+      }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      .wrap {
+        width: min(1100px, 92vw);
+        margin: 0 auto;
+        padding: 32px 0 80px;
+      }
+      .nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 48px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .logo {
+        width: 46px;
+        height: 46px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #1f6f6a 0%, #3aa17a 55%, #f25c3d 100%);
+        display: grid;
+        place-items: center;
+        color: white;
+        font-weight: 700;
+        font-size: 18px;
+        letter-spacing: 1px;
+      }
+      .brand h1 {
+        font-family: "Georgia", "Palatino", serif;
+        font-size: 22px;
+        margin: 0;
+      }
+      .nav-links {
+        display: flex;
+        gap: 12px;
+        font-size: 14px;
+        color: var(--muted);
+      }
+      .nav-links a {
+        padding: 8px 12px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+      }
+      .nav-links a:hover {
+        border-color: var(--border);
+        color: var(--ink);
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 12px 20px;
+        border-radius: 999px;
+        font-weight: 600;
+        border: 1px solid var(--accent);
+        background: var(--accent);
+        color: white;
+        box-shadow: 0 10px 20px rgba(242, 92, 61, 0.2);
+      }
+      .btn.secondary {
+        background: white;
+        color: var(--accent-dark);
+        border-color: var(--border);
+        box-shadow: none;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: rgba(31, 111, 106, 0.12);
+        color: var(--teal);
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.2px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 20px;
+        box-shadow: 0 20px 40px rgba(27, 27, 27, 0.08);
+      }
+      .section-title {
+        font-family: "Georgia", "Palatino", serif;
+        font-size: 28px;
+        margin: 0 0 16px;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .divider {
+        margin: 48px 0;
+        border-top: 1px dashed var(--border);
+      }
+      .footer {
+        margin-top: 72px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      @media (max-width: 720px) {
+        .nav {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+        .nav-links {
+          flex-wrap: wrap;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      {{template "content" .}}
+    </div>
+  </body>
+</html>
+{{end}}

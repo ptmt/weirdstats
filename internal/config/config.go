@@ -18,6 +18,7 @@ type Config struct {
 	StravaClientSecret   string
 	StravaBaseURL        string
 	StravaAuthBaseURL    string
+	StravaRedirectURL    string
 	StravaVerifyToken    string
 	StravaWebhookSecret  string
 	MapsAPIKey           string
@@ -46,6 +47,7 @@ func Load(path string) (Config, error) {
 	cfg.StravaClientSecret = os.Getenv("STRAVA_CLIENT_SECRET")
 	cfg.StravaBaseURL = getenv("STRAVA_BASE_URL", cfg.StravaBaseURL)
 	cfg.StravaAuthBaseURL = getenv("STRAVA_AUTH_BASE_URL", cfg.StravaAuthBaseURL)
+	cfg.StravaRedirectURL = os.Getenv("STRAVA_REDIRECT_URL")
 	cfg.StravaVerifyToken = os.Getenv("STRAVA_VERIFY_TOKEN")
 	cfg.StravaWebhookSecret = os.Getenv("STRAVA_WEBHOOK_SECRET")
 	cfg.MapsAPIKey = os.Getenv("MAPS_API_KEY")

@@ -1,0 +1,128 @@
+{{define "content"}}
+  <div class="nav">
+    <div class="brand">
+      <div class="logo">ws</div>
+      <h1>weirdstats</h1>
+    </div>
+    <div class="nav-links">
+      <a href="/">Landing</a>
+      <a href="/profile/">Profile</a>
+      <a href="/profile/settings">Settings</a>
+    </div>
+  </div>
+
+  <section class="hero-copy">
+    <style>
+      .hero-copy {
+        display: grid;
+        gap: 12px;
+        margin-bottom: 32px;
+      }
+      .settings-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 20px;
+      }
+      .rule {
+        display: grid;
+        gap: 12px;
+      }
+      .toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: rgba(31, 111, 106, 0.12);
+        color: var(--teal);
+        font-weight: 600;
+        font-size: 12px;
+      }
+      .danger {
+        border-color: rgba(179, 31, 31, 0.2);
+        background: #ffecec;
+        color: #b31f1f;
+      }
+      .settings-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+    </style>
+    <span class="pill">Account controls</span>
+    <h2 class="section-title">Profile settings</h2>
+    <p class="muted">Tune which activities are hidden and keep your account tidy.</p>
+    {{if .Message}}
+      <div class="card">
+        <strong>{{.Message}}</strong>
+      </div>
+    {{end}}
+  </section>
+
+  <section class="settings-grid">
+    <article class="card">
+      <h3>Hide activity rules</h3>
+      <p class="muted">Rules are applied after stats are computed. Toggle rules to control what gets muted.</p>
+      <div class="settings-grid">
+        {{if .Rules}}
+          {{range .Rules}}
+            <div class="card rule">
+              <strong>{{.Name}}</strong>
+              <span class="muted">{{.Description}}</span>
+              <form method="post" action="/profile/settings">
+                <input type="hidden" name="action" value="toggle-rule" />
+                <input type="hidden" name="rule_id" value="{{.ID}}" />
+                <label class="toggle">
+                  <input type="checkbox" name="enabled" {{if .Enabled}}checked{{end}} />
+                  Status: {{boolLabel .Enabled}}
+                </label>
+                <button class="btn secondary" type="submit">Update</button>
+              </form>
+              <form method="post" action="/profile/settings">
+                <input type="hidden" name="action" value="delete-rule" />
+                <input type="hidden" name="rule_id" value="{{.ID}}" />
+                <button class="btn secondary" type="submit">Delete rule</button>
+              </form>
+            </div>
+          {{end}}
+        {{else}}
+          <div class="card rule">
+            <strong>No rules yet</strong>
+            <span class="muted">Add a rule below to start hiding activities.</span>
+          </div>
+        {{end}}
+      </div>
+      <form method="post" action="/profile/settings" style="margin-top: 16px;" class="card rule">
+        <input type="hidden" name="action" value="add-rule" />
+        <label>
+          <div class="muted">Rule name</div>
+          <input name="name" placeholder="Hide late night rides" style="width: 100%; padding: 10px; border-radius: 12px; border: 1px solid var(--border);" />
+        </label>
+        <label>
+          <div class="muted">Condition</div>
+          <input name="condition" placeholder="type = Ride AND start_time after 22:00" style="width: 100%; padding: 10px; border-radius: 12px; border: 1px solid var(--border);" />
+        </label>
+        <label class="toggle">
+          <input type="checkbox" name="enabled" checked />
+          Enabled
+        </label>
+        <button class="btn" type="submit">Add rule</button>
+      </form>
+    </article>
+
+    <article class="card">
+      <h3>Danger zone</h3>
+      <p class="muted">Delete your data, revoke tokens, and stop processing.</p>
+      <form method="post" action="/profile/settings" class="rule">
+        <input type="hidden" name="action" value="delete-account" />
+        <label>
+          <div class="muted">Type "delete" to confirm</div>
+          <input name="confirm" placeholder="delete" style="width: 100%; padding: 10px; border-radius: 12px; border: 1px solid var(--border);" />
+        </label>
+        <button class="btn danger" type="submit">Delete account</button>
+      </form>
+    </article>
+  </section>
+
+  <div class="footer">Rules are stored locally and applied when the processing pipeline runs.</div>
+{{end}}
