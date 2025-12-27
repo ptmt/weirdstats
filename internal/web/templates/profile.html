@@ -1,21 +1,4 @@
 {{define "content"}}
-  <div class="nav">
-    <div class="brand">
-      <div class="logo">ws</div>
-      <h1>weirdstats</h1>
-    </div>
-    <div class="nav-links">
-      <a href="/">Landing</a>
-      <a href="/profile/">Profile</a>
-      <a href="/profile/settings">Settings</a>
-      {{if .StravaConnected}}
-        <span class="pill">Strava Connected</span>
-      {{else}}
-        <a class="btn" href="/connect/strava">Connect Strava</a>
-      {{end}}
-    </div>
-  </div>
-
   <section class="hero-copy">
     <style>
       .hero-copy {
@@ -60,7 +43,6 @@
         font-weight: 600;
       }
     </style>
-    <span class="pill">Profile overview</span>
     {{if .Message}}
       <div class="card">
         <strong>{{.Message}}</strong>
@@ -97,7 +79,7 @@
   {{else}}
     <section class="card">
       <h2 class="section-title">No activities yet</h2>
-      {{if .StravaConnected}}
+      {{if .Strava.Connected}}
         <p class="muted">Your activities will appear here once they're synced from Strava.</p>
       {{else}}
         <p class="muted">Connect Strava to start pulling your activities and generating stop stats.</p>

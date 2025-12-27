@@ -60,7 +60,7 @@ func main() {
 	pipeline := &processor.PipelineProcessor{Ingest: ingestor, Stats: statsProcessor}
 	queueWorker := &worker.Worker{Store: store, Processor: pipeline}
 
-	webServer, err := web.NewServer(store, web.StravaConfig{
+	webServer, err := web.NewServer(store, ingestor, web.StravaConfig{
 		ClientID:     cfg.StravaClientID,
 		ClientSecret: cfg.StravaClientSecret,
 		AuthBaseURL:  cfg.StravaAuthBaseURL,
@@ -77,6 +77,8 @@ func main() {
 	mux.HandleFunc("/profile", webServer.Profile)
 	mux.HandleFunc("/profile/", webServer.Profile)
 	mux.HandleFunc("/profile/settings", webServer.Settings)
+	mux.HandleFunc("/admin", webServer.Admin)
+	mux.HandleFunc("/admin/", webServer.Admin)
 	mux.Handle("/webhook", &webhook.Handler{
 		Store:         store,
 		VerifyToken:   cfg.StravaVerifyToken,
@@ -114,6 +116,12 @@ func main() {
 
 func seedStravaToken(store *storage.Store, cfg config.Config) {
 	if cfg.StravaRefreshToken == "" && cfg.StravaAccessToken == "" {
+		return
+	}
+	// Don't overwrite if user already has a token from OAuth
+	existing, err := store.GetStravaToken(context.Background(), 1)
+	if err == nil && existing.AccessToken != "" {
+		log.Printf("Skipping token seed - OAuth token already exists")
 		return
 	}
 	expiresAt := time.Now().Add(-time.Minute)

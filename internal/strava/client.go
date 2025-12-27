@@ -25,6 +25,13 @@ type Activity struct {
 	Description string
 }
 
+type ActivitySummary struct {
+	ID        int64
+	Name      string
+	Type      string
+	StartDate time.Time
+}
+
 type StreamSet struct {
 	LatLng         [][2]float64
 	TimeOffsetsSec []int
@@ -100,6 +107,49 @@ func (c *Client) GetStreams(ctx context.Context, id int64) (StreamSet, error) {
 	}
 
 	return streams, nil
+}
+
+func (c *Client) ListActivities(ctx context.Context, after, before time.Time, page, perPage int) ([]ActivitySummary, error) {
+	params := url.Values{}
+	if !after.IsZero() {
+		params.Set("after", fmt.Sprintf("%d", after.Unix()))
+	}
+	if !before.IsZero() {
+		params.Set("before", fmt.Sprintf("%d", before.Unix()))
+	}
+	if page > 0 {
+		params.Set("page", fmt.Sprintf("%d", page))
+	}
+	if perPage > 0 {
+		params.Set("per_page", fmt.Sprintf("%d", perPage))
+	}
+
+	var payload []struct {
+		ID        int64  `json:"id"`
+		Name      string `json:"name"`
+		Type      string `json:"type"`
+		StartDate string `json:"start_date"`
+	}
+
+	if err := c.getJSON(ctx, "/athlete/activities", params, &payload); err != nil {
+		return nil, err
+	}
+
+	activities := make([]ActivitySummary, 0, len(payload))
+	for _, p := range payload {
+		start, err := time.Parse(time.RFC3339, p.StartDate)
+		if err != nil {
+			return nil, fmt.Errorf("parse start_date: %w", err)
+		}
+		activities = append(activities, ActivitySummary{
+			ID:        p.ID,
+			Name:      p.Name,
+			Type:      p.Type,
+			StartDate: start,
+		})
+	}
+
+	return activities, nil
 }
 
 func (c *Client) getJSON(ctx context.Context, path string, params url.Values, target interface{}) error {

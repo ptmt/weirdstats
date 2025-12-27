@@ -1,15 +1,18 @@
 package web
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"html/template"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
+	"weirdstats/internal/ingest"
 	"weirdstats/internal/storage"
 	"weirdstats/internal/strava"
 )
@@ -19,6 +22,7 @@ var templatesFS embed.FS
 
 type Server struct {
 	store     *storage.Store
+	ingestor  *ingest.Ingestor
 	templates map[string]*template.Template
 	strava    StravaConfig
 }
@@ -35,11 +39,26 @@ type ActivityView struct {
 	LightStops  int
 }
 
+type StravaInfo struct {
+	Connected   bool
+	AthleteID   int64
+	AthleteName string
+}
+
+type PageData struct {
+	Title   string
+	Page    string
+	Message string
+	Strava  StravaInfo
+}
+
+type LandingPageData struct {
+	PageData
+}
+
 type ProfilePageData struct {
-	Title           string
-	Message         string
-	StravaConnected bool
-	Activities      []ActivityView
+	PageData
+	Activities []ActivityView
 }
 
 type SettingsRule struct {
@@ -50,9 +69,13 @@ type SettingsRule struct {
 }
 
 type SettingsPageData struct {
-	Title   string
-	Message string
-	Rules   []SettingsRule
+	PageData
+	Rules []SettingsRule
+}
+
+type AdminPageData struct {
+	PageData
+	QueueCount int
 }
 
 type StravaConfig struct {
@@ -62,7 +85,7 @@ type StravaConfig struct {
 	RedirectURL  string
 }
 
-func NewServer(store *storage.Store, stravaConfig StravaConfig) (*Server, error) {
+func NewServer(store *storage.Store, ingestor *ingest.Ingestor, stravaConfig StravaConfig) (*Server, error) {
 	funcs := template.FuncMap{
 		"boolLabel": func(v bool) string {
 			if v {
@@ -95,15 +118,60 @@ func NewServer(store *storage.Store, stravaConfig StravaConfig) (*Server, error)
 	if err != nil {
 		return nil, err
 	}
+	admin, err := template.New("base").Funcs(funcs).ParseFS(
+		templatesFS,
+		"templates/base.html",
+		"templates/admin.html",
+	)
+	if err != nil {
+		return nil, err
+	}
 	return &Server{
-		store:  store,
-		strava: stravaConfig,
+		store:    store,
+		ingestor: ingestor,
+		strava:   stravaConfig,
 		templates: map[string]*template.Template{
 			"landing":  landing,
 			"profile":  profile,
 			"settings": settings,
+			"admin":    admin,
 		},
 	}, nil
+}
+
+func (s *Server) getStravaInfo(ctx context.Context) StravaInfo {
+	token, err := s.store.GetStravaToken(ctx, 1)
+	if err != nil {
+		return StravaInfo{}
+	}
+	return StravaInfo{
+		Connected:   true,
+		AthleteID:   token.AthleteID,
+		AthleteName: token.AthleteName,
+	}
+}
+
+func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) bool {
+	_, err := s.store.GetStravaToken(r.Context(), 1)
+	if err != nil {
+		http.Error(w, "Unauthorized - Please connect Strava first", http.StatusUnauthorized)
+		return false
+	}
+	return true
+}
+
+func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
+	token, err := s.store.GetStravaToken(r.Context(), 1)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return false
+	}
+	// For now, user 1 is always admin. In future, check against admin athlete IDs.
+	if token.UserID != 1 {
+		http.Error(w, "Forbidden - Admin access required", http.StatusForbidden)
+		return false
+	}
+	return true
 }
 
 func (s *Server) Landing(w http.ResponseWriter, r *http.Request) {
@@ -111,10 +179,15 @@ func (s *Server) Landing(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := s.templates["landing"].ExecuteTemplate(w, "base", map[string]string{
-		"Title":   "weirdstats",
-		"Message": r.URL.Query().Get("msg"),
-	}); err != nil {
+	data := LandingPageData{
+		PageData: PageData{
+			Title:   "weirdstats",
+			Page:    "home",
+			Message: r.URL.Query().Get("msg"),
+			Strava:  s.getStravaInfo(r.Context()),
+		},
+	}
+	if err := s.templates["landing"].ExecuteTemplate(w, "base", data); err != nil {
 		http.Error(w, "template render failed", http.StatusInternalServerError)
 	}
 }
@@ -126,6 +199,9 @@ func (s *Server) Profile(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path != "/profile/" {
 		http.NotFound(w, r)
+		return
+	}
+	if !s.requireAuth(w, r) {
 		return
 	}
 	activities, err := s.store.ListActivitiesWithStats(r.Context(), 1, 100)
@@ -148,13 +224,14 @@ func (s *Server) Profile(w http.ResponseWriter, r *http.Request) {
 		}
 		views = append(views, view)
 	}
-	_, tokenErr := s.store.GetStravaToken(r.Context(), 1)
-	stravaConnected := tokenErr == nil
 	data := ProfilePageData{
-		Title:           "Profile",
-		Message:         r.URL.Query().Get("msg"),
-		StravaConnected: stravaConnected,
-		Activities:      views,
+		PageData: PageData{
+			Title:   "Profile",
+			Page:    "profile",
+			Message: r.URL.Query().Get("msg"),
+			Strava:  s.getStravaInfo(r.Context()),
+		},
+		Activities: views,
 	}
 	if err := s.templates["profile"].ExecuteTemplate(w, "base", data); err != nil {
 		http.Error(w, "template render failed", http.StatusInternalServerError)
@@ -164,6 +241,9 @@ func (s *Server) Profile(w http.ResponseWriter, r *http.Request) {
 func (s *Server) Settings(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/profile/settings" {
 		http.NotFound(w, r)
+		return
+	}
+	if !s.requireAuth(w, r) {
 		return
 	}
 	if r.Method == http.MethodPost {
@@ -187,12 +267,108 @@ func (s *Server) Settings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := SettingsPageData{
-		Title:   "Settings",
-		Message: r.URL.Query().Get("msg"),
-		Rules:   viewRules,
+		PageData: PageData{
+			Title:   "Settings",
+			Page:    "settings",
+			Message: r.URL.Query().Get("msg"),
+			Strava:  s.getStravaInfo(r.Context()),
+		},
+		Rules: viewRules,
 	}
 	if err := s.templates["settings"].ExecuteTemplate(w, "base", data); err != nil {
 		http.Error(w, "template render failed", http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) Admin(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/admin/" && r.URL.Path != "/admin" {
+		http.NotFound(w, r)
+		return
+	}
+	if r.URL.Path == "/admin" {
+		http.Redirect(w, r, "/admin/", http.StatusFound)
+		return
+	}
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	if r.Method == http.MethodPost {
+		s.handleAdminPost(w, r)
+		return
+	}
+
+	queueCount, _ := s.store.CountQueue(r.Context())
+
+	data := AdminPageData{
+		PageData: PageData{
+			Title:   "Admin",
+			Page:    "admin",
+			Message: r.URL.Query().Get("msg"),
+			Strava:  s.getStravaInfo(r.Context()),
+		},
+		QueueCount: queueCount,
+	}
+	if err := s.templates["admin"].ExecuteTemplate(w, "base", data); err != nil {
+		http.Error(w, "template render failed", http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) handleAdminPost(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Redirect(w, r, "/admin/?msg=invalid+form", http.StatusFound)
+		return
+	}
+	action := strings.TrimSpace(r.FormValue("action"))
+	switch action {
+	case "sync-latest":
+		if s.ingestor == nil {
+			http.Redirect(w, r, "/admin/?msg=sync+not+configured", http.StatusFound)
+			return
+		}
+		go func() {
+			count, err := s.ingestor.SyncLatestActivity(context.Background())
+			if err != nil {
+				log.Printf("sync latest failed: %v", err)
+			} else {
+				log.Printf("sync latest completed: %d activity", count)
+			}
+		}()
+		http.Redirect(w, r, "/admin/?msg=fetching+latest+started", http.StatusFound)
+	case "sync-month":
+		if s.ingestor == nil {
+			http.Redirect(w, r, "/admin/?msg=sync+not+configured", http.StatusFound)
+			return
+		}
+		go func() {
+			oneMonthAgo := time.Now().AddDate(0, -1, 0)
+			count, err := s.ingestor.SyncActivitiesSince(context.Background(), oneMonthAgo)
+			if err != nil {
+				log.Printf("sync month failed after %d: %v", count, err)
+			} else {
+				log.Printf("sync month completed: %d activities", count)
+			}
+		}()
+		http.Redirect(w, r, "/admin/?msg=fetching+last+month+started", http.StatusFound)
+	case "sync-year":
+		if s.ingestor == nil {
+			http.Redirect(w, r, "/admin/?msg=sync+not+configured", http.StatusFound)
+			return
+		}
+		go func() {
+			oneYearAgo := time.Now().AddDate(-1, 0, 0)
+			count, err := s.ingestor.SyncActivitiesSince(context.Background(), oneYearAgo)
+			if err != nil {
+				log.Printf("sync year failed after %d: %v", count, err)
+			} else {
+				log.Printf("sync year completed: %d activities", count)
+			}
+		}()
+		http.Redirect(w, r, "/admin/?msg=fetching+last+year+started", http.StatusFound)
+	default:
+		http.Redirect(w, r, "/admin/?msg=unknown+action", http.StatusFound)
 	}
 }
 
@@ -229,7 +405,11 @@ func (s *Server) ConnectStrava(w http.ResponseWriter, r *http.Request) {
 	params.Set("client_id", s.strava.ClientID)
 	params.Set("redirect_uri", redirectURL)
 	params.Set("response_type", "code")
-	params.Set("approval_prompt", "auto")
+	if r.URL.Query().Get("force") == "1" {
+		params.Set("approval_prompt", "force")
+	} else {
+		params.Set("approval_prompt", "auto")
+	}
 	params.Set("scope", "read,activity:read_all,activity:write")
 
 	http.Redirect(w, r, endpoint+"?"+params.Encode(), http.StatusFound)
@@ -254,15 +434,25 @@ func (s *Server) StravaCallback(w http.ResponseWriter, r *http.Request) {
 		nil,
 	)
 	if err != nil {
+		log.Printf("strava oauth exchange failed: %v", err)
 		http.Redirect(w, r, "/profile/settings?msg=strava+authorization+failed", http.StatusFound)
 		return
 	}
+	athleteName := token.Athlete.FirstName
+	if token.Athlete.LastName != "" {
+		athleteName += " " + token.Athlete.LastName
+	}
+	log.Printf("Saving token: expires_at=%d (%v), athlete=%d %s",
+		token.ExpiresAt, time.Unix(token.ExpiresAt, 0), token.Athlete.ID, athleteName)
 	if err := s.store.UpsertStravaToken(r.Context(), storage.StravaToken{
 		UserID:       1,
 		AccessToken:  token.AccessToken,
 		RefreshToken: token.RefreshToken,
 		ExpiresAt:    time.Unix(token.ExpiresAt, 0),
+		AthleteID:    token.Athlete.ID,
+		AthleteName:  athleteName,
 	}); err != nil {
+		log.Printf("strava token save failed: %v", err)
 		http.Redirect(w, r, "/profile/settings?msg=strava+token+save+failed", http.StatusFound)
 		return
 	}
@@ -319,6 +509,12 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		http.Redirect(w, r, "/profile/settings?msg=rule+deleted", http.StatusFound)
+	case "sign-out":
+		if err := s.store.DeleteStravaToken(r.Context(), 1); err != nil {
+			http.Redirect(w, r, "/profile/settings?msg=sign+out+failed", http.StatusFound)
+			return
+		}
+		http.Redirect(w, r, "/?msg=signed+out", http.StatusFound)
 	case "delete-account":
 		if strings.TrimSpace(r.FormValue("confirm")) != "delete" {
 			http.Redirect(w, r, "/profile/settings?msg=confirm+delete+account", http.StatusFound)

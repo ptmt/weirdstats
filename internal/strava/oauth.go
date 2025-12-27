@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -26,18 +27,31 @@ type RefreshTokenSource struct {
 	HTTPClient   *http.Client
 }
 
+type Athlete struct {
+	ID        int64  `json:"id"`
+	FirstName string `json:"firstname"`
+	LastName  string `json:"lastname"`
+}
+
+type TokenResponse struct {
+	AccessToken  string  `json:"access_token"`
+	RefreshToken string  `json:"refresh_token"`
+	ExpiresAt    int64   `json:"expires_at"`
+	Athlete      Athlete `json:"athlete"`
+}
+
 type refreshResponse struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
 	ExpiresAt    int64  `json:"expires_at"`
 }
 
-func ExchangeAuthorizationCode(ctx context.Context, baseURL, clientID, clientSecret, code string, httpClient *http.Client) (refreshResponse, error) {
+func ExchangeAuthorizationCode(ctx context.Context, baseURL, clientID, clientSecret, code string, httpClient *http.Client) (TokenResponse, error) {
 	if clientID == "" || clientSecret == "" {
-		return refreshResponse{}, fmt.Errorf("missing strava client credentials")
+		return TokenResponse{}, fmt.Errorf("missing strava client credentials")
 	}
 	if code == "" {
-		return refreshResponse{}, fmt.Errorf("missing authorization code")
+		return TokenResponse{}, fmt.Errorf("missing authorization code")
 	}
 
 	base := baseURL
@@ -47,7 +61,7 @@ func ExchangeAuthorizationCode(ctx context.Context, baseURL, clientID, clientSec
 
 	endpoint, err := url.JoinPath(base, "/oauth/token")
 	if err != nil {
-		return refreshResponse{}, err
+		return TokenResponse{}, err
 	}
 
 	form := url.Values{}
@@ -58,7 +72,7 @@ func ExchangeAuthorizationCode(ctx context.Context, baseURL, clientID, clientSec
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
-		return refreshResponse{}, err
+		return TokenResponse{}, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -69,25 +83,25 @@ func ExchangeAuthorizationCode(ctx context.Context, baseURL, clientID, clientSec
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return refreshResponse{}, err
+		return TokenResponse{}, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return refreshResponse{}, fmt.Errorf("strava exchange error %d: %s", resp.StatusCode, string(body))
+		return TokenResponse{}, fmt.Errorf("strava exchange error %d: %s", resp.StatusCode, string(body))
 	}
 
-	var payload refreshResponse
+	var payload TokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return refreshResponse{}, err
+		return TokenResponse{}, err
 	}
 
 	if payload.AccessToken == "" {
-		return refreshResponse{}, fmt.Errorf("exchange response missing access_token")
+		return TokenResponse{}, fmt.Errorf("exchange response missing access_token")
 	}
 	if payload.RefreshToken == "" {
-		return refreshResponse{}, fmt.Errorf("exchange response missing refresh_token")
+		return TokenResponse{}, fmt.Errorf("exchange response missing refresh_token")
 	}
 
 	return payload, nil
@@ -100,12 +114,18 @@ func (s *RefreshTokenSource) GetAccessToken(ctx context.Context) (string, error)
 
 	token, err := s.Store.GetStravaToken(ctx, s.UserID)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to get stored token: %w", err)
 	}
 
+	log.Printf("Token check: expires_at=%v, now=%v, valid=%v",
+		token.ExpiresAt, time.Now(), time.Now().Before(token.ExpiresAt.Add(-time.Minute)))
+
 	if token.AccessToken != "" && time.Now().Before(token.ExpiresAt.Add(-time.Minute)) {
+		log.Printf("Using cached access token (expires in %v)", token.ExpiresAt.Sub(time.Now()))
 		return token.AccessToken, nil
 	}
+
+	log.Printf("Token expired or missing, attempting refresh...")
 
 	if token.RefreshToken == "" {
 		return "", fmt.Errorf("missing refresh token")

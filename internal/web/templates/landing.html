@@ -1,16 +1,4 @@
 {{define "content"}}
-  <div class="nav">
-    <div class="brand">
-      <div class="logo">ws</div>
-      <h1>weirdstats</h1>
-    </div>
-    <div class="nav-links">
-      <a href="/profile/">Profile</a>
-      <a href="/profile/settings">Settings</a>
-      <a class="btn" href="/connect/strava">Connect Strava</a>
-    </div>
-  </div>
-
   <section class="hero">
     <style>
       .hero {
@@ -71,7 +59,6 @@
       </div>
     {{end}}
     <div>
-      <span class="pill">Strava ride intelligence</span>
       <h2>Make every ride tell the truth.</h2>
       <p>weirdstats listens to your Strava activity feed, spots real stops, and edits the narrative so the story matches the ride.</p>
       <ul>
@@ -79,8 +66,13 @@
         <li>Mute boring activities with rules you control.</li>
       </ul>
       <div class="cta-row">
-        <a class="btn" href="/connect/strava">Connect Strava</a>
-        <a class="btn secondary" href="/profile/">Preview profile</a>
+        {{if .Strava.Connected}}
+          <a class="btn" href="/profile/">View Profile</a>
+          <a class="btn secondary" href="/profile/settings">Settings</a>
+        {{else}}
+          <a class="btn" href="/connect/strava">Connect Strava</a>
+          <a class="btn secondary" href="/profile/">Preview profile</a>
+        {{end}}
       </div>
     </div>
     <div class="card hero-card">
@@ -152,9 +144,15 @@
   <div class="divider"></div>
 
   <section class="card">
-    <h2 class="section-title">Ready to connect?</h2>
-    <p class="muted">Hook up Strava to start capturing your activity stats and apply your rules automatically.</p>
-    <a class="btn" href="/connect/strava">Connect Strava</a>
+    {{if .Strava.Connected}}
+      <h2 class="section-title">You're all set!</h2>
+      <p class="muted">Your Strava account is connected. Head to your profile to see your activity stats.</p>
+      <a class="btn" href="/profile/">View Profile</a>
+    {{else}}
+      <h2 class="section-title">Ready to connect?</h2>
+      <p class="muted">Hook up Strava to start capturing your activity stats and apply your rules automatically.</p>
+      <a class="btn" href="/connect/strava">Connect Strava</a>
+    {{end}}
   </section>
 
   <div class="footer">Built for riders who want the story and the stats to line up.</div>

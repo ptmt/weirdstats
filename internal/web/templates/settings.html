@@ -1,16 +1,4 @@
 {{define "content"}}
-  <div class="nav">
-    <div class="brand">
-      <div class="logo">ws</div>
-      <h1>weirdstats</h1>
-    </div>
-    <div class="nav-links">
-      <a href="/">Landing</a>
-      <a href="/profile/">Profile</a>
-      <a href="/profile/settings">Settings</a>
-    </div>
-  </div>
-
   <section class="hero-copy">
     <style>
       .hero-copy {
@@ -49,8 +37,7 @@
         gap: 12px;
       }
     </style>
-    <span class="pill">Account controls</span>
-    <h2 class="section-title">Profile settings</h2>
+    <h2 class="section-title">Settings</h2>
     <p class="muted">Tune which activities are hidden and keep your account tidy.</p>
     {{if .Message}}
       <div class="card">
@@ -108,6 +95,18 @@
         </label>
         <button class="btn" type="submit">Add rule</button>
       </form>
+    </article>
+
+    <article class="card">
+      <h3>Strava connection</h3>
+      <p class="muted">Manage your Strava account connection. Reconnect if you're having permission issues.</p>
+      <div class="settings-actions">
+        <a class="btn secondary" href="/connect/strava?force=1">Reconnect Strava</a>
+        <form method="post" action="/profile/settings">
+          <input type="hidden" name="action" value="sign-out" />
+          <button class="btn secondary" type="submit">Sign out</button>
+        </form>
+      </div>
     </article>
 
     <article class="card">

@@ -36,11 +36,13 @@ type WebhookEvent struct {
 }
 
 type StravaToken struct {
-	UserID       int64
-	AccessToken  string
-	RefreshToken string
-	ExpiresAt    time.Time
-	UpdatedAt    time.Time
+	UserID        int64
+	AccessToken   string
+	RefreshToken  string
+	ExpiresAt     time.Time
+	UpdatedAt     time.Time
+	AthleteID     int64
+	AthleteName   string
 }
 
 type HideRule struct {
@@ -74,6 +76,15 @@ func (s *Store) Close() error {
 }
 
 func (s *Store) InitSchema(ctx context.Context) error {
+	// Run migrations for existing databases
+	migrations := []string{
+		`ALTER TABLE strava_tokens ADD COLUMN athlete_id INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE strava_tokens ADD COLUMN athlete_name TEXT NOT NULL DEFAULT ''`,
+	}
+	for _, m := range migrations {
+		_, _ = s.db.ExecContext(ctx, m) // ignore errors (column already exists)
+	}
+
 	schema := `
 CREATE TABLE IF NOT EXISTS activities (
 	id INTEGER PRIMARY KEY,
@@ -120,7 +131,9 @@ CREATE TABLE IF NOT EXISTS strava_tokens (
 	access_token TEXT NOT NULL,
 	refresh_token TEXT NOT NULL,
 	expires_at INTEGER NOT NULL,
-	updated_at INTEGER NOT NULL
+	updated_at INTEGER NOT NULL,
+	athlete_id INTEGER NOT NULL DEFAULT 0,
+	athlete_name TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS hide_rules (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -328,14 +341,16 @@ func (s *Store) UpsertStravaToken(ctx context.Context, token StravaToken) error 
 	}
 
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO strava_tokens (user_id, access_token, refresh_token, expires_at, updated_at)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO strava_tokens (user_id, access_token, refresh_token, expires_at, updated_at, athlete_id, athlete_name)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(user_id) DO UPDATE SET
 	access_token = excluded.access_token,
 	refresh_token = excluded.refresh_token,
 	expires_at = excluded.expires_at,
-	updated_at = excluded.updated_at
-`, token.UserID, token.AccessToken, token.RefreshToken, token.ExpiresAt.Unix(), token.UpdatedAt.Unix())
+	updated_at = excluded.updated_at,
+	athlete_id = CASE WHEN excluded.athlete_id != 0 THEN excluded.athlete_id ELSE strava_tokens.athlete_id END,
+	athlete_name = CASE WHEN excluded.athlete_name != '' THEN excluded.athlete_name ELSE strava_tokens.athlete_name END
+`, token.UserID, token.AccessToken, token.RefreshToken, token.ExpiresAt.Unix(), token.UpdatedAt.Unix(), token.AthleteID, token.AthleteName)
 	return err
 }
 
@@ -344,7 +359,7 @@ func (s *Store) GetStravaToken(ctx context.Context, userID int64) (StravaToken, 
 		userID = 1
 	}
 	row := s.db.QueryRowContext(ctx, `
-SELECT access_token, refresh_token, expires_at, updated_at
+SELECT access_token, refresh_token, expires_at, updated_at, athlete_id, athlete_name
 FROM strava_tokens
 WHERE user_id = ?
 `, userID)
@@ -352,12 +367,20 @@ WHERE user_id = ?
 	token.UserID = userID
 	var expiresAt int64
 	var updatedAt int64
-	if err := row.Scan(&token.AccessToken, &token.RefreshToken, &expiresAt, &updatedAt); err != nil {
+	if err := row.Scan(&token.AccessToken, &token.RefreshToken, &expiresAt, &updatedAt, &token.AthleteID, &token.AthleteName); err != nil {
 		return StravaToken{}, err
 	}
 	token.ExpiresAt = time.Unix(expiresAt, 0)
 	token.UpdatedAt = time.Unix(updatedAt, 0)
 	return token, nil
+}
+
+func (s *Store) DeleteStravaToken(ctx context.Context, userID int64) error {
+	if userID == 0 {
+		userID = 1
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM strava_tokens WHERE user_id = ?`, userID)
+	return err
 }
 
 func (s *Store) ListHideRules(ctx context.Context, userID int64) ([]HideRule, error) {
