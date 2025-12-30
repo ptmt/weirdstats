@@ -23,6 +23,7 @@ type Config struct {
 	StravaWebhookSecret  string
 	MapsAPIKey           string
 	OverpassURL          string
+	OverpassURLs         []string
 	OverpassTimeoutSec   int
 	OverpassCacheHours   int
 	WorkerPollIntervalMS int
@@ -55,6 +56,9 @@ func Load(path string) (Config, error) {
 	cfg.StravaWebhookSecret = os.Getenv("STRAVA_WEBHOOK_SECRET")
 	cfg.MapsAPIKey = os.Getenv("MAPS_API_KEY")
 	cfg.OverpassURL = os.Getenv("OVERPASS_URL")
+	if v := os.Getenv("OVERPASS_URLS"); v != "" {
+		cfg.OverpassURLs = splitAndTrim(v)
+	}
 
 	if v := os.Getenv("WORKER_POLL_INTERVAL_MS"); v != "" {
 		if err := parseInt(&cfg.WorkerPollIntervalMS, v); err != nil {
@@ -133,4 +137,15 @@ func parseInt64(target *int64, value string) error {
 	}
 	*target = parsed
 	return nil
+}
+
+func splitAndTrim(value string) []string {
+	parts := strings.Split(value, ",")
+	var out []string
+	for _, p := range parts {
+		if v := strings.TrimSpace(p); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }

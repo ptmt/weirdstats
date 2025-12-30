@@ -55,9 +55,10 @@ func main() {
 	}
 	ingestor := &ingest.Ingestor{Store: store, Strava: stravaClient}
 	overpassClient := &maps.OverpassClient{
-		BaseURL:  cfg.OverpassURL,
-		Timeout:  time.Duration(cfg.OverpassTimeoutSec) * time.Second,
-		CacheTTL: time.Duration(cfg.OverpassCacheHours) * time.Hour,
+		BaseURL:    cfg.OverpassURL,
+		MirrorURLs: cfg.OverpassURLs,
+		Timeout:    time.Duration(cfg.OverpassTimeoutSec) * time.Second,
+		CacheTTL:   time.Duration(cfg.OverpassCacheHours) * time.Hour,
 	}
 
 	var mapAPI maps.API = overpassClient

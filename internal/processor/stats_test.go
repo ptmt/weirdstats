@@ -200,3 +200,89 @@ func repoRoot(t *testing.T) string {
 	}
 	return filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", ".."))
 }
+
+type recordedStop struct {
+	Lat               float64        `json:"lat"`
+	Lon               float64        `json:"lon"`
+	DurationSeconds   float64        `json:"duration_seconds"`
+	NearbyTrafficInfo []maps.Feature `json:"nearby_features"`
+}
+
+type overpassRecording struct {
+	OverpassURL        string         `json:"overpass_url"`
+	SpeedThreshold     float64        `json:"speed_threshold"`
+	MinDurationSeconds int            `json:"min_duration_seconds"`
+	Stops              []recordedStop `json:"stops"`
+}
+
+// Integration helper: set RECORD_OVERPASS=1 to run, requires network access.
+func TestRecordOverpassForFixture(t *testing.T) {
+	if os.Getenv("RECORD_OVERPASS") == "" {
+		t.Skip("set RECORD_OVERPASS=1 to record live Overpass responses")
+	}
+
+	overpassURL := os.Getenv("OVERPASS_URL")
+	if overpassURL == "" {
+		overpassURL = maps.DefaultOverpassURL
+	}
+
+	dbPath := filepath.Join(t.TempDir(), "record.db")
+	store, err := storage.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	if err := store.InitSchema(context.Background()); err != nil {
+		t.Fatalf("init schema: %v", err)
+	}
+
+	activity, points := loadActivityFixture(t, filepath.Join(repoRoot(t), "testdata", "activities", "ride_sample.json"))
+	activityID, err := store.InsertActivity(context.Background(), activity, points)
+	if err != nil {
+		t.Fatalf("insert activity: %v", err)
+	}
+
+	client := &maps.OverpassClient{
+		BaseURL:      overpassURL,
+		DisableCache: true,
+		Timeout:      25 * time.Second,
+	}
+
+	opts := gps.StopOptions{SpeedThreshold: 0.5, MinDuration: 30 * time.Second}
+	pointsFromDB, err := store.LoadActivityPoints(context.Background(), activityID)
+	if err != nil {
+		t.Fatalf("load points: %v", err)
+	}
+	stops := gps.DetectStops(pointsFromDB, opts)
+
+	var rec overpassRecording
+	rec.OverpassURL = overpassURL
+	rec.SpeedThreshold = opts.SpeedThreshold
+	rec.MinDurationSeconds = int(opts.MinDuration.Seconds())
+
+	for _, stop := range stops {
+		features, err := client.NearbyFeatures(stop.Lat, stop.Lon)
+		if err != nil {
+			t.Fatalf("overpass query failed: %v", err)
+		}
+		rec.Stops = append(rec.Stops, recordedStop{
+			Lat:               stop.Lat,
+			Lon:               stop.Lon,
+			DurationSeconds:   stop.Duration.Seconds(),
+			NearbyTrafficInfo: features,
+		})
+	}
+
+	outputPath := filepath.Join(repoRoot(t), "tmp", "overpass_recordings", "ride_sample.json")
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
+		t.Fatalf("mkdir tmp recordings: %v", err)
+	}
+	data, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal recording: %v", err)
+	}
+	if err := os.WriteFile(outputPath, data, 0o644); err != nil {
+		t.Fatalf("write recording: %v", err)
+	}
+	t.Logf("recorded %d stops to %s", len(rec.Stops), outputPath)
+}

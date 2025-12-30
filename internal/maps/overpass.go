@@ -22,6 +22,9 @@ type OverpassClient struct {
 	Timeout      time.Duration
 	CacheTTL     time.Duration
 	DisableCache bool
+	MaxAttempts  int
+	BackoffBase  time.Duration
+	MirrorURLs   []string
 
 	mu    sync.Mutex
 	cache map[string]cacheEntry
@@ -112,12 +115,20 @@ func (c *OverpassClient) fetchWithCache(ctx context.Context, query string) ([]ov
 }
 
 func (c *OverpassClient) runQueryWithRetry(ctx context.Context, query string) ([]overpassElement, error) {
-	const maxAttempts = 3
-	baseSleep := 500 * time.Millisecond
+	maxAttempts := c.MaxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = 5
+	}
+	baseSleep := c.BackoffBase
+	if baseSleep <= 0 {
+		baseSleep = time.Second
+	}
+	endpoints := c.baseURLs()
 	var lastErr error
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
-		elements, status, err := c.runQueryOnce(ctx, query)
+		base := endpoints[attempt%len(endpoints)]
+		elements, status, err := c.runQueryOnce(ctx, base, query)
 		if err == nil {
 			return elements, nil
 		}
@@ -138,12 +149,7 @@ func (c *OverpassClient) runQueryWithRetry(ctx context.Context, query string) ([
 	return nil, lastErr
 }
 
-func (c *OverpassClient) runQueryOnce(ctx context.Context, query string) ([]overpassElement, int, error) {
-	base := c.BaseURL
-	if base == "" {
-		base = DefaultOverpassURL
-	}
-
+func (c *OverpassClient) runQueryOnce(ctx context.Context, base string, query string) ([]overpassElement, int, error) {
 	endpoint, err := url.Parse(base)
 	if err != nil {
 		return nil, 0, fmt.Errorf("parse overpass url: %w", err)
@@ -228,6 +234,16 @@ func (c *OverpassClient) setCached(key string, elements []overpassElement, ttl t
 
 func (b BBox) String() string {
 	return fmt.Sprintf("%f,%f,%f,%f", b.South, b.West, b.North, b.East)
+}
+
+func (c *OverpassClient) baseURLs() []string {
+	if len(c.MirrorURLs) > 0 {
+		return c.MirrorURLs
+	}
+	if c.BaseURL != "" {
+		return []string{c.BaseURL}
+	}
+	return []string{DefaultOverpassURL}
 }
 
 func classifyPOI(tags map[string]string) FeatureType {
