@@ -23,6 +23,8 @@ type Activity struct {
 	Type        string
 	StartDate   time.Time
 	Description string
+	Distance    float64
+	MovingTime  int
 }
 
 type ActivitySummary struct {
@@ -40,11 +42,13 @@ type StreamSet struct {
 
 func (c *Client) GetActivity(ctx context.Context, id int64) (Activity, error) {
 	var payload struct {
-		ID          int64  `json:"id"`
-		Name        string `json:"name"`
-		Type        string `json:"type"`
-		StartDate   string `json:"start_date"`
-		Description string `json:"description"`
+		ID          int64   `json:"id"`
+		Name        string  `json:"name"`
+		Type        string  `json:"type"`
+		StartDate   string  `json:"start_date"`
+		Description string  `json:"description"`
+		Distance    float64 `json:"distance"`
+		MovingTime  int     `json:"moving_time"`
 	}
 
 	if err := c.getJSON(ctx, fmt.Sprintf("/activities/%d", id), nil, &payload); err != nil {
@@ -62,6 +66,8 @@ func (c *Client) GetActivity(ctx context.Context, id int64) (Activity, error) {
 		Type:        payload.Type,
 		StartDate:   start,
 		Description: payload.Description,
+		Distance:    payload.Distance,
+		MovingTime:  payload.MovingTime,
 	}, nil
 }
 

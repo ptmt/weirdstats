@@ -62,6 +62,16 @@
       <p class="muted">Activities waiting to be processed by the background worker.</p>
       <div class="stat-badge">{{.QueueCount}} pending</div>
     </article>
+
+    <article class="card">
+      <h3>Maps / Overpass</h3>
+      <p class="muted">Run a sample Overpass query for traffic lights and cafés near a known busy block.</p>
+      <form method="post" action="/admin/">
+        <input type="hidden" name="action" value="test-overpass" />
+        <button class="btn secondary" type="submit">Test Overpass</button>
+      </form>
+      <p class="muted">Uses the default Overpass endpoint unless <code>OVERPASS_URL</code> is set.</p>
+    </article>
   </section>
 
   <div class="footer">Admin actions are logged and may take time to complete.</div>

@@ -13,6 +13,7 @@ import (
 	"weirdstats/internal/config"
 	"weirdstats/internal/gps"
 	"weirdstats/internal/ingest"
+	"weirdstats/internal/maps"
 	"weirdstats/internal/processor"
 	"weirdstats/internal/storage"
 	"weirdstats/internal/strava"
@@ -53,14 +54,22 @@ func main() {
 		}
 	}
 	ingestor := &ingest.Ingestor{Store: store, Strava: stravaClient}
+	overpassClient := &maps.OverpassClient{
+		BaseURL:  cfg.OverpassURL,
+		Timeout:  time.Duration(cfg.OverpassTimeoutSec) * time.Second,
+		CacheTTL: time.Duration(cfg.OverpassCacheHours) * time.Hour,
+	}
+
+	var mapAPI maps.API = overpassClient
 	statsProcessor := &processor.StopStatsProcessor{
 		Store:   store,
+		MapAPI:  mapAPI,
 		Options: gps.StopOptions{SpeedThreshold: 0.5, MinDuration: time.Minute},
 	}
 	pipeline := &processor.PipelineProcessor{Ingest: ingestor, Stats: statsProcessor}
 	queueWorker := &worker.Worker{Store: store, Processor: pipeline}
 
-	webServer, err := web.NewServer(store, ingestor, web.StravaConfig{
+	webServer, err := web.NewServer(store, ingestor, overpassClient, web.StravaConfig{
 		ClientID:     cfg.StravaClientID,
 		ClientSecret: cfg.StravaClientSecret,
 		AuthBaseURL:  cfg.StravaAuthBaseURL,
@@ -77,6 +86,7 @@ func main() {
 	mux.HandleFunc("/profile", webServer.Profile)
 	mux.HandleFunc("/profile/", webServer.Profile)
 	mux.HandleFunc("/profile/settings", webServer.Settings)
+	mux.HandleFunc("/activity/", webServer.DownloadActivity)
 	mux.HandleFunc("/admin", webServer.Admin)
 	mux.HandleFunc("/admin/", webServer.Admin)
 	mux.Handle("/webhook", &webhook.Handler{

@@ -23,6 +23,8 @@ type Activity struct {
 	Name        string
 	StartTime   time.Time
 	Description string
+	Distance    float64
+	MovingTime  int
 }
 
 type WebhookEvent struct {
@@ -80,6 +82,8 @@ func (s *Store) InitSchema(ctx context.Context) error {
 	migrations := []string{
 		`ALTER TABLE strava_tokens ADD COLUMN athlete_id INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE strava_tokens ADD COLUMN athlete_name TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE activities ADD COLUMN distance REAL NOT NULL DEFAULT 0`,
+		`ALTER TABLE activities ADD COLUMN moving_time INTEGER NOT NULL DEFAULT 0`,
 	}
 	for _, m := range migrations {
 		_, _ = s.db.ExecContext(ctx, m) // ignore errors (column already exists)
@@ -93,6 +97,8 @@ CREATE TABLE IF NOT EXISTS activities (
 	name TEXT NOT NULL,
 	start_time INTEGER NOT NULL,
 	description TEXT NOT NULL,
+	distance REAL NOT NULL DEFAULT 0,
+	moving_time INTEGER NOT NULL DEFAULT 0,
 	updated_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS activity_points (
@@ -189,26 +195,28 @@ func (s *Store) upsertActivityWithPoints(ctx context.Context, activity Activity,
 	var res sql.Result
 	if allowUpsert && activity.ID != 0 {
 		res, err = tx.ExecContext(ctx, `
-INSERT INTO activities (id, user_id, type, name, start_time, description, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO activities (id, user_id, type, name, start_time, description, distance, moving_time, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
 	user_id = excluded.user_id,
 	type = excluded.type,
 	name = excluded.name,
 	start_time = excluded.start_time,
 	description = excluded.description,
+	distance = excluded.distance,
+	moving_time = excluded.moving_time,
 	updated_at = excluded.updated_at
-`, activity.ID, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, time.Now().Unix())
+`, activity.ID, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, time.Now().Unix())
 	} else if activity.ID != 0 {
 		res, err = tx.ExecContext(ctx, `
-INSERT INTO activities (id, user_id, type, name, start_time, description, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-`, activity.ID, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, time.Now().Unix())
+INSERT INTO activities (id, user_id, type, name, start_time, description, distance, moving_time, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, activity.ID, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, time.Now().Unix())
 	} else {
 		res, err = tx.ExecContext(ctx, `
-INSERT INTO activities (user_id, type, name, start_time, description, updated_at)
-VALUES (?, ?, ?, ?, ?, ?)
-`, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, time.Now().Unix())
+INSERT INTO activities (user_id, type, name, start_time, description, distance, moving_time, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+`, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, time.Now().Unix())
 	}
 	if err != nil {
 		return 0, err
@@ -600,6 +608,8 @@ SELECT a.id,
 	a.name,
 	a.start_time,
 	a.description,
+	a.distance,
+	a.moving_time,
 	s.stop_count,
 	s.stop_total_seconds,
 	s.traffic_light_stop_count
@@ -628,6 +638,8 @@ LIMIT ?
 			&item.Name,
 			&startTime,
 			&item.Description,
+			&item.Distance,
+			&item.MovingTime,
 			&stopCount,
 			&stopTotalSeconds,
 			&trafficLightStopCount,
@@ -673,4 +685,28 @@ WHERE activity_id = ?
 		return stats.StopStats{}, err
 	}
 	return result, nil
+}
+
+func (s *Store) GetActivity(ctx context.Context, activityID int64) (Activity, error) {
+	row := s.db.QueryRowContext(ctx, `
+SELECT id, user_id, type, name, start_time, description, distance, moving_time
+FROM activities
+WHERE id = ?
+`, activityID)
+	var activity Activity
+	var startTime int64
+	if err := row.Scan(
+		&activity.ID,
+		&activity.UserID,
+		&activity.Type,
+		&activity.Name,
+		&startTime,
+		&activity.Description,
+		&activity.Distance,
+		&activity.MovingTime,
+	); err != nil {
+		return Activity{}, err
+	}
+	activity.StartTime = time.Unix(startTime, 0)
+	return activity, nil
 }

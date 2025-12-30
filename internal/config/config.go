@@ -22,6 +22,9 @@ type Config struct {
 	StravaVerifyToken    string
 	StravaWebhookSecret  string
 	MapsAPIKey           string
+	OverpassURL          string
+	OverpassTimeoutSec   int
+	OverpassCacheHours   int
 	WorkerPollIntervalMS int
 }
 
@@ -51,10 +54,21 @@ func Load(path string) (Config, error) {
 	cfg.StravaVerifyToken = os.Getenv("STRAVA_VERIFY_TOKEN")
 	cfg.StravaWebhookSecret = os.Getenv("STRAVA_WEBHOOK_SECRET")
 	cfg.MapsAPIKey = os.Getenv("MAPS_API_KEY")
+	cfg.OverpassURL = os.Getenv("OVERPASS_URL")
 
 	if v := os.Getenv("WORKER_POLL_INTERVAL_MS"); v != "" {
 		if err := parseInt(&cfg.WorkerPollIntervalMS, v); err != nil {
 			return Config{}, fmt.Errorf("WORKER_POLL_INTERVAL_MS: %w", err)
+		}
+	}
+	if v := os.Getenv("OVERPASS_TIMEOUT_SECONDS"); v != "" {
+		if err := parseInt(&cfg.OverpassTimeoutSec, v); err != nil {
+			return Config{}, fmt.Errorf("OVERPASS_TIMEOUT_SECONDS: %w", err)
+		}
+	}
+	if v := os.Getenv("OVERPASS_CACHE_HOURS"); v != "" {
+		if err := parseInt(&cfg.OverpassCacheHours, v); err != nil {
+			return Config{}, fmt.Errorf("OVERPASS_CACHE_HOURS: %w", err)
 		}
 	}
 	if v := os.Getenv("STRAVA_ACCESS_TOKEN_EXPIRES_AT"); v != "" {

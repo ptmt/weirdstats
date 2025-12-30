@@ -24,23 +24,112 @@
       .activity-meta {
         display: flex;
         flex-wrap: wrap;
-        gap: 8px;
+        align-items: center;
+        gap: 6px;
         font-size: 13px;
         color: var(--muted);
       }
-      .stat-row {
+      .activity-meta .sep {
+        color: var(--border, #ddd);
+      }
+      .activity-stats {
         display: flex;
         flex-wrap: wrap;
-        gap: 8px;
-        font-size: 13px;
-        color: var(--muted);
+        gap: 6px;
       }
-      .tag {
+      .stat-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
         padding: 4px 10px;
         border-radius: 999px;
+        font-size: 13px;
+        font-weight: 500;
+      }
+      .stat-tag.primary {
+        background: var(--accent, #f25c3d);
+        color: #fff;
+      }
+      .stat-tag.secondary {
         background: rgba(242, 92, 61, 0.15);
         color: var(--accent-dark);
-        font-weight: 600;
+      }
+      .activity-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .activity-header > div:first-child {
+        flex: 1;
+        min-width: 0;
+      }
+      .activity-menu {
+        position: relative;
+      }
+      .activity-menu-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border: none;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        transition: background 0.15s, color 0.15s;
+      }
+      .activity-menu-btn:hover {
+        background: var(--bg-hover, #f5f5f5);
+        color: var(--text, #333);
+      }
+      .activity-menu-btn svg {
+        width: 18px;
+        height: 18px;
+      }
+      .activity-dropdown {
+        display: none;
+        position: absolute;
+        top: 100%;
+        right: 0;
+        margin-top: 4px;
+        min-width: 140px;
+        background: var(--bg, #fff);
+        border: 1px solid var(--border, #e5e5e5);
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        z-index: 10;
+        overflow: hidden;
+      }
+      .activity-menu.open .activity-dropdown {
+        display: block;
+      }
+      .activity-dropdown button,
+      .activity-dropdown .dropdown-link {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        padding: 10px 12px;
+        border: none;
+        background: transparent;
+        color: var(--text, #333);
+        font-size: 13px;
+        text-align: left;
+        cursor: pointer;
+        transition: background 0.15s;
+        text-decoration: none;
+      }
+      .activity-dropdown button:hover,
+      .activity-dropdown .dropdown-link:hover {
+        background: var(--bg-hover, #f5f5f5);
+      }
+      .activity-dropdown button svg,
+      .activity-dropdown .dropdown-link svg {
+        width: 16px;
+        height: 16px;
+        color: var(--muted);
       }
     </style>
     {{if .Message}}
@@ -56,23 +145,67 @@
     <section class="stats-grid">
       {{range .Activities}}
         <article class="card activity-card">
-          <div>
-            <strong>{{.Name}}</strong>
-            <div class="activity-meta">
-              <span>{{.Type}}</span>
-              <span>{{.StartTime}}</span>
+          <div class="activity-header">
+            <div>
+              <strong>{{.Name}}</strong>
+              <div class="activity-meta">
+                <span>{{.Type}}</span>
+                <span class="sep">/</span>
+                <span>{{.StartTime}}</span>
+              </div>
+            </div>
+            <div class="activity-menu">
+              <button type="button" class="activity-menu-btn" onclick="this.parentElement.classList.toggle('open')" title="Actions">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="12" cy="5" r="2"/>
+                  <circle cx="12" cy="12" r="2"/>
+                  <circle cx="12" cy="19" r="2"/>
+                </svg>
+              </button>
+              <div class="activity-dropdown">
+                <a href="/activity/{{.ID}}/download" class="dropdown-link">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                  Download
+                </a>
+                <button type="button">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
+                    <path d="M21 3v5h-5"/>
+                  </svg>
+                  Refresh
+                </button>
+                <button type="button">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="18" cy="5" r="3"/>
+                    <circle cx="6" cy="12" r="3"/>
+                    <circle cx="18" cy="19" r="3"/>
+                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                  </svg>
+                  Share
+                </button>
+                <button type="button">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                  </svg>
+                  Report
+                </button>
+              </div>
             </div>
           </div>
-          <div class="muted">{{.Description}}</div>
-          {{if .HasStats}}
-            <div class="stat-row">
-              <span class="tag">{{.StopCount}} stops</span>
-              <span class="tag">{{.StopTotal}} paused</span>
-              <span class="tag">{{.LightStops}} light stops</span>
-            </div>
-          {{else}}
-            <div class="muted">Stats not processed yet.</div>
-          {{end}}
+          {{if .Description}}<div class="muted">{{.Description}}</div>{{end}}
+          <div class="activity-stats">
+            {{if .Distance}}<span class="stat-tag primary">{{.Distance}}</span>{{end}}
+            {{if .Duration}}<span class="stat-tag primary">{{.Duration}}</span>{{end}}
+            {{if .StopCount}}<span class="stat-tag secondary">{{.StopCount}} stops ({{.StopTotal}})</span>{{end}}
+            {{if .LightStops}}<span class="stat-tag secondary">{{.LightStops}} at lights</span>{{end}}
+          </div>
         </article>
       {{end}}
     </section>
@@ -89,4 +222,13 @@
   {{end}}
 
   <div class="footer">Tip: the worker runs in the background and fills in stats after ingest.</div>
+  <script>
+    document.addEventListener('click', function(e) {
+      document.querySelectorAll('.activity-menu.open').forEach(function(menu) {
+        if (!menu.contains(e.target)) {
+          menu.classList.remove('open');
+        }
+      });
+    });
+  </script>
 {{end}}

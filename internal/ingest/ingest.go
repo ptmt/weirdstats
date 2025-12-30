@@ -67,6 +67,8 @@ func (i *Ingestor) fetchAndUpsert(ctx context.Context, activityID int64) error {
 		Name:        activity.Name,
 		StartTime:   activity.StartDate,
 		Description: activity.Description,
+		Distance:    activity.Distance,
+		MovingTime:  activity.MovingTime,
 	}, points)
 	return err
 }

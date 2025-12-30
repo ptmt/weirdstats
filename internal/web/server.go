@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"weirdstats/internal/ingest"
+	"weirdstats/internal/maps"
 	"weirdstats/internal/storage"
 	"weirdstats/internal/strava"
 )
@@ -23,6 +25,7 @@ var templatesFS embed.FS
 type Server struct {
 	store     *storage.Store
 	ingestor  *ingest.Ingestor
+	overpass  *maps.OverpassClient
 	templates map[string]*template.Template
 	strava    StravaConfig
 }
@@ -33,6 +36,8 @@ type ActivityView struct {
 	Type        string
 	StartTime   string
 	Description string
+	Distance    string
+	Duration    string
 	HasStats    bool
 	StopCount   int
 	StopTotal   string
@@ -85,7 +90,7 @@ type StravaConfig struct {
 	RedirectURL  string
 }
 
-func NewServer(store *storage.Store, ingestor *ingest.Ingestor, stravaConfig StravaConfig) (*Server, error) {
+func NewServer(store *storage.Store, ingestor *ingest.Ingestor, overpass *maps.OverpassClient, stravaConfig StravaConfig) (*Server, error) {
 	funcs := template.FuncMap{
 		"boolLabel": func(v bool) string {
 			if v {
@@ -129,6 +134,7 @@ func NewServer(store *storage.Store, ingestor *ingest.Ingestor, stravaConfig Str
 	return &Server{
 		store:    store,
 		ingestor: ingestor,
+		overpass: overpass,
 		strava:   stravaConfig,
 		templates: map[string]*template.Template{
 			"landing":  landing,
@@ -217,6 +223,8 @@ func (s *Server) Profile(w http.ResponseWriter, r *http.Request) {
 			Type:        activity.Type,
 			StartTime:   activity.StartTime.Format("Jan 2, 2006 15:04"),
 			Description: activity.Description,
+			Distance:    formatDistance(activity.Distance),
+			Duration:    formatDuration(activity.MovingTime),
 			HasStats:    activity.HasStats,
 			StopCount:   activity.StopCount,
 			StopTotal:   formatDuration(activity.StopTotalSeconds),
@@ -367,6 +375,27 @@ func (s *Server) handleAdminPost(w http.ResponseWriter, r *http.Request) {
 			}
 		}()
 		http.Redirect(w, r, "/admin/?msg=fetching+last+year+started", http.StatusFound)
+	case "test-overpass":
+		if s.overpass == nil {
+			http.Redirect(w, r, "/admin/?msg=overpass+client+not+configured", http.StatusFound)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+		defer cancel()
+		// Midtown Manhattan test bbox: dense traffic lights and cafés.
+		bbox := maps.BBox{
+			South: 40.7568,
+			West:  -73.9900,
+			North: 40.7612,
+			East:  -73.9820,
+		}
+		pois, err := s.overpass.FetchPOIs(ctx, bbox, true, true)
+		if err != nil {
+			http.Redirect(w, r, "/admin/?msg="+url.QueryEscape("overpass failed: "+err.Error()), http.StatusFound)
+			return
+		}
+		msg := fmt.Sprintf("overpass ok: %d features in test bbox", len(pois))
+		http.Redirect(w, r, "/admin/?msg="+url.QueryEscape(msg), http.StatusFound)
 	default:
 		http.Redirect(w, r, "/admin/?msg=unknown+action", http.StatusFound)
 	}
@@ -530,6 +559,84 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type ActivityDownload struct {
+	ID          int64            `json:"id"`
+	Type        string           `json:"type"`
+	Name        string           `json:"name"`
+	StartTime   time.Time        `json:"start_time"`
+	Description string           `json:"description"`
+	Distance    float64          `json:"distance"`
+	MovingTime  int              `json:"moving_time"`
+	Points      []PointDownload  `json:"points"`
+}
+
+type PointDownload struct {
+	Lat   float64   `json:"lat"`
+	Lon   float64   `json:"lon"`
+	Time  time.Time `json:"time"`
+	Speed float64   `json:"speed"`
+}
+
+func (s *Server) DownloadActivity(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAuth(w, r) {
+		return
+	}
+
+	idStr := strings.TrimPrefix(r.URL.Path, "/activity/")
+	idStr = strings.TrimSuffix(idStr, "/download")
+	activityID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || activityID == 0 {
+		http.Error(w, "invalid activity id", http.StatusBadRequest)
+		return
+	}
+
+	activity, err := s.store.GetActivity(r.Context(), activityID)
+	if err != nil {
+		http.Error(w, "activity not found", http.StatusNotFound)
+		return
+	}
+
+	// Verify user owns this activity
+	if activity.UserID != 1 {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	points, err := s.store.LoadActivityPoints(r.Context(), activityID)
+	if err != nil {
+		http.Error(w, "failed to load points", http.StatusInternalServerError)
+		return
+	}
+
+	download := ActivityDownload{
+		ID:          activity.ID,
+		Type:        activity.Type,
+		Name:        activity.Name,
+		StartTime:   activity.StartTime,
+		Description: activity.Description,
+		Distance:    activity.Distance,
+		MovingTime:  activity.MovingTime,
+		Points:      make([]PointDownload, len(points)),
+	}
+	for i, p := range points {
+		download.Points[i] = PointDownload{
+			Lat:   p.Lat,
+			Lon:   p.Lon,
+			Time:  p.Time,
+			Speed: p.Speed,
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="activity_%d.json"`, activityID))
+
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(download); err != nil {
+		log.Printf("failed to encode activity download: %v", err)
+	}
+}
+
 func formatDuration(totalSeconds int) string {
 	if totalSeconds <= 0 {
 		return "0m"
@@ -545,4 +652,15 @@ func formatDuration(totalSeconds int) string {
 		return fmt.Sprintf("%dm %ds", minutes, seconds)
 	}
 	return fmt.Sprintf("%ds", seconds)
+}
+
+func formatDistance(meters float64) string {
+	if meters <= 0 {
+		return ""
+	}
+	km := meters / 1000
+	if km >= 10 {
+		return fmt.Sprintf("%.1f km", km)
+	}
+	return fmt.Sprintf("%.2f km", km)
 }
