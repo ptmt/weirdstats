@@ -192,6 +192,52 @@ func TestStopStatsProcessor_WithSampleActivityFixture(t *testing.T) {
 	}
 }
 
+func TestStopStatsProcessor_WithRecordedOverpassMock(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "fixture.db")
+	store, err := storage.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	if err := store.InitSchema(context.Background()); err != nil {
+		t.Fatalf("init schema: %v", err)
+	}
+
+	activity, points := loadActivityFixture(t, filepath.Join(repoRoot(t), "testdata", "activities", "ride_sample.json"))
+	activityID, err := store.InsertActivity(context.Background(), activity, points)
+	if err != nil {
+		t.Fatalf("insert activity: %v", err)
+	}
+
+	mock, err := maps.LoadRecordingMock(filepath.Join(repoRoot(t), "testdata", "overpass", "ride_sample.json"))
+	if err != nil {
+		t.Fatalf("load recording mock: %v", err)
+	}
+
+	processor := &StopStatsProcessor{
+		Store:   store,
+		MapAPI:  mock,
+		Options: gps.StopOptions{SpeedThreshold: 0.5, MinDuration: 30 * time.Second},
+	}
+
+	if err := processor.Process(context.Background(), activityID); err != nil {
+		t.Fatalf("process fixture with mock: %v", err)
+	}
+
+	got, err := store.GetActivityStats(context.Background(), activityID)
+	if err != nil {
+		t.Fatalf("get stats: %v", err)
+	}
+
+	// According to the recording, two of five stops have nearby traffic lights.
+	if got.TrafficLightStopCount != 2 {
+		t.Fatalf("expected 2 traffic light stops from recording, got %d", got.TrafficLightStopCount)
+	}
+	if got.StopCount != 5 {
+		t.Fatalf("expected 5 stops, got %d", got.StopCount)
+	}
+}
+
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	_, currentFile, _, ok := runtime.Caller(0)

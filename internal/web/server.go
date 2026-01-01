@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"weirdstats/internal/gps"
 	"weirdstats/internal/ingest"
 	"weirdstats/internal/maps"
 	"weirdstats/internal/storage"
@@ -22,10 +23,15 @@ import (
 //go:embed templates/*.html
 var templatesFS embed.FS
 
+//go:embed static/*
+var StaticFS embed.FS
+
 type Server struct {
 	store     *storage.Store
 	ingestor  *ingest.Ingestor
+	mapAPI    maps.API
 	overpass  *maps.OverpassClient
+	stopOpts  gps.StopOptions
 	templates map[string]*template.Template
 	strava    StravaConfig
 }
@@ -42,6 +48,22 @@ type ActivityView struct {
 	StopCount   int
 	StopTotal   string
 	LightStops  int
+}
+
+type StopView struct {
+	Lat             float64 `json:"lat"`
+	Lon             float64 `json:"lon"`
+	Duration        string  `json:"duration"`
+	DurationSeconds int     `json:"duration_seconds"`
+	HasTrafficLight bool    `json:"has_traffic_light"`
+}
+
+type ActivityDetailData struct {
+	PageData
+	Activity        ActivityView
+	Stops           []StopView
+	RoutePointsJSON template.JS
+	StopsJSON       template.JS
 }
 
 type StravaInfo struct {
@@ -90,7 +112,7 @@ type StravaConfig struct {
 	RedirectURL  string
 }
 
-func NewServer(store *storage.Store, ingestor *ingest.Ingestor, overpass *maps.OverpassClient, stravaConfig StravaConfig) (*Server, error) {
+func NewServer(store *storage.Store, ingestor *ingest.Ingestor, mapAPI maps.API, overpass *maps.OverpassClient, stopOpts gps.StopOptions, stravaConfig StravaConfig) (*Server, error) {
 	funcs := template.FuncMap{
 		"boolLabel": func(v bool) string {
 			if v {
@@ -131,16 +153,27 @@ func NewServer(store *storage.Store, ingestor *ingest.Ingestor, overpass *maps.O
 	if err != nil {
 		return nil, err
 	}
+	activity, err := template.New("base").Funcs(funcs).ParseFS(
+		templatesFS,
+		"templates/base.html",
+		"templates/activity.html",
+	)
+	if err != nil {
+		return nil, err
+	}
 	return &Server{
 		store:    store,
 		ingestor: ingestor,
+		mapAPI:   mapAPI,
 		overpass: overpass,
+		stopOpts: stopOpts,
 		strava:   stravaConfig,
 		templates: map[string]*template.Template{
 			"landing":  landing,
 			"profile":  profile,
 			"settings": settings,
 			"admin":    admin,
+			"activity": activity,
 		},
 	}, nil
 }
@@ -244,6 +277,139 @@ func (s *Server) Profile(w http.ResponseWriter, r *http.Request) {
 	if err := s.templates["profile"].ExecuteTemplate(w, "base", data); err != nil {
 		http.Error(w, "template render failed", http.StatusInternalServerError)
 	}
+}
+
+func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAuth(w, r) {
+		return
+	}
+	path := strings.TrimPrefix(r.URL.Path, "/activity/")
+	path = strings.TrimSuffix(path, "/")
+	if path == "" {
+		http.NotFound(w, r)
+		return
+	}
+	segments := strings.Split(path, "/")
+	idStr := segments[0]
+	activityID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || activityID == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	if len(segments) > 1 {
+		http.NotFound(w, r)
+		return
+	}
+
+	activity, err := s.store.GetActivity(r.Context(), activityID)
+	if err != nil {
+		http.Error(w, "activity not found", http.StatusNotFound)
+		return
+	}
+	if activity.UserID != 1 {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	points, err := s.store.LoadActivityPoints(r.Context(), activityID)
+	if err != nil {
+		http.Error(w, "failed to load points", http.StatusInternalServerError)
+		return
+	}
+	stops := gps.DetectStops(points, s.stopOpts)
+
+	var stopViews []StopView
+	for _, stop := range stops {
+		hasLight := false
+		if s.mapAPI != nil {
+			features, err := s.mapAPI.NearbyFeatures(stop.Lat, stop.Lon)
+			if err != nil {
+				log.Printf("map lookup failed: %v", err)
+			} else {
+				for _, f := range features {
+					if f.Type == maps.FeatureTrafficLight {
+						hasLight = true
+						break
+					}
+				}
+			}
+		}
+		stopViews = append(stopViews, StopView{
+			Lat:             stop.Lat,
+			Lon:             stop.Lon,
+			Duration:        formatDuration(int(stop.Duration.Seconds())),
+			DurationSeconds: int(stop.Duration.Seconds()),
+			HasTrafficLight: hasLight,
+		})
+	}
+
+	type mapPoint struct {
+		Lat float64 `json:"lat"`
+		Lon float64 `json:"lon"`
+	}
+	var routePoints []mapPoint
+	for _, p := range points {
+		routePoints = append(routePoints, mapPoint{Lat: p.Lat, Lon: p.Lon})
+	}
+
+	pointsJSON, _ := json.Marshal(routePoints)
+	stopsJSON, _ := json.Marshal(stopViews)
+
+	view := ActivityView{
+		ID:         activity.ID,
+		Name:       activity.Name,
+		Type:       activity.Type,
+		StartTime:  activity.StartTime.Format("Jan 2, 2006 15:04"),
+		Distance:   formatDistance(activity.Distance),
+		Duration:   formatDuration(activity.MovingTime),
+		HasStats:   len(stopViews) > 0,
+		StopCount:  len(stopViews),
+		StopTotal:  formatDuration(totalStopSeconds(stopViews)),
+		LightStops: countLightStops(stopViews),
+	}
+
+	data := ActivityDetailData{
+		PageData: PageData{
+			Title:   activity.Name,
+			Page:    "activity",
+			Message: r.URL.Query().Get("msg"),
+			Strava:  s.getStravaInfo(r.Context()),
+		},
+		Activity:        view,
+		Stops:           stopViews,
+		RoutePointsJSON: template.JS(pointsJSON),
+		StopsJSON:       template.JS(stopsJSON),
+	}
+
+	if err := s.templates["activity"].ExecuteTemplate(w, "base", data); err != nil {
+		http.Error(w, "template render failed", http.StatusInternalServerError)
+	}
+}
+
+// Activity dispatches to either detail view or download based on path.
+func (s *Server) Activity(w http.ResponseWriter, r *http.Request) {
+	if strings.HasSuffix(r.URL.Path, "/download") {
+		s.DownloadActivity(w, r)
+		return
+	}
+	s.ActivityDetail(w, r)
+}
+
+func totalStopSeconds(stops []StopView) int {
+	total := 0
+	for _, s := range stops {
+		total += s.DurationSeconds
+	}
+	return total
+}
+
+func countLightStops(stops []StopView) int {
+	total := 0
+	for _, s := range stops {
+		if s.HasTrafficLight {
+			total++
+		}
+	}
+	return total
 }
 
 func (s *Server) Settings(w http.ResponseWriter, r *http.Request) {
@@ -560,14 +726,14 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 }
 
 type ActivityDownload struct {
-	ID          int64            `json:"id"`
-	Type        string           `json:"type"`
-	Name        string           `json:"name"`
-	StartTime   time.Time        `json:"start_time"`
-	Description string           `json:"description"`
-	Distance    float64          `json:"distance"`
-	MovingTime  int              `json:"moving_time"`
-	Points      []PointDownload  `json:"points"`
+	ID          int64           `json:"id"`
+	Type        string          `json:"type"`
+	Name        string          `json:"name"`
+	StartTime   time.Time       `json:"start_time"`
+	Description string          `json:"description"`
+	Distance    float64         `json:"distance"`
+	MovingTime  int             `json:"moving_time"`
+	Points      []PointDownload `json:"points"`
 }
 
 type PointDownload struct {

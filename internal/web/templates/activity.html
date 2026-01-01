@@ -1,0 +1,147 @@
+{{define "content"}}
+  <section class="hero-copy">
+    <style>
+      .hero-copy {
+        display: grid;
+        gap: 12px;
+        margin-bottom: 24px;
+      }
+      .badge-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        font-weight: 600;
+        font-size: 13px;
+      }
+      .pill.primary {
+        background: var(--accent, #f25c3d);
+        color: #fff;
+      }
+      .pill.secondary {
+        background: rgba(242, 92, 61, 0.12);
+        color: var(--accent-dark, #b5412b);
+      }
+      #map {
+        width: 100%;
+        height: 360px;
+        border-radius: 16px;
+        border: 1px solid var(--border, #e5e5e5);
+        overflow: hidden;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 20px;
+      }
+      .stop-list {
+        display: grid;
+        gap: 10px;
+      }
+      .stop-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: var(--bg, #fff);
+        border: 1px solid var(--border, #e5e5e5);
+        font-size: 14px;
+      }
+      .stop-row .label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .light-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #ff3b30;
+        box-shadow: 0 0 0 4px rgba(255, 59, 48, 0.15);
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .map-note {
+        font-size: 13px;
+        color: var(--muted);
+        margin-top: 6px;
+      }
+    </style>
+    <h2 class="section-title">{{.Activity.Name}}</h2>
+    <div class="muted">{{.Activity.Type}} · {{.Activity.StartTime}}</div>
+    <div class="badge-row">
+      {{if .Activity.Distance}}<span class="pill primary">{{.Activity.Distance}}</span>{{end}}
+      {{if .Activity.Duration}}<span class="pill primary">{{.Activity.Duration}}</span>{{end}}
+      {{if .Activity.StopCount}}<span class="pill secondary">{{.Activity.StopCount}} stops · {{.Activity.StopTotal}}</span>{{end}}
+      {{if .Activity.LightStops}}<span class="pill secondary">{{.Activity.LightStops}} at lights</span>{{end}}
+    </div>
+  </section>
+
+  <section class="grid">
+    <article class="card">
+      <h3>Route</h3>
+      <div id="map"></div>
+      <div class="map-note">Red markers show stops tagged as traffic lights; orange markers are other stops.</div>
+    </article>
+    <article class="card">
+      <h3>Stops</h3>
+      {{if .Stops}}
+        <div class="stop-list">
+          {{range .Stops}}
+            <div class="stop-row">
+              <div class="label">
+                {{if .HasTrafficLight}}<span class="light-dot"></span>{{else}}<span class="light-dot" style="background:#f5a524; box-shadow: 0 0 0 4px rgba(245,165,36,0.15);"></span>{{end}}
+                <div>
+                  <div>{{.Duration}}</div>
+                  <div class="muted">{{printf \"%.5f\" .Lat}}, {{printf \"%.5f\" .Lon}}</div>
+                </div>
+              </div>
+              {{if .HasTrafficLight}}<strong class="muted">Light</strong>{{else}}<span class="muted">Stop</span>{{end}}
+            </div>
+          {{end}}
+        </div>
+      {{else}}
+        <p class="muted">No stops detected for this activity.</p>
+      {{end}}
+    </article>
+  </section>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-sA+q5ms5Fdw1IjfZsaF3R07VPXkMOL3h5Ede1qE0pC4=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-CgG5QtZ6kVD3ESyqCCptYECQ0t9z8LrPvxu1r3m00+8=" crossorigin=""></script>
+  <script>
+    (function() {
+      const points = {{.RoutePointsJSON}};
+      const stops = {{.StopsJSON}};
+      if (!points || points.length === 0) return;
+
+      const map = L.map('map', { zoomControl: true, scrollWheelZoom: false });
+      const coords = points.map(p => [p.lat, p.lon]);
+      const polyline = L.polyline(coords, { color: '#f25c3d', weight: 4, opacity: 0.9 }).addTo(map);
+      map.fitBounds(polyline.getBounds(), { padding: [12, 12] });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+
+      stops.forEach(stop => {
+        const color = stop.has_traffic_light ? '#ff3b30' : '#f5a524';
+        const marker = L.circleMarker([stop.lat, stop.lon], {
+          radius: 7,
+          color,
+          fillColor: color,
+          fillOpacity: 0.85,
+          weight: 2
+        }).addTo(map);
+        marker.bindPopup(`${stop.duration}${stop.has_traffic_light ? ' · traffic light' : ''}`);
+      });
+    })();
+  </script>
+{{end}}

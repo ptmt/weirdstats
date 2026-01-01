@@ -1,0 +1,63 @@
+{
+  "overpass_url": "https://overpass-api.de/api/interpreter",
+  "speed_threshold": 0.5,
+  "min_duration_seconds": 30,
+  "stops": [
+    {
+      "lat": 48.161334,
+      "lon": 11.511227,
+      "duration_seconds": 43,
+      "nearby_features": [
+        {
+          "Type": "traffic_light",
+          "Name": ""
+        },
+        {
+          "Type": "traffic_light",
+          "Name": ""
+        },
+        {
+          "Type": "traffic_light",
+          "Name": ""
+        }
+      ]
+    },
+    {
+      "lat": 48.163602,
+      "lon": 11.528847,
+      "duration_seconds": 34,
+      "nearby_features": null
+    },
+    {
+      "lat": 48.161554,
+      "lon": 11.529235,
+      "duration_seconds": 3043,
+      "nearby_features": null
+    },
+    {
+      "lat": 48.161404,
+      "lon": 11.511527,
+      "duration_seconds": 160,
+      "nearby_features": [
+        {
+          "Type": "traffic_light",
+          "Name": ""
+        },
+        {
+          "Type": "traffic_light",
+          "Name": ""
+        },
+        {
+          "Type": "traffic_light",
+          "Name": ""
+        }
+      ]
+    },
+    {
+      "lat": 48.14146,
+      "lon": 11.445621,
+      "duration_seconds": 36,
+      "nearby_features": null
+    }
+  ]
+}

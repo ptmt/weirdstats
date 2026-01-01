@@ -61,16 +61,17 @@ func main() {
 		CacheTTL:   time.Duration(cfg.OverpassCacheHours) * time.Hour,
 	}
 
+	stopOpts := gps.StopOptions{SpeedThreshold: 0.5, MinDuration: time.Minute}
 	var mapAPI maps.API = overpassClient
 	statsProcessor := &processor.StopStatsProcessor{
 		Store:   store,
 		MapAPI:  mapAPI,
-		Options: gps.StopOptions{SpeedThreshold: 0.5, MinDuration: time.Minute},
+		Options: stopOpts,
 	}
 	pipeline := &processor.PipelineProcessor{Ingest: ingestor, Stats: statsProcessor}
 	queueWorker := &worker.Worker{Store: store, Processor: pipeline}
 
-	webServer, err := web.NewServer(store, ingestor, overpassClient, web.StravaConfig{
+	webServer, err := web.NewServer(store, ingestor, mapAPI, overpassClient, stopOpts, web.StravaConfig{
 		ClientID:     cfg.StravaClientID,
 		ClientSecret: cfg.StravaClientSecret,
 		AuthBaseURL:  cfg.StravaAuthBaseURL,
@@ -81,13 +82,14 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
+	mux.Handle("/static/", http.FileServerFS(web.StaticFS))
 	mux.HandleFunc("/", webServer.Landing)
 	mux.HandleFunc("/connect/strava", webServer.ConnectStrava)
 	mux.HandleFunc("/connect/strava/callback", webServer.StravaCallback)
 	mux.HandleFunc("/profile", webServer.Profile)
 	mux.HandleFunc("/profile/", webServer.Profile)
 	mux.HandleFunc("/profile/settings", webServer.Settings)
-	mux.HandleFunc("/activity/", webServer.DownloadActivity)
+	mux.HandleFunc("/activity/", webServer.Activity)
 	mux.HandleFunc("/admin", webServer.Admin)
 	mux.HandleFunc("/admin/", webServer.Admin)
 	mux.Handle("/webhook", &webhook.Handler{
