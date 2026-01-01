@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"io/fs"
 	"fmt"
 	"html/template"
 	"log"
@@ -22,6 +23,8 @@ import (
 
 //go:embed templates/*.html
 var templatesFS embed.FS
+//go:embed static/**
+var staticFS embed.FS
 
 //go:embed static/*
 var StaticFS embed.FS
@@ -37,25 +40,29 @@ type Server struct {
 }
 
 type ActivityView struct {
-	ID          int64
-	Name        string
-	Type        string
-	StartTime   string
-	Description string
-	Distance    string
-	Duration    string
-	HasStats    bool
-	StopCount   int
-	StopTotal   string
-	LightStops  int
+	ID             int64
+	Name           string
+	Type           string
+	StartTime      string
+	Description    string
+	Distance       string
+	Duration       string
+	HasStats       bool
+	StopCount      int
+	StopTotal      string
+	LightStops     int
+	RoadCrossings  int
 }
 
 type StopView struct {
 	Lat             float64 `json:"lat"`
 	Lon             float64 `json:"lon"`
+	StartSeconds    float64 `json:"start_seconds"`
 	Duration        string  `json:"duration"`
 	DurationSeconds int     `json:"duration_seconds"`
 	HasTrafficLight bool    `json:"has_traffic_light"`
+	HasRoadCrossing bool    `json:"has_road_crossing"`
+	CrossingRoad    string  `json:"crossing_road,omitempty"`
 }
 
 type ActivityDetailData struct {
@@ -64,6 +71,8 @@ type ActivityDetailData struct {
 	Stops           []StopView
 	RoutePointsJSON template.JS
 	StopsJSON       template.JS
+	SpeedSeriesJSON template.JS
+	SpeedThreshold  float64
 }
 
 type StravaInfo struct {
@@ -110,6 +119,15 @@ type StravaConfig struct {
 	ClientSecret string
 	AuthBaseURL  string
 	RedirectURL  string
+}
+
+// StaticHandler serves embedded static assets (leaflet, chart.js).
+func StaticHandler() http.Handler {
+	sub, err := fs.Sub(staticFS, "static")
+	if err != nil {
+		panic(err)
+	}
+	return http.FileServer(http.FS(sub))
 }
 
 func NewServer(store *storage.Store, ingestor *ingest.Ingestor, mapAPI maps.API, overpass *maps.OverpassClient, stopOpts gps.StopOptions, stravaConfig StravaConfig) (*Server, error) {
@@ -317,8 +335,13 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	stops := gps.DetectStops(points, s.stopOpts)
 
+	var activityStartTime time.Time
+	if len(points) > 0 {
+		activityStartTime = points[0].Time
+	}
+
 	var stopViews []StopView
-	for _, stop := range stops {
+	for i, stop := range stops {
 		hasLight := false
 		if s.mapAPI != nil {
 			features, err := s.mapAPI.NearbyFeatures(stop.Lat, stop.Lon)
@@ -333,12 +356,35 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+
+		// Check for road crossing (if not at a traffic light)
+		var hasCrossing bool
+		var crossingRoad string
+		if !hasLight && s.overpass != nil {
+			stopEndIdx := gps.FindStopEndIndex(points, stop.StartTime.Sub(activityStartTime).Seconds(), s.stopOpts.SpeedThreshold, 0)
+			if stopEndIdx >= 0 {
+				roads, err := s.overpass.FetchNearbyRoads(r.Context(), stop.Lat, stop.Lon, 30)
+				if err != nil {
+					log.Printf("road fetch failed for stop %d: %v", i, err)
+				} else if len(roads) > 0 {
+					result := gps.DetectRoadCrossing(points, stopEndIdx, roads)
+					if result.Crossed {
+						hasCrossing = true
+						crossingRoad = result.RoadName
+					}
+				}
+			}
+		}
+
 		stopViews = append(stopViews, StopView{
 			Lat:             stop.Lat,
 			Lon:             stop.Lon,
+			StartSeconds:    stop.StartTime.Sub(activityStartTime).Seconds(),
 			Duration:        formatDuration(int(stop.Duration.Seconds())),
 			DurationSeconds: int(stop.Duration.Seconds()),
 			HasTrafficLight: hasLight,
+			HasRoadCrossing: hasCrossing,
+			CrossingRoad:    crossingRoad,
 		})
 	}
 
@@ -353,6 +399,21 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 
 	pointsJSON, _ := json.Marshal(routePoints)
 	stopsJSON, _ := json.Marshal(stopViews)
+	type speedPoint struct {
+		T float64 `json:"t"`
+		S float64 `json:"s"`
+	}
+	var speeds []speedPoint
+	if len(points) > 0 {
+		startTs := points[0].Time
+		for _, p := range points {
+			speeds = append(speeds, speedPoint{
+				T: p.Time.Sub(startTs).Seconds(),
+				S: p.Speed,
+			})
+		}
+	}
+	speedJSON, _ := json.Marshal(speeds)
 
 	view := ActivityView{
 		ID:         activity.ID,
@@ -361,10 +422,11 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 		StartTime:  activity.StartTime.Format("Jan 2, 2006 15:04"),
 		Distance:   formatDistance(activity.Distance),
 		Duration:   formatDuration(activity.MovingTime),
-		HasStats:   len(stopViews) > 0,
-		StopCount:  len(stopViews),
-		StopTotal:  formatDuration(totalStopSeconds(stopViews)),
-		LightStops: countLightStops(stopViews),
+		HasStats:      len(stopViews) > 0,
+		StopCount:     len(stopViews),
+		StopTotal:     formatDuration(totalStopSeconds(stopViews)),
+		LightStops:    countLightStops(stopViews),
+		RoadCrossings: countRoadCrossings(stopViews),
 	}
 
 	data := ActivityDetailData{
@@ -378,6 +440,8 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 		Stops:           stopViews,
 		RoutePointsJSON: template.JS(pointsJSON),
 		StopsJSON:       template.JS(stopsJSON),
+		SpeedSeriesJSON: template.JS(speedJSON),
+		SpeedThreshold:  s.stopOpts.SpeedThreshold,
 	}
 
 	if err := s.templates["activity"].ExecuteTemplate(w, "base", data); err != nil {
@@ -406,6 +470,16 @@ func countLightStops(stops []StopView) int {
 	total := 0
 	for _, s := range stops {
 		if s.HasTrafficLight {
+			total++
+		}
+	}
+	return total
+}
+
+func countRoadCrossings(stops []StopView) int {
+	total := 0
+	for _, s := range stops {
+		if s.HasRoadCrossing {
 			total++
 		}
 	}

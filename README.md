@@ -93,6 +93,10 @@ volumes:
 | `STRAVA_CLIENT_ID` | Strava OAuth client ID | required |
 | `STRAVA_CLIENT_SECRET` | Strava OAuth client secret | required |
 | `STRAVA_REDIRECT_URL` | OAuth callback URL | auto-detected |
+| `STRAVA_BASE_URL` | Strava API base URL | `https://www.strava.com/api/v3` |
+| `STRAVA_AUTH_BASE_URL` | Strava auth base URL | `https://www.strava.com` |
+| `STRAVA_VERIFY_TOKEN` | Webhook verification token | - |
+| `STRAVA_WEBHOOK_SECRET` | Webhook signature secret | - |
 | `OVERPASS_URL` | Overpass API endpoint | public servers |
 | `OVERPASS_TIMEOUT_SECONDS` | Overpass query timeout | `10` |
 | `OVERPASS_CACHE_HOURS` | Cache TTL for map data | `24` |
@@ -125,6 +129,41 @@ go test ./...
 go test -race -coverprofile=coverage.out ./...
 go tool cover -html=coverage.out
 ```
+
+### Live reload with Air
+
+Install and run [Air](https://github.com/air-verse/air) for automatic reloading during development:
+
+```bash
+go install github.com/air-verse/air@latest
+air
+```
+
+If `air` is not in your PATH, you can run it directly:
+
+```bash
+go run github.com/air-verse/air@latest
+```
+
+Or use the full path:
+
+```bash
+$(go env GOPATH)/bin/air
+```
+
+### Validate
+
+```bash
+curl http://localhost:8080/healthz
+```
+
+### Notes
+
+- Without Strava credentials, the server still runs but activity fetching will fail when the worker processes items.
+- Use a SQLite viewer or `sqlite3` to inspect `weirdstats.db` if needed.
+- The server runs a background worker loop to process the queue (see `SPEC.md` for workflow).
+- Webhook verification uses GET `/webhook?hub.challenge=...&hub.verify_token=...`.
+- POST `/webhook` checks `X-Strava-Signature` when `STRAVA_WEBHOOK_SECRET` is set.
 
 ## License
 

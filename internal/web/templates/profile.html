@@ -1,137 +1,5 @@
 {{define "content"}}
   <section class="hero-copy">
-    <style>
-      .hero-copy {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-        margin-bottom: 32px;
-      }
-      .hero-copy h2 {
-        font-family: "Georgia", "Palatino", serif;
-        font-size: clamp(28px, 3.6vw, 40px);
-        margin: 0;
-      }
-      .stats-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-        gap: 18px;
-      }
-      .activity-card {
-        display: grid;
-        gap: 12px;
-      }
-      .activity-meta {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 6px;
-        font-size: 13px;
-        color: var(--muted);
-      }
-      .activity-meta .sep {
-        color: var(--border, #ddd);
-      }
-      .activity-stats {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-      }
-      .stat-tag {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        padding: 4px 10px;
-        border-radius: 999px;
-        font-size: 13px;
-        font-weight: 500;
-      }
-      .stat-tag.primary {
-        background: var(--accent, #f25c3d);
-        color: #fff;
-      }
-      .stat-tag.secondary {
-        background: rgba(242, 92, 61, 0.15);
-        color: var(--accent-dark);
-      }
-      .activity-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        gap: 8px;
-      }
-      .activity-header > div:first-child {
-        flex: 1;
-        min-width: 0;
-      }
-      .activity-menu {
-        position: relative;
-      }
-      .activity-menu-btn {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 28px;
-        height: 28px;
-        border: none;
-        border-radius: 6px;
-        background: transparent;
-        color: var(--muted);
-        cursor: pointer;
-        transition: background 0.15s, color 0.15s;
-      }
-      .activity-menu-btn:hover {
-        background: var(--bg-hover, #f5f5f5);
-        color: var(--text, #333);
-      }
-      .activity-menu-btn svg {
-        width: 18px;
-        height: 18px;
-      }
-      .activity-dropdown {
-        display: none;
-        position: absolute;
-        top: 100%;
-        right: 0;
-        margin-top: 4px;
-        min-width: 140px;
-        background: var(--bg, #fff);
-        border: 1px solid var(--border, #e5e5e5);
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        z-index: 10;
-        overflow: hidden;
-      }
-      .activity-menu.open .activity-dropdown {
-        display: block;
-      }
-      .activity-dropdown button,
-      .activity-dropdown .dropdown-link {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        width: 100%;
-        padding: 10px 12px;
-        border: none;
-        background: transparent;
-        color: var(--text, #333);
-        font-size: 13px;
-        text-align: left;
-        cursor: pointer;
-        transition: background 0.15s;
-        text-decoration: none;
-      }
-      .activity-dropdown button:hover,
-      .activity-dropdown .dropdown-link:hover {
-        background: var(--bg-hover, #f5f5f5);
-      }
-      .activity-dropdown button svg,
-      .activity-dropdown .dropdown-link svg {
-        width: 16px;
-        height: 16px;
-        color: var(--muted);
-      }
-    </style>
     {{if .Message}}
       <div class="card">
         <strong>{{.Message}}</strong>
@@ -147,7 +15,7 @@
         <article class="card activity-card">
           <div class="activity-header">
             <div>
-              <strong>{{.Name}}</strong>
+              <a href="/activity/{{.ID}}" style="text-decoration: none; color: inherit;"><strong>{{.Name}}</strong></a>
               <div class="activity-meta">
                 <span>{{.Type}}</span>
                 <span class="sep">/</span>
@@ -163,13 +31,6 @@
                 </svg>
               </button>
               <div class="activity-dropdown">
-                <a href="/activity/{{.ID}}" class="dropdown-link">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M3 17l6-6 4 4 8-8"/>
-                    <path d="M14 7l7 0 0 7"/>
-                  </svg>
-                  View details
-                </a>
                 <a href="/activity/{{.ID}}/download" class="dropdown-link">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>

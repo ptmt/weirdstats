@@ -10,9 +10,10 @@ type Point struct {
 }
 
 type Stop struct {
-	Lat      float64
-	Lon      float64
-	Duration time.Duration
+	Lat       float64
+	Lon       float64
+	StartTime time.Time
+	Duration  time.Duration
 }
 
 type StopOptions struct {
@@ -44,9 +45,10 @@ func DetectStops(points []Point, opts StopOptions) []Stop {
 			duration := last.Time.Sub(stopStart.Time)
 			if duration >= opts.MinDuration {
 				stops = append(stops, Stop{
-					Lat:      stopStart.Lat,
-					Lon:      stopStart.Lon,
-					Duration: duration,
+					Lat:       stopStart.Lat,
+					Lon:       stopStart.Lon,
+					StartTime: stopStart.Time,
+					Duration:  duration,
 				})
 			}
 			inStop = false
@@ -59,9 +61,10 @@ func DetectStops(points []Point, opts StopOptions) []Stop {
 		duration := last.Time.Sub(stopStart.Time)
 		if duration >= opts.MinDuration {
 			stops = append(stops, Stop{
-				Lat:      stopStart.Lat,
-				Lon:      stopStart.Lon,
-				Duration: duration,
+				Lat:       stopStart.Lat,
+				Lon:       stopStart.Lon,
+				StartTime: stopStart.Time,
+				Duration:  duration,
 			})
 		}
 	}

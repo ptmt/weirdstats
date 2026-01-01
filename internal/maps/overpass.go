@@ -98,6 +98,45 @@ out center;`, strings.Join(queries, "\n"))
 	return pois, nil
 }
 
+// FetchNearbyRoads returns roads within the given radius (meters) of a point.
+// Only fetches roads suitable for crossing detection (excludes footways, paths, etc.)
+func (c *OverpassClient) FetchNearbyRoads(ctx context.Context, lat, lon float64, radiusMeters int) ([]Road, error) {
+	if radiusMeters <= 0 {
+		radiusMeters = 30
+	}
+
+	// Query for ways with highway tag that are actual roads (not footways/paths)
+	query := fmt.Sprintf(`[out:json][timeout:25];
+way(around:%d,%.6f,%.6f)["highway"~"^(primary|secondary|tertiary|unclassified|residential|living_street|service|trunk|primary_link|secondary_link|tertiary_link)$"];
+out geom;`, radiusMeters, lat, lon)
+
+	ctx, cancel := context.WithTimeout(ctx, c.effectiveTimeout())
+	defer cancel()
+
+	elements, err := c.fetchWithCache(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	var roads []Road
+	for _, el := range elements {
+		if el.Type != "way" || len(el.Geometry) < 2 {
+			continue
+		}
+		geom := make([]LatLon, len(el.Geometry))
+		for i, pt := range el.Geometry {
+			geom[i] = LatLon{Lat: pt.Lat, Lon: pt.Lon}
+		}
+		roads = append(roads, Road{
+			ID:       el.ID,
+			Name:     el.Tags["name"],
+			Highway:  el.Tags["highway"],
+			Geometry: geom,
+		})
+	}
+	return roads, nil
+}
+
 func (c *OverpassClient) fetchWithCache(ctx context.Context, query string) ([]overpassElement, error) {
 	if ttl := c.effectiveCacheTTL(); ttl > 0 {
 		if cached, ok := c.getCached(query); ok {
@@ -264,10 +303,17 @@ func classifyPOI(tags map[string]string) FeatureType {
 }
 
 type overpassElement struct {
-	Type string            `json:"type"`
-	Lat  float64           `json:"lat"`
-	Lon  float64           `json:"lon"`
-	Tags map[string]string `json:"tags"`
+	Type     string            `json:"type"`
+	ID       int64             `json:"id"`
+	Lat      float64           `json:"lat"`
+	Lon      float64           `json:"lon"`
+	Tags     map[string]string `json:"tags"`
+	Geometry []overpassLatLon  `json:"geometry,omitempty"` // for ways with out geom
+}
+
+type overpassLatLon struct {
+	Lat float64 `json:"lat"`
+	Lon float64 `json:"lon"`
 }
 
 type overpassResponse struct {

@@ -1,33 +1,5 @@
 {{define "content"}}
   <section class="hero-copy">
-    <style>
-      .hero-copy {
-        display: grid;
-        gap: 12px;
-        margin-bottom: 32px;
-      }
-      .admin-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-        gap: 20px;
-      }
-      .admin-actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 12px;
-      }
-      .stat-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        padding: 8px 14px;
-        border-radius: 12px;
-        background: rgba(31, 111, 106, 0.1);
-        color: var(--teal);
-        font-weight: 600;
-        font-size: 14px;
-      }
-    </style>
     <h2 class="section-title">Admin</h2>
     <p class="muted">Manage activity sync, view queue status, and perform admin operations.</p>
     {{if .Message}}
@@ -65,7 +37,7 @@
 
     <article class="card">
       <h3>Maps / Overpass</h3>
-      <p class="muted">Run a sample Overpass query for traffic lights and cafés near a known busy block.</p>
+      <p class="muted">Run a sample Overpass query for traffic lights and cafes near a known busy block.</p>
       <form method="post" action="/admin/">
         <input type="hidden" name="action" value="test-overpass" />
         <button class="btn secondary" type="submit">Test Overpass</button>

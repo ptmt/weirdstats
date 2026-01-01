@@ -82,7 +82,6 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/static/", http.FileServerFS(web.StaticFS))
 	mux.HandleFunc("/", webServer.Landing)
 	mux.HandleFunc("/connect/strava", webServer.ConnectStrava)
 	mux.HandleFunc("/connect/strava/callback", webServer.StravaCallback)
@@ -92,6 +91,7 @@ func main() {
 	mux.HandleFunc("/activity/", webServer.Activity)
 	mux.HandleFunc("/admin", webServer.Admin)
 	mux.HandleFunc("/admin/", webServer.Admin)
+	mux.Handle("/static/", http.StripPrefix("/static/", web.StaticHandler()))
 	mux.Handle("/webhook", &webhook.Handler{
 		Store:         store,
 		VerifyToken:   cfg.StravaVerifyToken,

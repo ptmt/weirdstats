@@ -1,15 +1,73 @@
 {{define "content"}}
   <section class="hero-copy">
     <style>
+      .back-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 14px;
+        color: var(--muted);
+        margin-bottom: 8px;
+      }
+      .back-link:hover {
+        color: var(--ink);
+      }
       .hero-copy {
         display: grid;
         gap: 12px;
-        margin-bottom: 24px;
+        margin-bottom: 20px;
       }
       .badge-row {
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
+      }
+      .activity-title-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .activity-title-main {
+        flex: 1;
+        min-width: 0;
+      }
+      .activity-actions {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .activity-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .activity-action-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        border: 1px solid var(--border, #e5e5e5);
+        background: var(--bg, #fff);
+        color: var(--ink);
+        font-family: inherit;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: none;
+        transition: border-color 0.15s ease, color 0.15s ease;
+      }
+      .activity-action-btn:hover {
+        border-color: var(--accent, #f25c3d);
+        color: var(--ink);
+      }
+      .activity-action-btn svg {
+        width: 16px;
+        height: 16px;
+        color: var(--muted);
       }
       .pill {
         display: inline-flex;
@@ -28,17 +86,50 @@
         background: rgba(242, 92, 61, 0.12);
         color: var(--accent-dark, #b5412b);
       }
-      #map {
-        width: 100%;
-        height: 360px;
-        border-radius: 16px;
-        border: 1px solid var(--border, #e5e5e5);
-        overflow: hidden;
-      }
       .grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-        gap: 20px;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 16px;
+      }
+      .card {
+        height: 100%;
+      }
+      .chart-card {
+        display: grid;
+        gap: 10px;
+      }
+      .chart-wrap {
+        height: 240px;
+        position: relative;
+      }
+      .layer-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+      .layer-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 8px;
+        font-size: 12px;
+        background: var(--bg, #fff);
+        border: 1px solid var(--border, #e5e5e5);
+        cursor: pointer;
+        user-select: none;
+        transition: all 0.15s ease;
+      }
+      .layer-toggle:hover {
+        border-color: var(--accent, #f25c3d);
+      }
+      .layer-toggle.active {
+        background: rgba(242, 92, 61, 0.12);
+        border-color: var(--accent, #f25c3d);
+      }
+      .layer-toggle input {
+        display: none;
       }
       .stop-list {
         display: grid;
@@ -66,6 +157,13 @@
         background: #ff3b30;
         box-shadow: 0 0 0 4px rgba(255, 59, 48, 0.15);
       }
+      #map {
+        width: 100%;
+        height: 360px;
+        border-radius: 16px;
+        border: 1px solid var(--border, #e5e5e5);
+        overflow: hidden;
+      }
       .muted {
         color: var(--muted);
       }
@@ -75,21 +173,124 @@
         margin-top: 6px;
       }
     </style>
-    <h2 class="section-title">{{.Activity.Name}}</h2>
-    <div class="muted">{{.Activity.Type}} · {{.Activity.StartTime}}</div>
+    <a href="/profile/" class="back-link">← Feed</a>
+    <div class="activity-title-row">
+      <div class="activity-title-main">
+        <h2 class="section-title">{{.Activity.Name}}</h2>
+        <div class="muted">{{.Activity.Type}} · {{.Activity.StartTime}}</div>
+      </div>
+      <div class="activity-actions">
+        <div class="activity-toolbar">
+          <a class="activity-action-btn" href="/activity/{{.Activity.ID}}/download">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Download
+          </a>
+          <button type="button" class="activity-action-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
+              <path d="M21 3v5h-5"/>
+            </svg>
+            Refresh
+          </button>
+          <button type="button" class="activity-action-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="18" cy="5" r="3"/>
+              <circle cx="6" cy="12" r="3"/>
+              <circle cx="18" cy="19" r="3"/>
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+            </svg>
+            Share
+          </button>
+          <button type="button" class="activity-action-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            Report
+          </button>
+        </div>
+        <div class="activity-menu">
+          <button type="button" class="activity-menu-btn" onclick="this.parentElement.classList.toggle('open')" title="Actions">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="12" cy="5" r="2"/>
+              <circle cx="12" cy="12" r="2"/>
+              <circle cx="12" cy="19" r="2"/>
+            </svg>
+          </button>
+          <div class="activity-dropdown">
+            <a href="/activity/{{.Activity.ID}}/download" class="dropdown-link">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              Download
+            </a>
+            <button type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
+                <path d="M21 3v5h-5"/>
+              </svg>
+              Refresh
+            </button>
+            <button type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="18" cy="5" r="3"/>
+                <circle cx="6" cy="12" r="3"/>
+                <circle cx="18" cy="19" r="3"/>
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+              </svg>
+              Share
+            </button>
+            <button type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
+              Report
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
     <div class="badge-row">
       {{if .Activity.Distance}}<span class="pill primary">{{.Activity.Distance}}</span>{{end}}
       {{if .Activity.Duration}}<span class="pill primary">{{.Activity.Duration}}</span>{{end}}
       {{if .Activity.StopCount}}<span class="pill secondary">{{.Activity.StopCount}} stops · {{.Activity.StopTotal}}</span>{{end}}
-      {{if .Activity.LightStops}}<span class="pill secondary">{{.Activity.LightStops}} at lights</span>{{end}}
+      {{if .Activity.LightStops}}<span class="pill secondary">🚦 {{.Activity.LightStops}} at lights</span>{{end}}
+      {{if .Activity.RoadCrossings}}<span class="pill secondary">🚶 {{.Activity.RoadCrossings}} crossings</span>{{end}}
     </div>
   </section>
 
   <section class="grid">
-    <article class="card">
-      <h3>Route</h3>
-      <div id="map"></div>
-      <div class="map-note">Red markers show stops tagged as traffic lights; orange markers are other stops.</div>
+    <article class="card chart-card">
+      <h3>Speed &amp; stops</h3>
+      <div class="layer-controls">
+        <label class="layer-toggle active" data-layer="stops">
+          <input type="checkbox" checked> Stop regions
+        </label>
+        <label class="layer-toggle active" data-layer="lights">
+          <input type="checkbox" checked> Traffic lights
+        </label>
+        <label class="layer-toggle active" data-layer="crossings">
+          <input type="checkbox" checked> Road crossings
+        </label>
+        <label class="layer-toggle" data-layer="avgSpeed">
+          <input type="checkbox"> Avg speed between stops
+        </label>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="speed-chart"></canvas>
+      </div>
+      <div class="map-note">Log scale speed; shaded regions below threshold highlight detected stops.</div>
     </article>
     <article class="card">
       <h3>Stops</h3>
@@ -98,13 +299,13 @@
           {{range .Stops}}
             <div class="stop-row">
               <div class="label">
-                {{if .HasTrafficLight}}<span class="light-dot"></span>{{else}}<span class="light-dot" style="background:#f5a524; box-shadow: 0 0 0 4px rgba(245,165,36,0.15);"></span>{{end}}
+                {{if .HasTrafficLight}}<span class="light-dot"></span>{{else if .HasRoadCrossing}}<span class="light-dot" style="background:#3b82f6; box-shadow: 0 0 0 4px rgba(59,130,246,0.15);"></span>{{else}}<span class="light-dot" style="background:#f5a524; box-shadow: 0 0 0 4px rgba(245,165,36,0.15);"></span>{{end}}
                 <div>
                   <div>{{.Duration}}</div>
-                  <div class="muted">{{printf \"%.5f\" .Lat}}, {{printf \"%.5f\" .Lon}}</div>
+                  <div class="muted">{{printf "%.5f" .Lat}}, {{printf "%.5f" .Lon}}{{if .CrossingRoad}} · {{.CrossingRoad}}{{end}}</div>
                 </div>
               </div>
-              {{if .HasTrafficLight}}<strong class="muted">Light</strong>{{else}}<span class="muted">Stop</span>{{end}}
+              {{if .HasTrafficLight}}<span>🚦</span>{{else if .HasRoadCrossing}}<span>🚶</span>{{else}}<span class="muted">Stop</span>{{end}}
             </div>
           {{end}}
         </div>
@@ -114,9 +315,25 @@
     </article>
   </section>
 
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-sA+q5ms5Fdw1IjfZsaF3R07VPXkMOL3h5Ede1qE0pC4=" crossorigin=""/>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-CgG5QtZ6kVD3ESyqCCptYECQ0t9z8LrPvxu1r3m00+8=" crossorigin=""></script>
+  <section class="card" style="margin-top: 16px;">
+    <h3>Route</h3>
+    <div id="map"></div>
+    <div class="map-note">Red: traffic lights · Blue: road crossings · Orange: other stops</div>
+    <div class="map-note" id="map-error" style="display:none; color:#c00;">Map tiles failed to load. Configure an alternative tile URL if needed.</div>
+  </section>
+
+  <link rel="stylesheet" href="/static/leaflet/leaflet.css" />
+  <script src="/static/leaflet/leaflet.js"></script>
+  <script src="/static/chartjs/chart.umd.js"></script>
   <script>
+    document.addEventListener('click', function(e) {
+      document.querySelectorAll('.activity-menu.open').forEach(function(menu) {
+        if (!menu.contains(e.target)) {
+          menu.classList.remove('open');
+        }
+      });
+    });
+
     (function() {
       const points = {{.RoutePointsJSON}};
       const stops = {{.StopsJSON}};
@@ -126,13 +343,17 @@
       const coords = points.map(p => [p.lat, p.lon]);
       const polyline = L.polyline(coords, { color: '#f25c3d', weight: 4, opacity: 0.9 }).addTo(map);
       map.fitBounds(polyline.getBounds(), { padding: [12, 12] });
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      const tile = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         attribution: '&copy; OpenStreetMap contributors'
       }).addTo(map);
+      tile.on('tileerror', function() {
+        const err = document.getElementById('map-error');
+        if (err) err.style.display = 'block';
+      });
 
       stops.forEach(stop => {
-        const color = stop.has_traffic_light ? '#ff3b30' : '#f5a524';
+        const color = stop.has_traffic_light ? '#ff3b30' : stop.has_road_crossing ? '#3b82f6' : '#f5a524';
         const marker = L.circleMarker([stop.lat, stop.lon], {
           radius: 7,
           color,
@@ -140,7 +361,222 @@
           fillOpacity: 0.85,
           weight: 2
         }).addTo(map);
-        marker.bindPopup(`${stop.duration}${stop.has_traffic_light ? ' · traffic light' : ''}`);
+        let label = stop.duration;
+        if (stop.has_traffic_light) label += ' · traffic light';
+        else if (stop.has_road_crossing) label += ' · road crossing' + (stop.crossing_road ? ` (${stop.crossing_road})` : '');
+        marker.bindPopup(label);
+      });
+    })();
+
+    (function() {
+      const speeds = {{.SpeedSeriesJSON}};
+      const stops = {{.StopsJSON}};
+      const threshold = {{printf "%.3f" .SpeedThreshold}};
+      if (!speeds || speeds.length === 0) return;
+      const ctx = document.getElementById('speed-chart');
+      if (!ctx) return;
+
+      // Layer visibility state
+      const layers = {
+        stops: true,
+        lights: true,
+        crossings: true,
+        avgSpeed: false
+      };
+
+      // Detect stop segments from speed data
+      const segments = [];
+      let inLow = false;
+      let start = 0;
+      speeds.forEach((p, idx) => {
+        if (p.s <= threshold) {
+          if (!inLow) {
+            inLow = true;
+            start = p.t;
+          }
+        } else if (inLow) {
+          segments.push([start, p.t]);
+          inLow = false;
+        }
+        if (idx === speeds.length - 1 && inLow) {
+          segments.push([start, p.t]);
+        }
+      });
+
+      // Calculate average speed between stops
+      function calcAvgSpeedSegments() {
+        if (segments.length === 0) return [];
+        const result = [];
+        let prevEnd = 0;
+        segments.forEach(([segStart, segEnd], idx) => {
+          if (segStart > prevEnd) {
+            const pointsInRange = speeds.filter(p => p.t >= prevEnd && p.t < segStart && p.s > threshold);
+            if (pointsInRange.length > 0) {
+              const avgSpeed = pointsInRange.reduce((sum, p) => sum + p.s, 0) / pointsInRange.length;
+              result.push({ start: prevEnd, end: segStart, avgSpeed, idx });
+            }
+          }
+          prevEnd = segEnd;
+        });
+        // After last stop
+        const lastEnd = segments[segments.length - 1][1];
+        const endTime = speeds[speeds.length - 1].t;
+        if (endTime > lastEnd) {
+          const pointsInRange = speeds.filter(p => p.t >= lastEnd && p.s > threshold);
+          if (pointsInRange.length > 0) {
+            const avgSpeed = pointsInRange.reduce((sum, p) => sum + p.s, 0) / pointsInRange.length;
+            result.push({ start: lastEnd, end: endTime, avgSpeed, idx: segments.length });
+          }
+        }
+        return result;
+      }
+
+      const avgSpeedSegments = calcAvgSpeedSegments();
+      const maxAvgSpeed = avgSpeedSegments.length > 0
+        ? Math.max(...avgSpeedSegments.map(s => s.avgSpeed))
+        : 0;
+
+      // Traffic light stops with positions
+      const lightStops = (stops || []).filter(s => s.has_traffic_light);
+      // Road crossing stops with positions
+      const crossingStops = (stops || []).filter(s => s.has_road_crossing);
+
+      const chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          datasets: [
+            {
+              label: 'Speed (m/s)',
+              data: speeds.map(p => ({ x: p.t, y: p.s || 0.01 })),
+              borderColor: '#f25c3d',
+              backgroundColor: 'rgba(242,92,61,0.15)',
+              borderWidth: 2,
+              pointRadius: 0,
+              tension: 0.1,
+            },
+            {
+              label: 'Threshold',
+              data: [
+                { x: speeds[0].t, y: threshold },
+                { x: speeds[speeds.length - 1].t, y: threshold },
+              ],
+              borderColor: '#999',
+              borderDash: [6, 6],
+              pointRadius: 0,
+              borderWidth: 1,
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: {
+              type: 'linear',
+              title: { display: true, text: 'Seconds' }
+            },
+            y: {
+              type: 'logarithmic',
+              min: 0.05,
+              title: { display: true, text: 'm/s (log scale)' },
+            }
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: ctx => ` ${ctx.parsed.y.toFixed(2)} m/s @ ${ctx.parsed.x.toFixed(0)}s`
+              }
+            }
+          }
+        },
+        plugins: [{
+          id: 'chartLayers',
+          beforeDraw(chart) {
+            const {ctx, chartArea: {top, bottom}, scales: {x, y}} = chart;
+            ctx.save();
+
+            // Layer: Stop regions
+            if (layers.stops) {
+              ctx.fillStyle = 'rgba(255,187,0,0.12)';
+              segments.forEach(([start, end]) => {
+                const xMin = x.getPixelForValue(start);
+                const xMax = x.getPixelForValue(end);
+                ctx.fillRect(xMin, top, xMax - xMin, bottom - top);
+              });
+            }
+
+            // Layer: Avg speed between stops
+            if (layers.avgSpeed && avgSpeedSegments.length > 0) {
+              avgSpeedSegments.forEach(seg => {
+                const xMin = x.getPixelForValue(seg.start);
+                const xMax = x.getPixelForValue(seg.end);
+                const yPos = y.getPixelForValue(seg.avgSpeed);
+                const isMax = seg.avgSpeed === maxAvgSpeed && maxAvgSpeed > 0;
+
+                // Draw horizontal line for avg speed
+                ctx.strokeStyle = isMax ? '#22c55e' : '#3b82f6';
+                ctx.lineWidth = isMax ? 3 : 2;
+                ctx.setLineDash(isMax ? [] : [4, 4]);
+                ctx.beginPath();
+                ctx.moveTo(xMin, yPos);
+                ctx.lineTo(xMax, yPos);
+                ctx.stroke();
+
+                // Label
+                ctx.fillStyle = isMax ? '#22c55e' : '#3b82f6';
+                ctx.font = isMax ? 'bold 11px sans-serif' : '10px sans-serif';
+                ctx.textAlign = 'center';
+                const label = seg.avgSpeed.toFixed(1) + (isMax ? ' (max)' : '');
+                ctx.fillText(label, (xMin + xMax) / 2, yPos - 4);
+              });
+              ctx.setLineDash([]);
+            }
+
+            ctx.restore();
+          },
+          afterDraw(chart) {
+            const {ctx, chartArea: {top}, scales: {x}} = chart;
+            ctx.save();
+            ctx.font = '16px sans-serif';
+            ctx.textAlign = 'center';
+            // Layer: Traffic light emojis
+            if (layers.lights) {
+              lightStops.forEach(stop => {
+                const xPos = x.getPixelForValue(stop.start_seconds);
+                ctx.fillText('🚦', xPos, top + 20);
+              });
+            }
+            // Layer: Road crossing emojis
+            if (layers.crossings) {
+              crossingStops.forEach(stop => {
+                const xPos = x.getPixelForValue(stop.start_seconds);
+                ctx.fillText('🚶', xPos, top + 20);
+              });
+            }
+            ctx.restore();
+          }
+        }]
+      });
+
+      // Layer toggle handlers
+      document.querySelectorAll('.layer-toggle').forEach(toggle => {
+        const layerName = toggle.dataset.layer;
+        const checkbox = toggle.querySelector('input');
+
+        toggle.addEventListener('click', (e) => {
+          if (e.target === checkbox) return;
+          checkbox.checked = !checkbox.checked;
+          layers[layerName] = checkbox.checked;
+          toggle.classList.toggle('active', checkbox.checked);
+          chart.update('none');
+        });
+
+        checkbox.addEventListener('change', () => {
+          layers[layerName] = checkbox.checked;
+          toggle.classList.toggle('active', checkbox.checked);
+          chart.update('none');
+        });
       });
     })();
   </script>

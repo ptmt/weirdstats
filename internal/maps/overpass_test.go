@@ -57,6 +57,67 @@ func TestOverpassClient_RequestsAndParses(t *testing.T) {
 	}
 }
 
+func TestOverpassClient_FetchNearbyRoads(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := overpassResponse{
+			Elements: []overpassElement{
+				{
+					Type: "way",
+					ID:   12345,
+					Tags: map[string]string{"highway": "residential", "name": "Main Street"},
+					Geometry: []overpassLatLon{
+						{Lat: 40.0, Lon: -73.0},
+						{Lat: 40.001, Lon: -73.001},
+						{Lat: 40.002, Lon: -73.002},
+					},
+				},
+				{
+					Type: "way",
+					ID:   67890,
+					Tags: map[string]string{"highway": "secondary"},
+					Geometry: []overpassLatLon{
+						{Lat: 40.0, Lon: -73.005},
+						{Lat: 40.001, Lon: -73.006},
+					},
+				},
+				// Should be filtered out - not a "way"
+				{
+					Type: "node",
+					ID:   11111,
+					Lat:  40.0,
+					Lon:  -73.0,
+					Tags: map[string]string{"highway": "traffic_signals"},
+				},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := &OverpassClient{
+		BaseURL:      server.URL,
+		HTTPClient:   server.Client(),
+		DisableCache: true,
+	}
+
+	roads, err := client.FetchNearbyRoads(context.Background(), 40.0, -73.0, 30)
+	if err != nil {
+		t.Fatalf("FetchNearbyRoads error: %v", err)
+	}
+	if len(roads) != 2 {
+		t.Fatalf("expected 2 roads, got %d", len(roads))
+	}
+	if roads[0].Name != "Main Street" || roads[0].Highway != "residential" {
+		t.Fatalf("unexpected first road: %+v", roads[0])
+	}
+	if len(roads[0].Geometry) != 3 {
+		t.Fatalf("expected 3 points in first road geometry, got %d", len(roads[0].Geometry))
+	}
+	if roads[1].Highway != "secondary" {
+		t.Fatalf("unexpected second road: %+v", roads[1])
+	}
+}
+
 func TestOverpassClient_RoundRobinMirrors(t *testing.T) {
 	var firstHits, secondHits int32
 	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
