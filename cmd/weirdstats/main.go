@@ -64,9 +64,10 @@ func main() {
 	stopOpts := gps.StopOptions{SpeedThreshold: 0.5, MinDuration: time.Minute}
 	var mapAPI maps.API = overpassClient
 	statsProcessor := &processor.StopStatsProcessor{
-		Store:   store,
-		MapAPI:  mapAPI,
-		Options: stopOpts,
+		Store:    store,
+		MapAPI:   mapAPI,
+		Overpass: overpassClient,
+		Options:  stopOpts,
 	}
 	pipeline := &processor.PipelineProcessor{Ingest: ingestor, Stats: statsProcessor}
 	queueWorker := &worker.Worker{Store: store, Processor: pipeline}

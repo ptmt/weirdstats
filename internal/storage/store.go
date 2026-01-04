@@ -25,6 +25,7 @@ type Activity struct {
 	Description string
 	Distance    float64
 	MovingTime  int
+	UpdatedAt   time.Time
 }
 
 type WebhookEvent struct {
@@ -38,13 +39,13 @@ type WebhookEvent struct {
 }
 
 type StravaToken struct {
-	UserID        int64
-	AccessToken   string
-	RefreshToken  string
-	ExpiresAt     time.Time
-	UpdatedAt     time.Time
-	AthleteID     int64
-	AthleteName   string
+	UserID       int64
+	AccessToken  string
+	RefreshToken string
+	ExpiresAt    time.Time
+	UpdatedAt    time.Time
+	AthleteID    int64
+	AthleteName  string
 }
 
 type HideRule struct {
@@ -63,6 +64,17 @@ type ActivityWithStats struct {
 	StopTotalSeconds      int
 	TrafficLightStopCount int
 	HasStats              bool
+}
+
+type ActivityStop struct {
+	Seq             int
+	Lat             float64
+	Lon             float64
+	StartSeconds    float64
+	DurationSeconds int
+	HasTrafficLight bool
+	HasRoadCrossing bool
+	CrossingRoad    string
 }
 
 func Open(path string) (*Store, error) {
@@ -116,6 +128,19 @@ CREATE TABLE IF NOT EXISTS activity_stats (
 	stop_total_seconds INTEGER NOT NULL,
 	traffic_light_stop_count INTEGER NOT NULL,
 	updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS activity_stops (
+	activity_id INTEGER NOT NULL,
+	seq INTEGER NOT NULL,
+	lat REAL NOT NULL,
+	lon REAL NOT NULL,
+	start_seconds REAL NOT NULL,
+	duration_seconds INTEGER NOT NULL,
+	has_traffic_light INTEGER NOT NULL,
+	has_road_crossing INTEGER NOT NULL,
+	crossing_road TEXT NOT NULL,
+	updated_at INTEGER NOT NULL,
+	PRIMARY KEY (activity_id, seq)
 );
 CREATE TABLE IF NOT EXISTS activity_queue (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -594,6 +619,108 @@ ORDER BY seq
 	return points, nil
 }
 
+func (s *Store) LoadActivityStops(ctx context.Context, activityID int64) ([]ActivityStop, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT seq, lat, lon, start_seconds, duration_seconds, has_traffic_light, has_road_crossing, crossing_road
+FROM activity_stops
+WHERE activity_id = ?
+ORDER BY seq
+`, activityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stops []ActivityStop
+	for rows.Next() {
+		var stop ActivityStop
+		var hasLight int
+		var hasCrossing int
+		if err := rows.Scan(
+			&stop.Seq,
+			&stop.Lat,
+			&stop.Lon,
+			&stop.StartSeconds,
+			&stop.DurationSeconds,
+			&hasLight,
+			&hasCrossing,
+			&stop.CrossingRoad,
+		); err != nil {
+			return nil, err
+		}
+		stop.HasTrafficLight = hasLight != 0
+		stop.HasRoadCrossing = hasCrossing != 0
+		stops = append(stops, stop)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return stops, nil
+}
+
+func (s *Store) ReplaceActivityStops(ctx context.Context, activityID int64, stops []ActivityStop, updatedAt time.Time) error {
+	if updatedAt.IsZero() {
+		updatedAt = time.Now()
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	if _, err := tx.ExecContext(ctx, `
+DELETE FROM activity_stops
+WHERE activity_id = ?
+`, activityID); err != nil {
+		return err
+	}
+
+	if len(stops) == 0 {
+		return tx.Commit()
+	}
+
+	stmt, err := tx.PrepareContext(ctx, `
+INSERT INTO activity_stops (
+	activity_id, seq, lat, lon, start_seconds, duration_seconds,
+	has_traffic_light, has_road_crossing, crossing_road, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, stop := range stops {
+		hasLight := 0
+		if stop.HasTrafficLight {
+			hasLight = 1
+		}
+		hasCrossing := 0
+		if stop.HasRoadCrossing {
+			hasCrossing = 1
+		}
+		if _, err := stmt.ExecContext(
+			ctx,
+			activityID,
+			stop.Seq,
+			stop.Lat,
+			stop.Lon,
+			stop.StartSeconds,
+			stop.DurationSeconds,
+			hasLight,
+			hasCrossing,
+			stop.CrossingRoad,
+			updatedAt.Unix(),
+		); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
 func (s *Store) ListActivitiesWithStats(ctx context.Context, userID int64, limit int) ([]ActivityWithStats, error) {
 	if userID == 0 {
 		userID = 1
@@ -662,6 +789,10 @@ LIMIT ?
 }
 
 func (s *Store) UpsertActivityStats(ctx context.Context, activityID int64, stats stats.StopStats) error {
+	updatedAt := time.Now()
+	if !stats.UpdatedAt.IsZero() {
+		updatedAt = stats.UpdatedAt
+	}
 	_, err := s.db.ExecContext(ctx, `
 INSERT INTO activity_stats (activity_id, stop_count, stop_total_seconds, traffic_light_stop_count, updated_at)
 VALUES (?, ?, ?, ?, ?)
@@ -670,31 +801,34 @@ ON CONFLICT(activity_id) DO UPDATE SET
 	stop_total_seconds = excluded.stop_total_seconds,
 	traffic_light_stop_count = excluded.traffic_light_stop_count,
 	updated_at = excluded.updated_at
-`, activityID, stats.StopCount, stats.StopTotalSeconds, stats.TrafficLightStopCount, time.Now().Unix())
+`, activityID, stats.StopCount, stats.StopTotalSeconds, stats.TrafficLightStopCount, updatedAt.Unix())
 	return err
 }
 
 func (s *Store) GetActivityStats(ctx context.Context, activityID int64) (stats.StopStats, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT stop_count, stop_total_seconds, traffic_light_stop_count
+SELECT stop_count, stop_total_seconds, traffic_light_stop_count, updated_at
 FROM activity_stats
 WHERE activity_id = ?
 `, activityID)
 	var result stats.StopStats
-	if err := row.Scan(&result.StopCount, &result.StopTotalSeconds, &result.TrafficLightStopCount); err != nil {
+	var updatedAt int64
+	if err := row.Scan(&result.StopCount, &result.StopTotalSeconds, &result.TrafficLightStopCount, &updatedAt); err != nil {
 		return stats.StopStats{}, err
 	}
+	result.UpdatedAt = time.Unix(updatedAt, 0)
 	return result, nil
 }
 
 func (s *Store) GetActivity(ctx context.Context, activityID int64) (Activity, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT id, user_id, type, name, start_time, description, distance, moving_time
+SELECT id, user_id, type, name, start_time, description, distance, moving_time, updated_at
 FROM activities
 WHERE id = ?
 `, activityID)
 	var activity Activity
 	var startTime int64
+	var updatedAt int64
 	if err := row.Scan(
 		&activity.ID,
 		&activity.UserID,
@@ -704,9 +838,11 @@ WHERE id = ?
 		&activity.Description,
 		&activity.Distance,
 		&activity.MovingTime,
+		&updatedAt,
 	); err != nil {
 		return Activity{}, err
 	}
 	activity.StartTime = time.Unix(startTime, 0)
+	activity.UpdatedAt = time.Unix(updatedAt, 0)
 	return activity, nil
 }

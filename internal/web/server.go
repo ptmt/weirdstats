@@ -2,11 +2,13 @@ package web
 
 import (
 	"context"
+	"database/sql"
 	"embed"
 	"encoding/json"
-	"io/fs"
+	"errors"
 	"fmt"
 	"html/template"
+	"io/fs"
 	"log"
 	"net/http"
 	"net/url"
@@ -23,6 +25,7 @@ import (
 
 //go:embed templates/*.html
 var templatesFS embed.FS
+
 //go:embed static/**
 var staticFS embed.FS
 
@@ -52,6 +55,8 @@ type ActivityView struct {
 	StopTotal      string
 	LightStops     int
 	RoadCrossings  int
+	RecalculatedAt string
+	FetchedAt      string
 }
 
 type StopView struct {
@@ -333,58 +338,23 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to load points", http.StatusInternalServerError)
 		return
 	}
-	stops := gps.DetectStops(points, s.stopOpts)
-
-	var activityStartTime time.Time
-	if len(points) > 0 {
-		activityStartTime = points[0].Time
+	storedStops, err := s.store.LoadActivityStops(r.Context(), activityID)
+	if err != nil {
+		http.Error(w, "failed to load stops", http.StatusInternalServerError)
+		return
 	}
 
 	var stopViews []StopView
-	for i, stop := range stops {
-		hasLight := false
-		if s.mapAPI != nil {
-			features, err := s.mapAPI.NearbyFeatures(stop.Lat, stop.Lon)
-			if err != nil {
-				log.Printf("map lookup failed: %v", err)
-			} else {
-				for _, f := range features {
-					if f.Type == maps.FeatureTrafficLight {
-						hasLight = true
-						break
-					}
-				}
-			}
-		}
-
-		// Check for road crossing (if not at a traffic light)
-		var hasCrossing bool
-		var crossingRoad string
-		if !hasLight && s.overpass != nil {
-			stopEndIdx := gps.FindStopEndIndex(points, stop.StartTime.Sub(activityStartTime).Seconds(), s.stopOpts.SpeedThreshold, 0)
-			if stopEndIdx >= 0 {
-				roads, err := s.overpass.FetchNearbyRoads(r.Context(), stop.Lat, stop.Lon, 30)
-				if err != nil {
-					log.Printf("road fetch failed for stop %d: %v", i, err)
-				} else if len(roads) > 0 {
-					result := gps.DetectRoadCrossing(points, stopEndIdx, roads)
-					if result.Crossed {
-						hasCrossing = true
-						crossingRoad = result.RoadName
-					}
-				}
-			}
-		}
-
+	for _, stop := range storedStops {
 		stopViews = append(stopViews, StopView{
 			Lat:             stop.Lat,
 			Lon:             stop.Lon,
-			StartSeconds:    stop.StartTime.Sub(activityStartTime).Seconds(),
-			Duration:        formatDuration(int(stop.Duration.Seconds())),
-			DurationSeconds: int(stop.Duration.Seconds()),
-			HasTrafficLight: hasLight,
-			HasRoadCrossing: hasCrossing,
-			CrossingRoad:    crossingRoad,
+			StartSeconds:    stop.StartSeconds,
+			Duration:        formatDuration(stop.DurationSeconds),
+			DurationSeconds: stop.DurationSeconds,
+			HasTrafficLight: stop.HasTrafficLight,
+			HasRoadCrossing: stop.HasRoadCrossing,
+			CrossingRoad:    stop.CrossingRoad,
 		})
 	}
 
@@ -415,18 +385,29 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	speedJSON, _ := json.Marshal(speeds)
 
+	recalculatedAt := ""
+	stats, err := s.store.GetActivityStats(r.Context(), activityID)
+	if err == nil {
+		recalculatedAt = formatTimestamp(stats.UpdatedAt)
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		http.Error(w, "failed to load activity stats", http.StatusInternalServerError)
+		return
+	}
+
 	view := ActivityView{
-		ID:         activity.ID,
-		Name:       activity.Name,
-		Type:       activity.Type,
-		StartTime:  activity.StartTime.Format("Jan 2, 2006 15:04"),
-		Distance:   formatDistance(activity.Distance),
-		Duration:   formatDuration(activity.MovingTime),
-		HasStats:      len(stopViews) > 0,
-		StopCount:     len(stopViews),
-		StopTotal:     formatDuration(totalStopSeconds(stopViews)),
-		LightStops:    countLightStops(stopViews),
-		RoadCrossings: countRoadCrossings(stopViews),
+		ID:             activity.ID,
+		Name:           activity.Name,
+		Type:           activity.Type,
+		StartTime:      activity.StartTime.Format("Jan 2, 2006 15:04"),
+		Distance:       formatDistance(activity.Distance),
+		Duration:       formatDuration(activity.MovingTime),
+		HasStats:       len(stopViews) > 0,
+		StopCount:      len(stopViews),
+		StopTotal:      formatDuration(totalStopSeconds(stopViews)),
+		LightStops:     countLightStops(stopViews),
+		RoadCrossings:  countRoadCrossings(stopViews),
+		RecalculatedAt: recalculatedAt,
+		FetchedAt:      formatTimestamp(activity.UpdatedAt),
 	}
 
 	data := ActivityDetailData{
@@ -455,7 +436,49 @@ func (s *Server) Activity(w http.ResponseWriter, r *http.Request) {
 		s.DownloadActivity(w, r)
 		return
 	}
+	if strings.HasSuffix(r.URL.Path, "/refresh") {
+		s.RefreshActivity(w, r)
+		return
+	}
 	s.ActivityDetail(w, r)
+}
+
+func (s *Server) RefreshActivity(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAuth(w, r) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	idStr := strings.TrimPrefix(r.URL.Path, "/activity/")
+	idStr = strings.TrimSuffix(idStr, "/refresh")
+	activityID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || activityID == 0 {
+		http.Error(w, "invalid activity id", http.StatusBadRequest)
+		return
+	}
+
+	activity, err := s.store.GetActivity(r.Context(), activityID)
+	if err != nil {
+		http.Error(w, "activity not found", http.StatusNotFound)
+		return
+	}
+	if activity.UserID != 1 {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	if err := s.store.EnqueueActivity(r.Context(), activityID); err != nil {
+		http.Error(w, "failed to enqueue activity", http.StatusInternalServerError)
+		return
+	}
+
+	redirectURL := r.Header.Get("Referer")
+	if redirectURL == "" {
+		redirectURL = fmt.Sprintf("/activity/%d", activityID)
+	}
+	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
 func totalStopSeconds(stops []StopView) int {
@@ -892,6 +915,13 @@ func formatDuration(totalSeconds int) string {
 		return fmt.Sprintf("%dm %ds", minutes, seconds)
 	}
 	return fmt.Sprintf("%ds", seconds)
+}
+
+func formatTimestamp(ts time.Time) string {
+	if ts.IsZero() {
+		return ""
+	}
+	return ts.Format("Jan 2, 2006 15:04")
 }
 
 func formatDistance(meters float64) string {

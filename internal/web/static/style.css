@@ -291,9 +291,15 @@ a {
   height: 220px;
   background: linear-gradient(135deg, rgba(31, 111, 106, 0.15), rgba(242, 92, 61, 0.15));
   border-radius: 16px;
-  font-size: 14px;
-  text-transform: uppercase;
-  letter-spacing: 3px;
+}
+
+.hero-card .logo-block img {
+  max-width: 80%;
+  max-height: 160px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 16px;
 }
 
 .hero-copy {
@@ -476,6 +482,10 @@ a {
 
 .activity-menu.open .activity-dropdown {
   display: block;
+}
+
+.activity-dropdown form {
+  margin: 0;
 }
 
 .activity-dropdown button,

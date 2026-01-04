@@ -39,6 +39,9 @@
         flex-wrap: wrap;
         gap: 10px;
       }
+      .activity-actions form {
+        margin: 0;
+      }
       .activity-toolbar {
         display: flex;
         flex-wrap: wrap;
@@ -189,13 +192,15 @@
             </svg>
             Download
           </a>
-          <button type="button" class="activity-action-btn">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
-              <path d="M21 3v5h-5"/>
-            </svg>
-            Refresh
-          </button>
+          <form method="post" action="/activity/{{.Activity.ID}}/refresh">
+            <button type="submit" class="activity-action-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
+                <path d="M21 3v5h-5"/>
+              </svg>
+              Refresh
+            </button>
+          </form>
           <button type="button" class="activity-action-btn">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="18" cy="5" r="3"/>
@@ -232,13 +237,15 @@
               </svg>
               Download
             </a>
-            <button type="button">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
-                <path d="M21 3v5h-5"/>
-              </svg>
-              Refresh
-            </button>
+            <form method="post" action="/activity/{{.Activity.ID}}/refresh">
+              <button type="submit">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
+                  <path d="M21 3v5h-5"/>
+                </svg>
+                Refresh
+              </button>
+            </form>
             <button type="button">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="18" cy="5" r="3"/>
@@ -264,7 +271,7 @@
     <div class="badge-row">
       {{if .Activity.Distance}}<span class="pill primary">{{.Activity.Distance}}</span>{{end}}
       {{if .Activity.Duration}}<span class="pill primary">{{.Activity.Duration}}</span>{{end}}
-      {{if .Activity.StopCount}}<span class="pill secondary">{{.Activity.StopCount}} stops · {{.Activity.StopTotal}}</span>{{end}}
+      {{if .Activity.StopCount}}<span class="pill secondary">{{.Activity.StopCount}} events · {{.Activity.StopTotal}}</span>{{end}}
       {{if .Activity.LightStops}}<span class="pill secondary">🚦 {{.Activity.LightStops}} at lights</span>{{end}}
       {{if .Activity.RoadCrossings}}<span class="pill secondary">🚶 {{.Activity.RoadCrossings}} crossings</span>{{end}}
     </div>
@@ -272,7 +279,7 @@
 
   <section class="grid">
     <article class="card chart-card">
-      <h3>Speed &amp; stops</h3>
+      <h3>Speed &amp; events</h3>
       <div class="layer-controls">
         <label class="layer-toggle active" data-layer="stops">
           <input type="checkbox" checked> Stop regions
@@ -290,10 +297,10 @@
       <div class="chart-wrap">
         <canvas id="speed-chart"></canvas>
       </div>
-      <div class="map-note">Log scale speed; shaded regions below threshold highlight detected stops.</div>
+      <div class="map-note">Log scale {{if eq .Activity.Type "Run"}}pace{{else}}speed{{end}}; shaded regions highlight detected stops.</div>
     </article>
     <article class="card">
-      <h3>Stops</h3>
+      <h3>Events</h3>
       {{if .Stops}}
         <div class="stop-list">
           {{range .Stops}}
@@ -310,7 +317,7 @@
           {{end}}
         </div>
       {{else}}
-        <p class="muted">No stops detected for this activity.</p>
+        <p class="muted">No events detected for this activity.</p>
       {{end}}
     </article>
   </section>
@@ -321,6 +328,9 @@
     <div class="map-note">Red: traffic lights · Blue: road crossings · Orange: other stops</div>
     <div class="map-note" id="map-error" style="display:none; color:#c00;">Map tiles failed to load. Configure an alternative tile URL if needed.</div>
   </section>
+  <div class="footer">
+    {{if .Activity.RecalculatedAt}}Last recalculation: {{.Activity.RecalculatedAt}}{{else}}Last recalculation: pending{{end}}{{if .Activity.FetchedAt}} · Last fetch: {{.Activity.FetchedAt}}{{end}}
+  </div>
 
   <link rel="stylesheet" href="/static/leaflet/leaflet.css" />
   <script src="/static/leaflet/leaflet.js"></script>
@@ -372,9 +382,45 @@
       const speeds = {{.SpeedSeriesJSON}};
       const stops = {{.StopsJSON}};
       const threshold = {{printf "%.3f" .SpeedThreshold}};
+      const activityType = "{{.Activity.Type}}";
       if (!speeds || speeds.length === 0) return;
       const ctx = document.getElementById('speed-chart');
       if (!ctx) return;
+
+      // Speed formatting based on activity type
+      const isRun = activityType.toLowerCase().includes('run');
+      const isRide = activityType.toLowerCase().includes('ride') || activityType.toLowerCase().includes('bike') || activityType.toLowerCase().includes('cycling');
+
+      // Convert m/s to display unit
+      function formatSpeed(mps) {
+        if (isRun) {
+          // min/km pace
+          if (mps <= 0.1) return '—';
+          const minPerKm = (1000 / mps) / 60;
+          const mins = Math.floor(minPerKm);
+          const secs = Math.round((minPerKm - mins) * 60);
+          return `${mins}:${secs.toString().padStart(2, '0')} /km`;
+        } else {
+          // km/h for rides and default
+          const kmh = mps * 3.6;
+          return `${kmh.toFixed(1)} km/h`;
+        }
+      }
+
+      function getSpeedUnit() {
+        return isRun ? 'min/km' : 'km/h';
+      }
+
+      function convertToDisplayUnit(mps) {
+        if (isRun) {
+          // For runs, return min/km (inverted - lower pace = faster)
+          if (mps <= 0.1) return 100; // cap for very slow/stopped
+          return (1000 / mps) / 60;
+        } else {
+          // km/h for rides
+          return mps * 3.6;
+        }
+      }
 
       // Layer visibility state
       const layers = {
@@ -441,13 +487,25 @@
       // Road crossing stops with positions
       const crossingStops = (stops || []).filter(s => s.has_road_crossing);
 
+      // For runs with pace, we need to handle the Y axis differently
+      // Higher pace values = slower, so we might want to invert or just show raw speed
+      const chartData = speeds.map(p => ({
+        x: p.t,
+        y: convertToDisplayUnit(p.s || 0.01),
+        rawSpeed: p.s
+      }));
+
+      const thresholdDisplay = convertToDisplayUnit(threshold);
+      const yAxisLabel = isRun ? 'Pace min/km (log scale)' : 'Speed km/h (log scale)';
+      const yAxisMin = isRun ? 2 : 0.1;
+
       const chart = new Chart(ctx, {
         type: 'line',
         data: {
           datasets: [
             {
-              label: 'Speed (m/s)',
-              data: speeds.map(p => ({ x: p.t, y: p.s || 0.01 })),
+              label: isRun ? 'Pace (min/km)' : 'Speed (km/h)',
+              data: chartData,
               borderColor: '#f25c3d',
               backgroundColor: 'rgba(242,92,61,0.15)',
               borderWidth: 2,
@@ -457,8 +515,8 @@
             {
               label: 'Threshold',
               data: [
-                { x: speeds[0].t, y: threshold },
-                { x: speeds[speeds.length - 1].t, y: threshold },
+                { x: speeds[0].t, y: thresholdDisplay },
+                { x: speeds[speeds.length - 1].t, y: thresholdDisplay },
               ],
               borderColor: '#999',
               borderDash: [6, 6],
@@ -477,15 +535,19 @@
             },
             y: {
               type: 'logarithmic',
-              min: 0.05,
-              title: { display: true, text: 'm/s (log scale)' },
+              min: yAxisMin,
+              reverse: isRun, // For pace, higher = slower, so reverse axis
+              title: { display: true, text: yAxisLabel },
             }
           },
           plugins: {
             legend: { display: false },
             tooltip: {
               callbacks: {
-                label: ctx => ` ${ctx.parsed.y.toFixed(2)} m/s @ ${ctx.parsed.x.toFixed(0)}s`
+                label: ctx => {
+                  const rawSpeed = ctx.raw.rawSpeed || 0;
+                  return ` ${formatSpeed(rawSpeed)} @ ${ctx.parsed.x.toFixed(0)}s`;
+                }
               }
             }
           }
@@ -511,7 +573,8 @@
               avgSpeedSegments.forEach(seg => {
                 const xMin = x.getPixelForValue(seg.start);
                 const xMax = x.getPixelForValue(seg.end);
-                const yPos = y.getPixelForValue(seg.avgSpeed);
+                const displayValue = convertToDisplayUnit(seg.avgSpeed);
+                const yPos = y.getPixelForValue(displayValue);
                 const isMax = seg.avgSpeed === maxAvgSpeed && maxAvgSpeed > 0;
 
                 // Draw horizontal line for avg speed
@@ -527,7 +590,7 @@
                 ctx.fillStyle = isMax ? '#22c55e' : '#3b82f6';
                 ctx.font = isMax ? 'bold 11px sans-serif' : '10px sans-serif';
                 ctx.textAlign = 'center';
-                const label = seg.avgSpeed.toFixed(1) + (isMax ? ' (max)' : '');
+                const label = formatSpeed(seg.avgSpeed) + (isMax ? ' (max)' : '');
                 ctx.fillText(label, (xMin + xMax) / 2, yPos - 4);
               });
               ctx.setLineDash([]);
