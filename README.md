@@ -21,16 +21,13 @@ A personal Strava analytics app that tracks additional statistics.
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/weirdstats.git
+   git clone https://github.com/ptmt/weirdstats.git
    cd weirdstats
    ```
 
-2. Create a `.env` file:
+2. Create a `.env` file from the example and fill in your Strava credentials:
    ```bash
-   STRAVA_CLIENT_ID=your_client_id
-   STRAVA_CLIENT_SECRET=your_client_secret
-   DATABASE_PATH=weirdstats.db
-   SERVER_ADDR=:8080
+   cp .env.example .env
    ```
 
 3. Run the app:
@@ -86,21 +83,7 @@ volumes:
 
 ## Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DATABASE_PATH` | Path to SQLite database | `weirdstats.db` |
-| `SERVER_ADDR` | Server listen address | `:8080` |
-| `STRAVA_CLIENT_ID` | Strava OAuth client ID | required |
-| `STRAVA_CLIENT_SECRET` | Strava OAuth client secret | required |
-| `STRAVA_REDIRECT_URL` | OAuth callback URL | auto-detected |
-| `STRAVA_BASE_URL` | Strava API base URL | `https://www.strava.com/api/v3` |
-| `STRAVA_AUTH_BASE_URL` | Strava auth base URL | `https://www.strava.com` |
-| `STRAVA_VERIFY_TOKEN` | Webhook verification token | - |
-| `STRAVA_WEBHOOK_SECRET` | Webhook signature secret | - |
-| `OVERPASS_URL` | Overpass API endpoint | public servers |
-| `OVERPASS_TIMEOUT_SECONDS` | Overpass query timeout | `10` |
-| `OVERPASS_CACHE_HOURS` | Cache TTL for map data | `24` |
-| `WORKER_POLL_INTERVAL_MS` | Background worker interval | `2000` |
+See [.env.example](.env.example) for all available configuration options.
 
 ## CI/CD
 
