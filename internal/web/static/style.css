@@ -37,6 +37,7 @@
   /* Button shadows */
   --btn-shadow: 0 4px 24px rgba(168, 85, 247, 0.35);
   --btn-shadow-hover: 0 8px 32px rgba(168, 85, 247, 0.5);
+  --btn-text: #ffffff;
 }
 
 /* Light Theme */
@@ -74,6 +75,7 @@
   /* Button specific - brighter in light mode */
   --btn-shadow: 0 4px 20px rgba(168, 85, 247, 0.3);
   --btn-shadow-hover: 0 8px 28px rgba(168, 85, 247, 0.4);
+  --btn-text: #0a0a0f;
 }
 
 /* Reset */
@@ -146,6 +148,9 @@ a {
   backdrop-filter: blur(20px);
   border: 1px solid var(--border);
   border-radius: 20px;
+  position: sticky;
+  top: 16px;
+  z-index: 10;
   transition: background 0.3s ease, border-color 0.3s ease;
 }
 
@@ -185,6 +190,10 @@ a {
 }
 
 .nav-links a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
   padding: 10px 16px;
   border-radius: 12px;
   color: var(--ink-muted);
@@ -202,6 +211,15 @@ a {
   background: var(--gradient-holo);
   color: #0a0a0f;
   font-weight: 600;
+}
+
+.nav .btn {
+  min-height: 40px;
+  padding: 10px 20px;
+}
+
+.nav .btn:hover {
+  transform: none;
 }
 
 /* Theme Toggle */
@@ -269,7 +287,7 @@ a {
   text-transform: uppercase;
   border: none;
   background: var(--gradient-holo);
-  color: white;
+  color: var(--btn-text);
   cursor: pointer;
   transition: all 0.25s ease;
   box-shadow: var(--btn-shadow);

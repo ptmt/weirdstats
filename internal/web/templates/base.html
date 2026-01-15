@@ -4,7 +4,19 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="WeirdStats is a personal Strava analytics app that tracks extra stats and updates your activity story." />
+    <meta property="og:title" content="{{if eq .Page "home"}}WeirdStats{{else}}{{.Title}} - WeirdStats{{end}}" />
+    <meta property="og:description" content="WeirdStats is a personal Strava analytics app that tracks extra stats and updates your activity story." />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="/static/weirdstats.png" />
+    <meta property="og:site_name" content="WeirdStats" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="{{if eq .Page "home"}}WeirdStats{{else}}{{.Title}} - WeirdStats{{end}}" />
+    <meta name="twitter:description" content="WeirdStats is a personal Strava analytics app that tracks extra stats and updates your activity story." />
+    <meta name="twitter:image" content="/static/weirdstats.png" />
     <title>{{if eq .Page "home"}}WeirdStats{{else}}{{.Title}} - WeirdStats{{end}}</title>
+    <link rel="icon" type="image/png" href="/static/weirdstats.png" />
+    <link rel="apple-touch-icon" href="/static/weirdstats.png" />
     <link rel="stylesheet" href="/static/style.css" />
     <script>
       // Apply saved theme immediately to prevent flash
