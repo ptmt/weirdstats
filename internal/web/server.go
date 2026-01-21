@@ -87,10 +87,12 @@ type StravaInfo struct {
 }
 
 type PageData struct {
-	Title   string
-	Page    string
-	Message string
-	Strava  StravaInfo
+	Title      string
+	Page       string
+	Message    string
+	FooterText string
+	Strava     StravaInfo
+	UserCount  int
 }
 
 type LandingPageData struct {
@@ -147,6 +149,7 @@ func NewServer(store *storage.Store, ingestor *ingest.Ingestor, mapAPI maps.API,
 	landing, err := template.New("base").Funcs(funcs).ParseFS(
 		templatesFS,
 		"templates/base.html",
+		"templates/footer.html",
 		"templates/landing.html",
 	)
 	if err != nil {
@@ -155,6 +158,7 @@ func NewServer(store *storage.Store, ingestor *ingest.Ingestor, mapAPI maps.API,
 	profile, err := template.New("base").Funcs(funcs).ParseFS(
 		templatesFS,
 		"templates/base.html",
+		"templates/footer.html",
 		"templates/profile.html",
 	)
 	if err != nil {
@@ -163,6 +167,7 @@ func NewServer(store *storage.Store, ingestor *ingest.Ingestor, mapAPI maps.API,
 	settings, err := template.New("base").Funcs(funcs).ParseFS(
 		templatesFS,
 		"templates/base.html",
+		"templates/footer.html",
 		"templates/settings.html",
 	)
 	if err != nil {
@@ -171,6 +176,7 @@ func NewServer(store *storage.Store, ingestor *ingest.Ingestor, mapAPI maps.API,
 	admin, err := template.New("base").Funcs(funcs).ParseFS(
 		templatesFS,
 		"templates/base.html",
+		"templates/footer.html",
 		"templates/admin.html",
 	)
 	if err != nil {
@@ -179,6 +185,7 @@ func NewServer(store *storage.Store, ingestor *ingest.Ingestor, mapAPI maps.API,
 	activity, err := template.New("base").Funcs(funcs).ParseFS(
 		templatesFS,
 		"templates/base.html",
+		"templates/footer.html",
 		"templates/activity.html",
 	)
 	if err != nil {
@@ -213,6 +220,14 @@ func (s *Server) getStravaInfo(ctx context.Context) StravaInfo {
 	}
 }
 
+func (s *Server) userCount(ctx context.Context) int {
+	count, err := s.store.CountUsers(ctx)
+	if err != nil {
+		return 0
+	}
+	return count
+}
+
 func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) bool {
 	_, err := s.store.GetStravaToken(r.Context(), 1)
 	if err != nil {
@@ -243,15 +258,39 @@ func (s *Server) Landing(w http.ResponseWriter, r *http.Request) {
 	}
 	data := LandingPageData{
 		PageData: PageData{
-			Title:   "weirdstats",
-			Page:    "home",
-			Message: r.URL.Query().Get("msg"),
-			Strava:  s.getStravaInfo(r.Context()),
+			Title:      "weirdstats",
+			Page:       "home",
+			Message:    r.URL.Query().Get("msg"),
+			FooterText: "Built for myself, friends, and random strangers. Not for scale, not for profit.",
+			Strava:     s.getStravaInfo(r.Context()),
+			UserCount:  s.userCount(r.Context()),
 		},
 	}
 	if err := s.templates["landing"].ExecuteTemplate(w, "base", data); err != nil {
 		http.Error(w, "template render failed", http.StatusInternalServerError)
 	}
+}
+
+func (s *Server) UsersCount(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/stats/users" {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	count, err := s.store.CountUsers(r.Context())
+	if err != nil {
+		http.Error(w, "failed to count users", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(struct {
+		Users int `json:"users"`
+	}{
+		Users: count,
+	})
 }
 
 func (s *Server) Profile(w http.ResponseWriter, r *http.Request) {
@@ -290,10 +329,12 @@ func (s *Server) Profile(w http.ResponseWriter, r *http.Request) {
 	}
 	data := ProfilePageData{
 		PageData: PageData{
-			Title:   "Profile",
-			Page:    "profile",
-			Message: r.URL.Query().Get("msg"),
-			Strava:  s.getStravaInfo(r.Context()),
+			Title:      "Profile",
+			Page:       "profile",
+			Message:    r.URL.Query().Get("msg"),
+			FooterText: "Tip: the worker runs in the background and fills in stats after ingest.",
+			Strava:     s.getStravaInfo(r.Context()),
+			UserCount:  s.userCount(r.Context()),
 		},
 		Activities: views,
 	}
@@ -410,12 +451,24 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 		FetchedAt:      formatTimestamp(activity.UpdatedAt),
 	}
 
+	footerText := "Last recalculation: "
+	if view.RecalculatedAt != "" {
+		footerText += view.RecalculatedAt
+	} else {
+		footerText += "pending"
+	}
+	if view.FetchedAt != "" {
+		footerText += " · Last fetch: " + view.FetchedAt
+	}
+
 	data := ActivityDetailData{
 		PageData: PageData{
-			Title:   activity.Name,
-			Page:    "activity",
-			Message: r.URL.Query().Get("msg"),
-			Strava:  s.getStravaInfo(r.Context()),
+			Title:      activity.Name,
+			Page:       "activity",
+			Message:    r.URL.Query().Get("msg"),
+			FooterText: footerText,
+			Strava:     s.getStravaInfo(r.Context()),
+			UserCount:  s.userCount(r.Context()),
 		},
 		Activity:        view,
 		Stops:           stopViews,
@@ -539,10 +592,12 @@ func (s *Server) Settings(w http.ResponseWriter, r *http.Request) {
 
 	data := SettingsPageData{
 		PageData: PageData{
-			Title:   "Settings",
-			Page:    "settings",
-			Message: r.URL.Query().Get("msg"),
-			Strava:  s.getStravaInfo(r.Context()),
+			Title:      "Settings",
+			Page:       "settings",
+			Message:    r.URL.Query().Get("msg"),
+			FooterText: "Rules are stored locally and applied when the processing pipeline runs.",
+			Strava:     s.getStravaInfo(r.Context()),
+			UserCount:  s.userCount(r.Context()),
 		},
 		Rules: viewRules,
 	}
@@ -572,10 +627,12 @@ func (s *Server) Admin(w http.ResponseWriter, r *http.Request) {
 
 	data := AdminPageData{
 		PageData: PageData{
-			Title:   "Admin",
-			Page:    "admin",
-			Message: r.URL.Query().Get("msg"),
-			Strava:  s.getStravaInfo(r.Context()),
+			Title:      "Admin",
+			Page:       "admin",
+			Message:    r.URL.Query().Get("msg"),
+			FooterText: "Admin actions are logged and may take time to complete.",
+			Strava:     s.getStravaInfo(r.Context()),
+			UserCount:  s.userCount(r.Context()),
 		},
 		QueueCount: queueCount,
 	}

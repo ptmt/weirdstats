@@ -281,10 +281,6 @@
     <div class="map-note">Red: traffic lights · Blue: road crossings · Orange: other stops</div>
     <div class="map-note" id="map-error" style="display:none; color:#c00;">Map tiles failed to load. Configure an alternative tile URL if needed.</div>
   </section>
-  <div class="footer">
-    {{if .Activity.RecalculatedAt}}Last recalculation: {{.Activity.RecalculatedAt}}{{else}}Last recalculation: pending{{end}}{{if .Activity.FetchedAt}} · Last fetch: {{.Activity.FetchedAt}}{{end}}
-  </div>
-
   <link rel="stylesheet" href="/static/leaflet/leaflet.css" />
   <script src="/static/leaflet/leaflet.js"></script>
   <script src="/static/chartjs/chart.umd.js"></script>

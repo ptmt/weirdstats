@@ -336,6 +336,18 @@ WHERE processed_at IS NULL
 	return count, nil
 }
 
+func (s *Store) CountUsers(ctx context.Context) (int, error) {
+	row := s.db.QueryRowContext(ctx, `
+SELECT COUNT(*)
+FROM strava_tokens
+`)
+	var count int
+	if err := row.Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
 func (s *Store) InsertWebhookEvent(ctx context.Context, event WebhookEvent) (int64, error) {
 	if event.ReceivedAt.IsZero() {
 		event.ReceivedAt = time.Now()

@@ -92,6 +92,7 @@ func main() {
 	mux.HandleFunc("/activity/", webServer.Activity)
 	mux.HandleFunc("/admin", webServer.Admin)
 	mux.HandleFunc("/admin/", webServer.Admin)
+	mux.HandleFunc("/stats/users", webServer.UsersCount)
 	mux.Handle("/static/", http.StripPrefix("/static/", web.StaticHandler()))
 	mux.Handle("/webhook", &webhook.Handler{
 		Store:         store,

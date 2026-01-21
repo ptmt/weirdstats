@@ -525,6 +525,11 @@ a {
 }
 
 /* Hero sections */
+.hero-message {
+  grid-column: 1 / -1;
+  margin-bottom: 24px;
+}
+
 .hero {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1074,6 +1079,10 @@ input::placeholder {
   .hero {
     grid-template-columns: 1fr;
     gap: 40px;
+  }
+
+  .hero-message {
+    order: -2;
   }
 
   .hero-card {
