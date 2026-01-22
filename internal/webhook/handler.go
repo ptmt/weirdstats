@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 
 	"weirdstats/internal/storage"
@@ -62,6 +63,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing required fields", http.StatusBadRequest)
 		return
 	}
+
+	log.Printf("strava webhook: user=%d type=%s aspect=%s object=%d",
+		event.OwnerID, event.ObjectType, event.AspectType, event.ObjectID)
 
 	if err := h.recordEvent(ctx, event, string(payload)); err != nil {
 		http.Error(w, "failed to record event", http.StatusInternalServerError)

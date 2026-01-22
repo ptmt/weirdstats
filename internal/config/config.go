@@ -9,32 +9,34 @@ import (
 )
 
 type Config struct {
-	DatabasePath         string
-	ServerAddr           string
-	StravaAccessToken    string
-	StravaAccessExpiry   int64
-	StravaRefreshToken   string
-	StravaClientID       string
-	StravaClientSecret   string
-	StravaBaseURL        string
-	StravaAuthBaseURL    string
-	StravaRedirectURL    string
-	StravaVerifyToken    string
-	StravaWebhookSecret  string
-	MapsAPIKey           string
-	OverpassURL          string
-	OverpassURLs         []string
-	OverpassTimeoutSec   int
-	OverpassCacheHours   int
-	WorkerPollIntervalMS int
+	DatabasePath          string
+	ServerAddr            string
+	StravaAccessToken     string
+	StravaAccessExpiry    int64
+	StravaRefreshToken    string
+	StravaClientID        string
+	StravaClientSecret    string
+	StravaBaseURL         string
+	StravaAuthBaseURL     string
+	StravaRedirectURL     string
+	StravaVerifyToken     string
+	StravaWebhookSecret   string
+	StravaInitialSyncDays int
+	MapsAPIKey            string
+	OverpassURL           string
+	OverpassURLs          []string
+	OverpassTimeoutSec    int
+	OverpassCacheHours    int
+	WorkerPollIntervalMS  int
 }
 
 func Load(path string) (Config, error) {
 	cfg := Config{
-		ServerAddr:           ":8080",
-		StravaBaseURL:        "https://www.strava.com/api/v3",
-		StravaAuthBaseURL:    "https://www.strava.com",
-		WorkerPollIntervalMS: 2000,
+		ServerAddr:            ":8080",
+		StravaBaseURL:         "https://www.strava.com/api/v3",
+		StravaAuthBaseURL:     "https://www.strava.com",
+		StravaInitialSyncDays: 30,
+		WorkerPollIntervalMS:  2000,
 	}
 
 	if path != "" {
@@ -63,6 +65,11 @@ func Load(path string) (Config, error) {
 	if v := os.Getenv("WORKER_POLL_INTERVAL_MS"); v != "" {
 		if err := parseInt(&cfg.WorkerPollIntervalMS, v); err != nil {
 			return Config{}, fmt.Errorf("WORKER_POLL_INTERVAL_MS: %w", err)
+		}
+	}
+	if v := os.Getenv("STRAVA_INITIAL_SYNC_DAYS"); v != "" {
+		if err := parseInt(&cfg.StravaInitialSyncDays, v); err != nil {
+			return Config{}, fmt.Errorf("STRAVA_INITIAL_SYNC_DAYS: %w", err)
 		}
 	}
 	if v := os.Getenv("OVERPASS_TIMEOUT_SECONDS"); v != "" {

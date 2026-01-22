@@ -73,10 +73,11 @@ func main() {
 	queueWorker := &worker.Worker{Store: store, Processor: pipeline}
 
 	webServer, err := web.NewServer(store, ingestor, mapAPI, overpassClient, stopOpts, web.StravaConfig{
-		ClientID:     cfg.StravaClientID,
-		ClientSecret: cfg.StravaClientSecret,
-		AuthBaseURL:  cfg.StravaAuthBaseURL,
-		RedirectURL:  cfg.StravaRedirectURL,
+		ClientID:        cfg.StravaClientID,
+		ClientSecret:    cfg.StravaClientSecret,
+		AuthBaseURL:     cfg.StravaAuthBaseURL,
+		RedirectURL:     cfg.StravaRedirectURL,
+		InitialSyncDays: cfg.StravaInitialSyncDays,
 	})
 	if err != nil {
 		log.Fatalf("load templates: %v", err)
@@ -158,6 +159,12 @@ func runWorker(ctx context.Context, queueWorker *worker.Worker, idleDelay time.D
 		idleDelay = 2 * time.Second
 	}
 
+	rateLimitBackoff := time.Duration(0)
+	const (
+		rateLimitBackoffStart = 15 * time.Second
+		rateLimitBackoffMax   = 10 * time.Minute
+	)
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -167,7 +174,26 @@ func runWorker(ctx context.Context, queueWorker *worker.Worker, idleDelay time.D
 
 		processed, err := queueWorker.ProcessNext(ctx)
 		if err != nil {
+			if strava.IsRateLimited(err) {
+				if rateLimitBackoff <= 0 {
+					rateLimitBackoff = rateLimitBackoffStart
+				} else {
+					rateLimitBackoff *= 2
+					if rateLimitBackoff > rateLimitBackoffMax {
+						rateLimitBackoff = rateLimitBackoffMax
+					}
+				}
+				log.Printf("worker rate limited; backing off for %s", rateLimitBackoff)
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(rateLimitBackoff):
+				}
+				continue
+			}
 			log.Printf("worker error: %v", err)
+		} else if processed {
+			rateLimitBackoff = 0
 		}
 		if !processed {
 			select {

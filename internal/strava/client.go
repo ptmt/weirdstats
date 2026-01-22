@@ -17,6 +17,15 @@ type Client struct {
 	HTTPClient  *http.Client
 }
 
+type APIError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *APIError) Error() string {
+	return fmt.Sprintf("strava error %d: %s", e.StatusCode, e.Body)
+}
+
 type Activity struct {
 	ID          int64
 	Name        string
@@ -205,7 +214,7 @@ func (c *Client) getJSON(ctx context.Context, path string, params url.Values, ta
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return fmt.Errorf("strava error %d: %s", resp.StatusCode, string(body))
+		return &APIError{StatusCode: resp.StatusCode, Body: string(body)}
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(target); err != nil {

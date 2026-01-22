@@ -122,10 +122,11 @@ type AdminPageData struct {
 }
 
 type StravaConfig struct {
-	ClientID     string
-	ClientSecret string
-	AuthBaseURL  string
-	RedirectURL  string
+	ClientID        string
+	ClientSecret    string
+	AuthBaseURL     string
+	RedirectURL     string
+	InitialSyncDays int
 }
 
 // StaticHandler serves embedded static assets (leaflet, chart.js).
@@ -787,6 +788,16 @@ func (s *Server) StravaCallback(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/profile/settings?msg=strava+authorization+failed", http.StatusFound)
 		return
 	}
+	existing, err := s.store.GetStravaToken(r.Context(), 1)
+	firstConnect := false
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			log.Printf("strava token lookup failed: %v", err)
+		}
+		firstConnect = true
+	} else if existing.AthleteID == 0 && existing.AthleteName == "" {
+		firstConnect = true
+	}
 	athleteName := token.Athlete.FirstName
 	if token.Athlete.LastName != "" {
 		athleteName += " " + token.Athlete.LastName
@@ -804,6 +815,25 @@ func (s *Server) StravaCallback(w http.ResponseWriter, r *http.Request) {
 		log.Printf("strava token save failed: %v", err)
 		http.Redirect(w, r, "/profile/settings?msg=strava+token+save+failed", http.StatusFound)
 		return
+	}
+	if firstConnect {
+		if s.ingestor == nil {
+			log.Printf("strava connected; ingestor not configured, skipping initial sync")
+		} else if s.strava.InitialSyncDays <= 0 {
+			log.Printf("strava connected; initial sync disabled")
+		} else {
+			days := s.strava.InitialSyncDays
+			log.Printf("strava connected; starting initial sync (%d days)", days)
+			go func() {
+				after := time.Now().AddDate(0, 0, -days)
+				count, err := s.ingestor.SyncActivitiesSince(context.Background(), after)
+				if err != nil {
+					log.Printf("initial sync failed: %v", err)
+				} else {
+					log.Printf("initial sync completed: %d activities", count)
+				}
+			}()
+		}
 	}
 	http.Redirect(w, r, "/profile/?msg=strava+connected", http.StatusFound)
 }
