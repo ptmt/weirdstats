@@ -27,13 +27,17 @@ func (e *APIError) Error() string {
 }
 
 type Activity struct {
-	ID          int64
-	Name        string
-	Type        string
-	StartDate   time.Time
-	Description string
-	Distance    float64
-	MovingTime  int
+	ID           int64
+	Name         string
+	Type         string
+	StartDate    time.Time
+	Description  string
+	Distance     float64
+	MovingTime   int
+	AveragePower float64
+	Visibility   string
+	Private      bool
+	HideFromHome bool
 }
 
 type ActivitySummary struct {
@@ -51,13 +55,17 @@ type StreamSet struct {
 
 func (c *Client) GetActivity(ctx context.Context, id int64) (Activity, error) {
 	var payload struct {
-		ID          int64   `json:"id"`
-		Name        string  `json:"name"`
-		Type        string  `json:"type"`
-		StartDate   string  `json:"start_date"`
-		Description string  `json:"description"`
-		Distance    float64 `json:"distance"`
-		MovingTime  int     `json:"moving_time"`
+		ID           int64   `json:"id"`
+		Name         string  `json:"name"`
+		Type         string  `json:"type"`
+		StartDate    string  `json:"start_date"`
+		Description  string  `json:"description"`
+		Distance     float64 `json:"distance"`
+		MovingTime   int     `json:"moving_time"`
+		AverageWatts float64 `json:"average_watts"`
+		Visibility   string  `json:"visibility"`
+		Private      bool    `json:"private"`
+		HideFromHome bool    `json:"hide_from_home"`
 	}
 
 	if err := c.getJSON(ctx, fmt.Sprintf("/activities/%d", id), nil, &payload); err != nil {
@@ -70,13 +78,17 @@ func (c *Client) GetActivity(ctx context.Context, id int64) (Activity, error) {
 	}
 
 	return Activity{
-		ID:          payload.ID,
-		Name:        payload.Name,
-		Type:        payload.Type,
-		StartDate:   start,
-		Description: payload.Description,
-		Distance:    payload.Distance,
-		MovingTime:  payload.MovingTime,
+		ID:           payload.ID,
+		Name:         payload.Name,
+		Type:         payload.Type,
+		StartDate:    start,
+		Description:  payload.Description,
+		Distance:     payload.Distance,
+		MovingTime:   payload.MovingTime,
+		AveragePower: payload.AverageWatts,
+		Visibility:   payload.Visibility,
+		Private:      payload.Private,
+		HideFromHome: payload.HideFromHome,
 	}, nil
 }
 

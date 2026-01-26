@@ -10,11 +10,13 @@ import (
 	"html/template"
 	"io/fs"
 	"log"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"weirdstats/internal/gps"
 	"weirdstats/internal/ingest"
@@ -46,10 +48,20 @@ type ActivityView struct {
 	ID             int64
 	Name           string
 	Type           string
+	TypeLabel      string
+	TypeClass      string
 	StartTime      string
 	Description    string
 	Distance       string
+	DistanceValue  string
+	DistanceUnit   string
 	Duration       string
+	PaceLabel      string
+	PaceValue      string
+	PaceUnit       string
+	PowerValue     string
+	PowerUnit      string
+	HasPower       bool
 	HasStats       bool
 	StopCount      int
 	StopTotal      string
@@ -57,6 +69,7 @@ type ActivityView struct {
 	RoadCrossings  int
 	RecalculatedAt string
 	FetchedAt      string
+	IsHidden       bool
 }
 
 type StopView struct {
@@ -326,6 +339,7 @@ func (s *Server) Profile(w http.ResponseWriter, r *http.Request) {
 			StopTotal:   formatDuration(activity.StopTotalSeconds),
 			LightStops:  activity.TrafficLightStopCount,
 		}
+		enrichActivityView(&view, activity.Activity)
 		views = append(views, view)
 	}
 	data := ProfilePageData{
@@ -451,6 +465,7 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 		RecalculatedAt: recalculatedAt,
 		FetchedAt:      formatTimestamp(activity.UpdatedAt),
 	}
+	enrichActivityView(&view, activity)
 
 	footerText := "Last recalculation: "
 	if view.RecalculatedAt != "" {
@@ -1020,4 +1035,130 @@ func formatDistance(meters float64) string {
 		return fmt.Sprintf("%.1f km", km)
 	}
 	return fmt.Sprintf("%.2f km", km)
+}
+
+func enrichActivityView(view *ActivityView, activity storage.Activity) {
+	view.TypeLabel = activityTypeLabel(activity.Type)
+	view.TypeClass = activityTypeClass(activity.Type)
+	view.IsHidden = isActivityHidden(activity)
+	view.DistanceValue, view.DistanceUnit = formatDistanceParts(activity.Distance)
+	view.PaceLabel, view.PaceValue, view.PaceUnit = formatPaceOrSpeed(activity.Type, activity.Distance, activity.MovingTime)
+	view.PowerValue, view.PowerUnit, view.HasPower = formatPower(activity.AveragePower)
+}
+
+func formatDistanceParts(meters float64) (string, string) {
+	if meters <= 0 {
+		return "—", ""
+	}
+	km := meters / 1000
+	if km >= 10 {
+		return fmt.Sprintf("%.1f", km), "km"
+	}
+	return fmt.Sprintf("%.2f", km), "km"
+}
+
+func formatPaceOrSpeed(activityType string, meters float64, seconds int) (string, string, string) {
+	if isPaceType(activityType) {
+		value, unit := formatPace(meters, seconds)
+		return "Pace", value, unit
+	}
+	value, unit := formatSpeed(meters, seconds)
+	return "Avg speed", value, unit
+}
+
+func formatPace(meters float64, seconds int) (string, string) {
+	if meters <= 0 || seconds <= 0 {
+		return "—", ""
+	}
+	paceSeconds := int(math.Round(float64(seconds) / (meters / 1000)))
+	minutes := paceSeconds / 60
+	remaining := paceSeconds % 60
+	return fmt.Sprintf("%d:%02d", minutes, remaining), "/km"
+}
+
+func formatSpeed(meters float64, seconds int) (string, string) {
+	if meters <= 0 || seconds <= 0 {
+		return "—", ""
+	}
+	hours := float64(seconds) / 3600
+	speed := (meters / 1000) / hours
+	return fmt.Sprintf("%.1f", speed), "km/h"
+}
+
+func formatPower(watts float64) (string, string, bool) {
+	if watts <= 0 {
+		return "—", "", false
+	}
+	return fmt.Sprintf("%.0f", math.Round(watts)), "W", true
+}
+
+func activityTypeClass(activityType string) string {
+	t := strings.ToLower(activityType)
+	switch {
+	case strings.Contains(t, "ride"):
+		return "ride"
+	case strings.Contains(t, "run"):
+		return "run"
+	case strings.Contains(t, "swim"):
+		return "swim"
+	case t == "walk" || t == "hike":
+		return "walk"
+	case strings.Contains(t, "workout") || strings.Contains(t, "training") || t == "yoga":
+		return "workout"
+	default:
+		return "other"
+	}
+}
+
+func activityTypeLabel(activityType string) string {
+	if activityType == "" {
+		return "Activity"
+	}
+	return splitCamelCase(activityType)
+}
+
+func splitCamelCase(input string) string {
+	runes := []rune(input)
+	if len(runes) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for i, r := range runes {
+		if r == '_' || r == '-' {
+			b.WriteRune(' ')
+			continue
+		}
+		if i > 0 && unicode.IsUpper(r) {
+			prev := runes[i-1]
+			nextLower := i+1 < len(runes) && unicode.IsLower(runes[i+1])
+			if unicode.IsLower(prev) || (unicode.IsUpper(prev) && nextLower) {
+				b.WriteRune(' ')
+			}
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+func isPaceType(activityType string) bool {
+	t := strings.ToLower(activityType)
+	if strings.Contains(t, "run") {
+		return true
+	}
+	switch t {
+	case "walk", "hike":
+		return true
+	default:
+		return false
+	}
+}
+
+func isActivityHidden(activity storage.Activity) bool {
+	if activity.HideFromHome || activity.IsPrivate {
+		return true
+	}
+	if strings.EqualFold(activity.Visibility, "only_me") || strings.EqualFold(activity.Visibility, "private") {
+		return true
+	}
+	return false
 }

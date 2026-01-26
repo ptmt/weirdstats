@@ -17,15 +17,19 @@ type Store struct {
 }
 
 type Activity struct {
-	ID          int64
-	UserID      int64
-	Type        string
-	Name        string
-	StartTime   time.Time
-	Description string
-	Distance    float64
-	MovingTime  int
-	UpdatedAt   time.Time
+	ID           int64
+	UserID       int64
+	Type         string
+	Name         string
+	StartTime    time.Time
+	Description  string
+	Distance     float64
+	MovingTime   int
+	AveragePower float64
+	Visibility   string
+	IsPrivate    bool
+	HideFromHome bool
+	UpdatedAt    time.Time
 }
 
 type WebhookEvent struct {
@@ -96,6 +100,10 @@ func (s *Store) InitSchema(ctx context.Context) error {
 		`ALTER TABLE strava_tokens ADD COLUMN athlete_name TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE activities ADD COLUMN distance REAL NOT NULL DEFAULT 0`,
 		`ALTER TABLE activities ADD COLUMN moving_time INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE activities ADD COLUMN average_power REAL NOT NULL DEFAULT 0`,
+		`ALTER TABLE activities ADD COLUMN visibility TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE activities ADD COLUMN is_private INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE activities ADD COLUMN hide_from_home INTEGER NOT NULL DEFAULT 0`,
 	}
 	for _, m := range migrations {
 		_, _ = s.db.ExecContext(ctx, m) // ignore errors (column already exists)
@@ -111,6 +119,10 @@ CREATE TABLE IF NOT EXISTS activities (
 	description TEXT NOT NULL,
 	distance REAL NOT NULL DEFAULT 0,
 	moving_time INTEGER NOT NULL DEFAULT 0,
+	average_power REAL NOT NULL DEFAULT 0,
+	visibility TEXT NOT NULL DEFAULT '',
+	is_private INTEGER NOT NULL DEFAULT 0,
+	hide_from_home INTEGER NOT NULL DEFAULT 0,
 	updated_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS activity_points (
@@ -220,8 +232,8 @@ func (s *Store) upsertActivityWithPoints(ctx context.Context, activity Activity,
 	var res sql.Result
 	if allowUpsert && activity.ID != 0 {
 		res, err = tx.ExecContext(ctx, `
-INSERT INTO activities (id, user_id, type, name, start_time, description, distance, moving_time, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO activities (id, user_id, type, name, start_time, description, distance, moving_time, average_power, visibility, is_private, hide_from_home, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
 	user_id = excluded.user_id,
 	type = excluded.type,
@@ -230,18 +242,22 @@ ON CONFLICT(id) DO UPDATE SET
 	description = excluded.description,
 	distance = excluded.distance,
 	moving_time = excluded.moving_time,
+	average_power = excluded.average_power,
+	visibility = excluded.visibility,
+	is_private = excluded.is_private,
+	hide_from_home = excluded.hide_from_home,
 	updated_at = excluded.updated_at
-`, activity.ID, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, time.Now().Unix())
+`, activity.ID, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, activity.AveragePower, activity.Visibility, boolToInt(activity.IsPrivate), boolToInt(activity.HideFromHome), time.Now().Unix())
 	} else if activity.ID != 0 {
 		res, err = tx.ExecContext(ctx, `
-INSERT INTO activities (id, user_id, type, name, start_time, description, distance, moving_time, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, activity.ID, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, time.Now().Unix())
+INSERT INTO activities (id, user_id, type, name, start_time, description, distance, moving_time, average_power, visibility, is_private, hide_from_home, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, activity.ID, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, activity.AveragePower, activity.Visibility, boolToInt(activity.IsPrivate), boolToInt(activity.HideFromHome), time.Now().Unix())
 	} else {
 		res, err = tx.ExecContext(ctx, `
-INSERT INTO activities (user_id, type, name, start_time, description, distance, moving_time, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-`, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, time.Now().Unix())
+INSERT INTO activities (user_id, type, name, start_time, description, distance, moving_time, average_power, visibility, is_private, hide_from_home, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, activity.AveragePower, activity.Visibility, boolToInt(activity.IsPrivate), boolToInt(activity.HideFromHome), time.Now().Unix())
 	}
 	if err != nil {
 		return 0, err
@@ -749,6 +765,10 @@ SELECT a.id,
 	a.description,
 	a.distance,
 	a.moving_time,
+	a.average_power,
+	a.visibility,
+	a.is_private,
+	a.hide_from_home,
 	s.stop_count,
 	s.stop_total_seconds,
 	s.traffic_light_stop_count
@@ -767,6 +787,8 @@ LIMIT ?
 	for rows.Next() {
 		var item ActivityWithStats
 		var startTime int64
+		var isPrivate int
+		var hideFromHome int
 		var stopCount sql.NullInt64
 		var stopTotalSeconds sql.NullInt64
 		var trafficLightStopCount sql.NullInt64
@@ -779,6 +801,10 @@ LIMIT ?
 			&item.Description,
 			&item.Distance,
 			&item.MovingTime,
+			&item.AveragePower,
+			&item.Visibility,
+			&isPrivate,
+			&hideFromHome,
 			&stopCount,
 			&stopTotalSeconds,
 			&trafficLightStopCount,
@@ -786,6 +812,8 @@ LIMIT ?
 			return nil, err
 		}
 		item.StartTime = time.Unix(startTime, 0)
+		item.IsPrivate = isPrivate != 0
+		item.HideFromHome = hideFromHome != 0
 		if stopCount.Valid {
 			item.HasStats = true
 			item.StopCount = int(stopCount.Int64)
@@ -834,12 +862,14 @@ WHERE activity_id = ?
 
 func (s *Store) GetActivity(ctx context.Context, activityID int64) (Activity, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT id, user_id, type, name, start_time, description, distance, moving_time, updated_at
+SELECT id, user_id, type, name, start_time, description, distance, moving_time, average_power, visibility, is_private, hide_from_home, updated_at
 FROM activities
 WHERE id = ?
 `, activityID)
 	var activity Activity
 	var startTime int64
+	var isPrivate int
+	var hideFromHome int
 	var updatedAt int64
 	if err := row.Scan(
 		&activity.ID,
@@ -850,11 +880,17 @@ WHERE id = ?
 		&activity.Description,
 		&activity.Distance,
 		&activity.MovingTime,
+		&activity.AveragePower,
+		&activity.Visibility,
+		&isPrivate,
+		&hideFromHome,
 		&updatedAt,
 	); err != nil {
 		return Activity{}, err
 	}
 	activity.StartTime = time.Unix(startTime, 0)
+	activity.IsPrivate = isPrivate != 0
+	activity.HideFromHome = hideFromHome != 0
 	activity.UpdatedAt = time.Unix(updatedAt, 0)
 	return activity, nil
 }

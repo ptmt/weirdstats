@@ -11,14 +11,18 @@
   {{if .Activities}}
     <section class="stats-grid">
       {{range .Activities}}
-        <article class="card activity-card">
+        <article class="card activity-card{{if .IsHidden}} is-hidden{{end}}">
           <div class="activity-header">
-            <div>
+            <div class="activity-header-main">
+              <div class="activity-badges">
+                <span class="activity-type type-{{.TypeClass}}">{{.TypeLabel}}</span>
+                {{if .IsHidden}}<span class="activity-visibility">Hidden</span>{{end}}
+              </div>
               <a href="/activity/{{.ID}}" class="activity-name">{{.Name}}</a>
               <div class="activity-meta">
-                <span>{{.Type}}</span>
-                <span class="sep">/</span>
                 <span>{{.StartTime}}</span>
+                <span class="sep">·</span>
+                <span>{{.Duration}}</span>
               </div>
             </div>
             <div class="activity-menu">
@@ -68,10 +72,31 @@
               </div>
             </div>
           </div>
-          {{if .Description}}<div class="muted">{{.Description}}</div>{{end}}
-          <div class="activity-stats">
-            {{if .Distance}}<span class="stat-tag primary">{{.Distance}}</span>{{end}}
-            {{if .Duration}}<span class="stat-tag primary">{{.Duration}}</span>{{end}}
+          {{if .Description}}<div class="muted activity-description">{{.Description}}</div>{{end}}
+          <div class="activity-metrics">
+            <div class="metric">
+              <div class="metric-label">Distance</div>
+              <div class="metric-value">
+                <span class="metric-number">{{.DistanceValue}}</span>
+                {{if .DistanceUnit}}<span class="metric-unit">{{.DistanceUnit}}</span>{{end}}
+              </div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">{{.PaceLabel}}</div>
+              <div class="metric-value">
+                <span class="metric-number">{{.PaceValue}}</span>
+                {{if .PaceUnit}}<span class="metric-unit">{{.PaceUnit}}</span>{{end}}
+              </div>
+            </div>
+            <div class="metric{{if not .HasPower}} is-muted{{end}}">
+              <div class="metric-label">Avg power</div>
+              <div class="metric-value">
+                <span class="metric-number">{{.PowerValue}}</span>
+                {{if .PowerUnit}}<span class="metric-unit">{{.PowerUnit}}</span>{{end}}
+              </div>
+            </div>
+          </div>
+          <div class="activity-substats">
             {{if .StopCount}}<span class="stat-tag secondary">{{.StopCount}} stops ({{.StopTotal}})</span>{{end}}
             {{if .LightStops}}<span class="stat-tag secondary">{{.LightStops}} at lights</span>{{end}}
           </div>

@@ -762,11 +762,121 @@ a {
 .activity-card {
   display: grid;
   gap: 14px;
-  transition: border-color 0.2s;
+  position: relative;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
 }
 
 .activity-card:hover {
   border-color: rgba(168, 85, 247, 0.3);
+}
+
+.activity-card.is-hidden {
+  border-color: rgba(239, 68, 68, 0.35);
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.25), var(--shadow-card);
+}
+
+.activity-card.is-hidden::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at top left, rgba(239, 68, 68, 0.18), transparent 55%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.activity-card.is-hidden > * {
+  position: relative;
+  z-index: 1;
+}
+
+.activity-header-main {
+  display: grid;
+  gap: 6px;
+}
+
+.activity-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.activity-type {
+  --activity-color: var(--cyan);
+  --activity-color-soft: rgba(0, 212, 255, 0.12);
+  --activity-color-border: rgba(0, 212, 255, 0.35);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--activity-color);
+  background: var(--activity-color-soft);
+  border: 1px solid var(--activity-color-border);
+}
+
+.activity-type::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--activity-color);
+  box-shadow: 0 0 10px var(--activity-color);
+}
+
+.activity-type.type-ride {
+  --activity-color: #f97316;
+  --activity-color-soft: rgba(249, 115, 22, 0.16);
+  --activity-color-border: rgba(249, 115, 22, 0.4);
+}
+
+.activity-type.type-run {
+  --activity-color: #22c55e;
+  --activity-color-soft: rgba(34, 197, 94, 0.16);
+  --activity-color-border: rgba(34, 197, 94, 0.4);
+}
+
+.activity-type.type-swim {
+  --activity-color: #38bdf8;
+  --activity-color-soft: rgba(56, 189, 248, 0.16);
+  --activity-color-border: rgba(56, 189, 248, 0.4);
+}
+
+.activity-type.type-walk {
+  --activity-color: #eab308;
+  --activity-color-soft: rgba(234, 179, 8, 0.16);
+  --activity-color-border: rgba(234, 179, 8, 0.4);
+}
+
+.activity-type.type-workout {
+  --activity-color: var(--purple);
+  --activity-color-soft: rgba(168, 85, 247, 0.16);
+  --activity-color-border: rgba(168, 85, 247, 0.4);
+}
+
+.activity-type.type-other {
+  --activity-color: #94a3b8;
+  --activity-color-soft: rgba(148, 163, 184, 0.16);
+  --activity-color-border: rgba(148, 163, 184, 0.35);
+}
+
+.activity-visibility {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.35);
 }
 
 .activity-meta {
@@ -774,15 +884,69 @@ a {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: 12px;
+  letter-spacing: 0.02em;
   color: var(--ink-muted);
 }
 
 .activity-meta .sep {
-  color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.3);
 }
 
-.activity-stats {
+.activity-description {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.activity-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--border);
+}
+
+.metric {
+  display: grid;
+  gap: 6px;
+}
+
+.metric-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-muted);
+}
+
+.metric-value {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-number {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.metric-unit {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+
+.metric.is-muted .metric-number,
+.metric.is-muted .metric-unit {
+  color: var(--ink-muted);
+}
+
+.activity-stats,
+.activity-substats {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
