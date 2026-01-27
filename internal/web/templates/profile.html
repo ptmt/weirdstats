@@ -43,7 +43,7 @@
   {{end}}
 
   {{if .Activities}}
-    <section class="stats-grid">
+    <section class="stats-grid{{if .Contributions.Days}} has-contrib{{end}}">
       {{range .Activities}}
         <article class="card activity-card{{if .IsHidden}} is-hidden{{end}}">
           <div class="activity-header">

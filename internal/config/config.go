@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -21,6 +22,9 @@ type Config struct {
 	StravaRedirectURL     string
 	StravaVerifyToken     string
 	StravaWebhookSecret   string
+	StravaWebhookCallbackURL string
+	StravaWebhookAutoRegister bool
+	StravaWebhookAutoReplace  bool
 	StravaInitialSyncDays int
 	MapsAPIKey            string
 	OverpassURL           string
@@ -56,6 +60,7 @@ func Load(path string) (Config, error) {
 	cfg.StravaRedirectURL = os.Getenv("STRAVA_REDIRECT_URL")
 	cfg.StravaVerifyToken = os.Getenv("STRAVA_VERIFY_TOKEN")
 	cfg.StravaWebhookSecret = os.Getenv("STRAVA_WEBHOOK_SECRET")
+	cfg.StravaWebhookCallbackURL = os.Getenv("STRAVA_WEBHOOK_CALLBACK_URL")
 	cfg.MapsAPIKey = os.Getenv("MAPS_API_KEY")
 	cfg.OverpassURL = os.Getenv("OVERPASS_URL")
 	if v := os.Getenv("OVERPASS_URLS"); v != "" {
@@ -70,6 +75,16 @@ func Load(path string) (Config, error) {
 	if v := os.Getenv("STRAVA_INITIAL_SYNC_DAYS"); v != "" {
 		if err := parseInt(&cfg.StravaInitialSyncDays, v); err != nil {
 			return Config{}, fmt.Errorf("STRAVA_INITIAL_SYNC_DAYS: %w", err)
+		}
+	}
+	if v := os.Getenv("STRAVA_WEBHOOK_AUTO_REGISTER"); v != "" {
+		if err := parseBool(&cfg.StravaWebhookAutoRegister, v); err != nil {
+			return Config{}, fmt.Errorf("STRAVA_WEBHOOK_AUTO_REGISTER: %w", err)
+		}
+	}
+	if v := os.Getenv("STRAVA_WEBHOOK_AUTO_REPLACE"); v != "" {
+		if err := parseBool(&cfg.StravaWebhookAutoReplace, v); err != nil {
+			return Config{}, fmt.Errorf("STRAVA_WEBHOOK_AUTO_REPLACE: %w", err)
 		}
 	}
 	if v := os.Getenv("OVERPASS_TIMEOUT_SECONDS"); v != "" {
@@ -139,6 +154,15 @@ func parseInt(target *int, value string) error {
 func parseInt64(target *int64, value string) error {
 	var parsed int64
 	_, err := fmt.Sscanf(value, "%d", &parsed)
+	if err != nil {
+		return err
+	}
+	*target = parsed
+	return nil
+}
+
+func parseBool(target *bool, value string) error {
+	parsed, err := strconv.ParseBool(value)
 	if err != nil {
 		return err
 	}

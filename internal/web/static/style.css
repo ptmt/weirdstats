@@ -770,6 +770,10 @@ a {
   gap: 20px;
 }
 
+.stats-grid.has-contrib {
+  margin-top: 14px;
+}
+
 .settings-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
