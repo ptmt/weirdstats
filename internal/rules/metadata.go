@@ -3,17 +3,17 @@ package rules
 import "sort"
 
 type MetricMeta struct {
-	ID          string   `json:"id"`
-	Label       string   `json:"label"`
-	Description string   `json:"description"`
-	Unit        string   `json:"unit"`
-	Example     string   `json:"example"`
+	ID          string    `json:"id"`
+	Label       string    `json:"label"`
+	Description string    `json:"description"`
+	Unit        string    `json:"unit"`
+	Example     string    `json:"example"`
 	Type        ValueType `json:"type"`
-	Enum        []string `json:"enum,omitempty"`
+	Enum        []string  `json:"enum,omitempty"`
 }
 
 type Metadata struct {
-	Metrics   []MetricMeta                `json:"metrics"`
+	Metrics   []MetricMeta                 `json:"metrics"`
 	Operators map[ValueType][]OperatorSpec `json:"operators"`
 }
 

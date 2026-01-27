@@ -9,58 +9,125 @@
     {{end}}
   </section>
 
-  <section class="settings-grid">
-    <article class="card">
-      <h3>Hide activity rules</h3>
-      <p class="muted">Rules are applied after stats are computed. Toggle rules to control what gets muted.</p>
-      <div class="settings-grid">
+  <section class="settings-stack">
+    <article class="card settings-section">
+      <div class="section-head">
+        <div>
+          <h3>Hide activity rules</h3>
+          <p class="muted">Rules are evaluated after stats are computed. If multiple rules match, any hide wins.</p>
+        </div>
+        <span class="pill">JSON-backed</span>
+      </div>
+      <div class="rule-list">
         {{if .Rules}}
           {{range .Rules}}
-            <div class="card rule">
-              <strong>{{.Name}}</strong>
-              <span class="muted">{{.Description}}</span>
-              <form method="post" action="/profile/settings">
-                <input type="hidden" name="action" value="toggle-rule" />
-                <input type="hidden" name="rule_id" value="{{.ID}}" />
-                <label class="toggle">
-                  <input type="checkbox" name="enabled" {{if .Enabled}}checked{{end}} />
-                  Status: {{boolLabel .Enabled}}
-                </label>
-                <button class="btn secondary" type="submit">Update</button>
-              </form>
-              <form method="post" action="/profile/settings">
-                <input type="hidden" name="action" value="delete-rule" />
-                <input type="hidden" name="rule_id" value="{{.ID}}" />
-                <button class="btn secondary" type="submit">Delete rule</button>
-              </form>
+            <div class="rule-row">
+              <div class="rule-main">
+                <div class="rule-title">
+                  <strong>{{.Name}}</strong>
+                  {{if .IsLegacy}}<span class="pill muted">Legacy</span>{{end}}
+                </div>
+                <span class="muted">{{.Description}}</span>
+              </div>
+              <div class="rule-actions">
+                <form method="post" action="/profile/settings" class="rule-action">
+                  <input type="hidden" name="action" value="toggle-rule" />
+                  <input type="hidden" name="rule_id" value="{{.ID}}" />
+                  <label class="toggle">
+                    <input type="checkbox" name="enabled" {{if .Enabled}}checked{{end}} />
+                    Status: {{boolLabel .Enabled}}
+                  </label>
+                  <button class="btn secondary" type="submit">Update</button>
+                </form>
+                <form method="post" action="/profile/settings" class="rule-action">
+                  <input type="hidden" name="action" value="delete-rule" />
+                  <input type="hidden" name="rule_id" value="{{.ID}}" />
+                  <button class="btn secondary" type="submit">Delete rule</button>
+                </form>
+              </div>
             </div>
           {{end}}
         {{else}}
-          <div class="card rule">
-            <strong>No rules yet</strong>
-            <span class="muted">Add a rule below to start hiding activities.</span>
+          <div class="rule-row">
+            <div class="rule-main">
+              <strong>No rules yet</strong>
+              <span class="muted">Add a rule below to start hiding activities.</span>
+            </div>
           </div>
         {{end}}
       </div>
-      <form method="post" action="/profile/settings" style="margin-top: 16px;" class="card rule">
+    </article>
+
+    <article class="card settings-section">
+      <div class="section-head">
+        <div>
+          <h3>Build a rule</h3>
+          <p class="muted">Pick metrics, operators, and values. Everything saves as structured JSON.</p>
+        </div>
+      </div>
+      <form method="post" action="/profile/settings" class="rule-builder" id="rule-builder-form">
         <input type="hidden" name="action" value="add-rule" />
-        <label>
-          <div class="muted">Rule name</div>
-          <input name="name" placeholder="Hide late night rides" />
-        </label>
-        <label>
-          <div class="muted">Condition</div>
-          <input name="condition" placeholder="type = Ride AND start_time after 22:00" />
-        </label>
-        <label class="toggle">
-          <input type="checkbox" name="enabled" checked />
-          Enabled
-        </label>
-        <button class="btn" type="submit">Add rule</button>
+        <input type="hidden" name="condition" id="rule-condition" />
+        <div class="builder-header">
+          <label>
+            <div class="muted">Rule name</div>
+            <input name="name" placeholder="Hide short late-night rides" />
+          </label>
+          <label class="toggle">
+            <input type="checkbox" name="enabled" checked />
+            Enabled
+          </label>
+        </div>
+
+        <div class="builder-grid">
+          <div class="builder-main">
+            <div class="builder-row">
+              <label>
+                <div class="muted">Match</div>
+                <select id="rule-match">
+                  <option value="all">All conditions (AND)</option>
+                  <option value="any">Any condition (OR)</option>
+                </select>
+              </label>
+              <label>
+                <div class="muted">Allow 1 in N</div>
+                <input type="number" id="rule-allow-one-in" min="2" step="1" placeholder="e.g. 10" />
+                <div class="field-help">Leave blank to always hide when matched.</div>
+              </label>
+            </div>
+
+            <div class="conditions" id="rule-conditions"></div>
+            <div class="builder-actions">
+              <button type="button" class="btn secondary" id="rule-add-condition">Add condition</button>
+            </div>
+
+            <div class="builder-preview">
+              <div class="muted">Rule JSON preview</div>
+              <pre id="rule-preview">{}</pre>
+              <div class="rule-error" id="rule-error"></div>
+            </div>
+            <button class="btn" type="submit" id="rule-submit">Add rule</button>
+          </div>
+
+          <aside class="builder-reference">
+            <h4>Reference</h4>
+            <div class="reference-block">
+              <div class="reference-title">Metrics</div>
+              <div class="reference-list" id="rule-metrics-ref"></div>
+            </div>
+            <div class="reference-block">
+              <div class="reference-title">Operators</div>
+              <div class="reference-list" id="rule-operators-ref"></div>
+            </div>
+          </aside>
+        </div>
+        <noscript>
+          <p class="muted">JavaScript is required to build rules. Enable it to continue.</p>
+        </noscript>
       </form>
     </article>
 
-    <article class="card">
+    <article class="card settings-section">
       <h3>Strava connection</h3>
       <p class="muted">Manage your Strava account connection. Reconnect if you're having permission issues.</p>
       <div class="settings-actions">
@@ -72,7 +139,7 @@
       </div>
     </article>
 
-    <article class="card">
+    <article class="card settings-section">
       <h3>Danger zone</h3>
       <p class="muted">Delete your data, revoke tokens, and stop processing.</p>
       <form method="post" action="/profile/settings" class="rule">
@@ -86,4 +153,314 @@
     </article>
   </section>
 
+  <datalist id="rule-metric-options"></datalist>
+  <script type="application/json" id="rules-metadata">{{.RulesMetaJSON}}</script>
+  <script>
+    (function() {
+      const metaEl = document.getElementById('rules-metadata');
+      if (!metaEl) return;
+      let meta;
+      try {
+        meta = JSON.parse(metaEl.textContent);
+      } catch (err) {
+        return;
+      }
+      const metrics = meta.metrics || [];
+      const operatorsByType = meta.operators || {};
+      const metricsById = new Map(metrics.map(metric => [metric.id, metric]));
+
+      const conditionsEl = document.getElementById('rule-conditions');
+      const addBtn = document.getElementById('rule-add-condition');
+      const matchEl = document.getElementById('rule-match');
+      const allowEl = document.getElementById('rule-allow-one-in');
+      const previewEl = document.getElementById('rule-preview');
+      const errorEl = document.getElementById('rule-error');
+      const submitBtn = document.getElementById('rule-submit');
+      const conditionInput = document.getElementById('rule-condition');
+      const metricList = document.getElementById('rule-metric-options');
+
+      metrics.forEach(metric => {
+        const option = document.createElement('option');
+        option.value = metric.id;
+        option.label = metric.label + (metric.unit ? ` (${metric.unit})` : '');
+        metricList.appendChild(option);
+      });
+
+      function operatorSpec(valueType, opId) {
+        const list = operatorsByType[valueType] || [];
+        return list.find(op => op.id === opId);
+      }
+
+      function buildValueInput(type, unit, listId) {
+        const input = document.createElement('input');
+        if (type === 'number') {
+          input.type = 'number';
+          input.step = 'any';
+        }
+        if (listId) {
+          input.setAttribute('list', listId);
+        }
+        input.placeholder = unit ? `Value in ${unit}` : 'Value';
+        return input;
+      }
+
+      function createConditionRow() {
+        const row = document.createElement('div');
+        row.className = 'condition-row';
+
+        const metricField = document.createElement('label');
+        metricField.className = 'field';
+        metricField.innerHTML = '<div class="muted">Metric</div>';
+        const metricInput = document.createElement('input');
+        metricInput.setAttribute('list', 'rule-metric-options');
+        metricInput.placeholder = 'distance_m';
+        const metricHelp = document.createElement('div');
+        metricHelp.className = 'field-help';
+        metricField.appendChild(metricInput);
+        metricField.appendChild(metricHelp);
+
+        const opField = document.createElement('label');
+        opField.className = 'field';
+        opField.innerHTML = '<div class="muted">Operator</div>';
+        const opSelect = document.createElement('select');
+        opField.appendChild(opSelect);
+
+        const valueField = document.createElement('label');
+        valueField.className = 'field condition-values';
+        valueField.innerHTML = '<div class="muted">Value</div>';
+        const valueWrap = document.createElement('div');
+        valueWrap.className = 'value-wrap';
+        valueField.appendChild(valueWrap);
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'btn secondary small';
+        removeBtn.textContent = 'Remove';
+
+        row.appendChild(metricField);
+        row.appendChild(opField);
+        row.appendChild(valueField);
+        row.appendChild(removeBtn);
+
+        function updateOperators() {
+          const metricId = metricInput.value.trim();
+          const metric = metricsById.get(metricId);
+          metricHelp.textContent = metric ? `${metric.label}${metric.unit ? ` (${metric.unit})` : ''}` : '';
+          opSelect.innerHTML = '';
+          if (!metric) {
+            return;
+          }
+          const options = operatorsByType[metric.type] || [];
+          options.forEach(op => {
+            const option = document.createElement('option');
+            option.value = op.id;
+            option.textContent = op.label;
+            opSelect.appendChild(option);
+          });
+        }
+
+        function updateValues() {
+          const metricId = metricInput.value.trim();
+          const metric = metricsById.get(metricId);
+          valueWrap.innerHTML = '';
+          if (!metric) {
+            return;
+          }
+          const op = opSelect.value;
+          const spec = operatorSpec(metric.type, op);
+          if (!spec) {
+            return;
+          }
+          const listId = `value-options-${Math.random().toString(36).slice(2)}`;
+          if (metric.type === 'enum' && metric.enum && metric.enum.length > 0) {
+            const dataList = document.createElement('datalist');
+            dataList.id = listId;
+            metric.enum.forEach(value => {
+              const option = document.createElement('option');
+              option.value = value;
+              dataList.appendChild(option);
+            });
+            valueWrap.appendChild(dataList);
+          }
+          if (spec.value_mode === 'range') {
+            const first = buildValueInput(metric.type, metric.unit, listId);
+            const second = buildValueInput(metric.type, metric.unit, listId);
+            first.placeholder = 'Min';
+            second.placeholder = 'Max';
+            valueWrap.appendChild(first);
+            valueWrap.appendChild(second);
+          } else {
+            const input = buildValueInput(metric.type, metric.unit, listId);
+            if (spec.value_mode === 'list') {
+              input.placeholder = 'Comma-separated values';
+            }
+            valueWrap.appendChild(input);
+          }
+        }
+
+        metricInput.addEventListener('change', () => {
+          updateOperators();
+          updateValues();
+          updatePreview();
+        });
+        opSelect.addEventListener('change', () => {
+          updateValues();
+          updatePreview();
+        });
+        valueWrap.addEventListener('input', updatePreview);
+        removeBtn.addEventListener('click', () => {
+          row.remove();
+          if (!conditionsEl.children.length) {
+            conditionsEl.appendChild(createConditionRow());
+          }
+          updatePreview();
+        });
+
+        updateOperators();
+        updateValues();
+        return row;
+      }
+
+      function parseCondition(row) {
+        const metricInput = row.querySelector('input[list="rule-metric-options"]');
+        const opSelect = row.querySelector('select');
+        const valueInputs = row.querySelectorAll('.value-wrap input');
+        const metricId = metricInput ? metricInput.value.trim() : '';
+        if (!metricId) {
+          return { error: 'Metric is required.' };
+        }
+        const metric = metricsById.get(metricId);
+        if (!metric) {
+          return { error: `Unknown metric: ${metricId}` };
+        }
+        const op = opSelect ? opSelect.value : '';
+        const spec = operatorSpec(metric.type, op);
+        if (!spec) {
+          return { error: 'Operator is required.' };
+        }
+        const values = [];
+        if (spec.value_mode === 'range') {
+          if (valueInputs.length < 2) {
+            return { error: 'Two values required for range.' };
+          }
+          valueInputs.forEach(input => {
+            const val = input.value.trim();
+            if (val !== '') values.push(val);
+          });
+          if (values.length !== 2) {
+            return { error: 'Two values required for range.' };
+          }
+        } else {
+          const val = valueInputs[0] ? valueInputs[0].value.trim() : '';
+          if (!val) {
+            return { error: 'Value is required.' };
+          }
+          if (spec.value_mode === 'list') {
+            val.split(',').forEach(part => {
+              const trimmed = part.trim();
+              if (trimmed) values.push(trimmed);
+            });
+            if (!values.length) {
+              return { error: 'At least one value is required.' };
+            }
+          } else {
+            values.push(val);
+          }
+        }
+        const typedValues = values.map(value => {
+          if (metric.type === 'number') {
+            const num = Number(value);
+            return Number.isFinite(num) ? num : value;
+          }
+          return value;
+        });
+        if (metric.type === 'number') {
+          for (const value of typedValues) {
+            if (typeof value !== 'number' || !Number.isFinite(value)) {
+              return { error: 'Numeric value required.' };
+            }
+          }
+        }
+        return { condition: { metric: metricId, op: op, values: typedValues } };
+      }
+
+      function buildRule() {
+        const conditions = [];
+        const errors = [];
+        conditionsEl.querySelectorAll('.condition-row').forEach(row => {
+          const result = parseCondition(row);
+          if (result.error) {
+            errors.push(result.error);
+          } else {
+            conditions.push(result.condition);
+          }
+        });
+        if (!conditions.length) {
+          errors.push('Add at least one condition.');
+        }
+        const rule = {
+          match: matchEl ? matchEl.value : 'all',
+          conditions: conditions,
+          action: { type: 'hide' }
+        };
+        const oneInValue = allowEl ? parseInt(allowEl.value, 10) : 0;
+        if (Number.isFinite(oneInValue) && oneInValue >= 2) {
+          rule.action.allow = { one_in: oneInValue };
+        }
+        return { rule, errors };
+      }
+
+      function updatePreview() {
+        const { rule, errors } = buildRule();
+        if (errors.length) {
+          errorEl.textContent = errors[0];
+          previewEl.textContent = '{}';
+          conditionInput.value = '';
+          if (submitBtn) submitBtn.disabled = true;
+          return;
+        }
+        errorEl.textContent = '';
+        previewEl.textContent = JSON.stringify(rule, null, 2);
+        conditionInput.value = JSON.stringify(rule);
+        if (submitBtn) submitBtn.disabled = false;
+      }
+
+      function renderReference() {
+        const metricsRef = document.getElementById('rule-metrics-ref');
+        if (metricsRef) {
+          metricsRef.innerHTML = '';
+          metrics.forEach(metric => {
+            const item = document.createElement('div');
+            item.className = 'reference-item';
+            item.innerHTML = `<div class="reference-item-title">${metric.label}<span class="pill muted">${metric.id}</span></div>` +
+              `<div class="muted">${metric.description}${metric.unit ? ` - unit ${metric.unit}` : ''}${metric.example ? ` - e.g. ${metric.example}` : ''}</div>`;
+            metricsRef.appendChild(item);
+          });
+        }
+        const opsRef = document.getElementById('rule-operators-ref');
+        if (opsRef) {
+          opsRef.innerHTML = '';
+          Object.keys(operatorsByType).forEach(type => {
+            const block = document.createElement('div');
+            block.className = 'reference-item';
+            const ops = operatorsByType[type] || [];
+            const label = ops.map(op => op.label).join(', ');
+            block.innerHTML = `<div class="reference-item-title">${type}</div><div class="muted">${label}</div>`;
+            opsRef.appendChild(block);
+          });
+        }
+      }
+
+      addBtn.addEventListener('click', () => {
+        conditionsEl.appendChild(createConditionRow());
+        updatePreview();
+      });
+      matchEl.addEventListener('change', updatePreview);
+      allowEl.addEventListener('input', updatePreview);
+
+      conditionsEl.appendChild(createConditionRow());
+      renderReference();
+      updatePreview();
+    })();
+  </script>
 {{end}}

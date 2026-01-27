@@ -29,6 +29,7 @@ type Activity struct {
 	Visibility   string
 	IsPrivate    bool
 	HideFromHome bool
+	HiddenByRule bool
 	UpdatedAt    time.Time
 }
 
@@ -81,6 +82,11 @@ type ActivityStop struct {
 	CrossingRoad    string
 }
 
+type ActivityTime struct {
+	StartTime  time.Time
+	MovingTime int
+}
+
 func Open(path string) (*Store, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
@@ -104,6 +110,7 @@ func (s *Store) InitSchema(ctx context.Context) error {
 		`ALTER TABLE activities ADD COLUMN visibility TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE activities ADD COLUMN is_private INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE activities ADD COLUMN hide_from_home INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE activities ADD COLUMN hidden_by_rule INTEGER NOT NULL DEFAULT 0`,
 	}
 	for _, m := range migrations {
 		_, _ = s.db.ExecContext(ctx, m) // ignore errors (column already exists)
@@ -123,6 +130,7 @@ CREATE TABLE IF NOT EXISTS activities (
 	visibility TEXT NOT NULL DEFAULT '',
 	is_private INTEGER NOT NULL DEFAULT 0,
 	hide_from_home INTEGER NOT NULL DEFAULT 0,
+	hidden_by_rule INTEGER NOT NULL DEFAULT 0,
 	updated_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS activity_points (
@@ -362,6 +370,39 @@ FROM strava_tokens
 		return 0, err
 	}
 	return count, nil
+}
+
+func (s *Store) ListActivityTimes(ctx context.Context, userID int64, start, end time.Time) ([]ActivityTime, error) {
+	if userID == 0 {
+		userID = 1
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT start_time, moving_time
+FROM activities
+WHERE user_id = ?
+	AND start_time >= ?
+	AND start_time < ?
+ORDER BY start_time
+`, userID, start.Unix(), end.Unix())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var activities []ActivityTime
+	for rows.Next() {
+		var item ActivityTime
+		var startTime int64
+		if err := rows.Scan(&startTime, &item.MovingTime); err != nil {
+			return nil, err
+		}
+		item.StartTime = time.Unix(startTime, 0)
+		activities = append(activities, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return activities, nil
 }
 
 func (s *Store) InsertWebhookEvent(ctx context.Context, event WebhookEvent) (int64, error) {
@@ -769,6 +810,7 @@ SELECT a.id,
 	a.visibility,
 	a.is_private,
 	a.hide_from_home,
+	a.hidden_by_rule,
 	s.stop_count,
 	s.stop_total_seconds,
 	s.traffic_light_stop_count
@@ -789,6 +831,7 @@ LIMIT ?
 		var startTime int64
 		var isPrivate int
 		var hideFromHome int
+		var hiddenByRule int
 		var stopCount sql.NullInt64
 		var stopTotalSeconds sql.NullInt64
 		var trafficLightStopCount sql.NullInt64
@@ -805,6 +848,7 @@ LIMIT ?
 			&item.Visibility,
 			&isPrivate,
 			&hideFromHome,
+			&hiddenByRule,
 			&stopCount,
 			&stopTotalSeconds,
 			&trafficLightStopCount,
@@ -814,6 +858,7 @@ LIMIT ?
 		item.StartTime = time.Unix(startTime, 0)
 		item.IsPrivate = isPrivate != 0
 		item.HideFromHome = hideFromHome != 0
+		item.HiddenByRule = hiddenByRule != 0
 		if stopCount.Valid {
 			item.HasStats = true
 			item.StopCount = int(stopCount.Int64)
@@ -862,7 +907,7 @@ WHERE activity_id = ?
 
 func (s *Store) GetActivity(ctx context.Context, activityID int64) (Activity, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT id, user_id, type, name, start_time, description, distance, moving_time, average_power, visibility, is_private, hide_from_home, updated_at
+SELECT id, user_id, type, name, start_time, description, distance, moving_time, average_power, visibility, is_private, hide_from_home, hidden_by_rule, updated_at
 FROM activities
 WHERE id = ?
 `, activityID)
@@ -870,6 +915,7 @@ WHERE id = ?
 	var startTime int64
 	var isPrivate int
 	var hideFromHome int
+	var hiddenByRule int
 	var updatedAt int64
 	if err := row.Scan(
 		&activity.ID,
@@ -884,6 +930,7 @@ WHERE id = ?
 		&activity.Visibility,
 		&isPrivate,
 		&hideFromHome,
+		&hiddenByRule,
 		&updatedAt,
 	); err != nil {
 		return Activity{}, err
@@ -891,6 +938,19 @@ WHERE id = ?
 	activity.StartTime = time.Unix(startTime, 0)
 	activity.IsPrivate = isPrivate != 0
 	activity.HideFromHome = hideFromHome != 0
+	activity.HiddenByRule = hiddenByRule != 0
 	activity.UpdatedAt = time.Unix(updatedAt, 0)
 	return activity, nil
+}
+
+func (s *Store) UpdateActivityHiddenByRule(ctx context.Context, activityID int64, hidden bool) error {
+	if activityID == 0 {
+		return errors.New("activity id required")
+	}
+	_, err := s.db.ExecContext(ctx, `
+UPDATE activities
+SET hidden_by_rule = ?
+WHERE id = ?
+`, boolToInt(hidden), activityID)
+	return err
 }

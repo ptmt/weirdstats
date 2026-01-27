@@ -21,6 +21,7 @@ import (
 	"weirdstats/internal/gps"
 	"weirdstats/internal/ingest"
 	"weirdstats/internal/maps"
+	"weirdstats/internal/rules"
 	"weirdstats/internal/storage"
 	"weirdstats/internal/strava"
 )
@@ -114,7 +115,8 @@ type LandingPageData struct {
 
 type ProfilePageData struct {
 	PageData
-	Activities []ActivityView
+	Activities    []ActivityView
+	Contributions ContributionData
 }
 
 type SettingsRule struct {
@@ -122,16 +124,42 @@ type SettingsRule struct {
 	Name        string
 	Description string
 	Enabled     bool
+	IsLegacy    bool
 }
 
 type SettingsPageData struct {
 	PageData
-	Rules []SettingsRule
+	Rules         []SettingsRule
+	RulesMetaJSON template.JS
 }
 
 type AdminPageData struct {
 	PageData
 	QueueCount int
+}
+
+type ContributionDay struct {
+	Date       string
+	Label      string
+	Hours      float64
+	HoursLabel string
+	Level      int
+	InRange    bool
+}
+
+type ContributionMonth struct {
+	Label  string
+	Column int
+}
+
+type ContributionData struct {
+	Days       []ContributionDay
+	Months     []ContributionMonth
+	Weeks      int
+	StartLabel string
+	EndLabel   string
+	MaxHours   float64
+	TotalHours float64
 }
 
 type StravaConfig struct {
@@ -307,6 +335,26 @@ func (s *Server) UsersCount(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) RulesMetadata(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/api/rules/metadata" {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireAuth(w, r) {
+		return
+	}
+	registry := rules.DefaultRegistry()
+	meta := rules.BuildMetadata(registry, rules.DefaultOperators())
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(meta); err != nil {
+		http.Error(w, "failed to encode metadata", http.StatusInternalServerError)
+	}
+}
+
 func (s *Server) Profile(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/profile" {
 		http.Redirect(w, r, "/profile/", http.StatusFound)
@@ -342,6 +390,7 @@ func (s *Server) Profile(w http.ResponseWriter, r *http.Request) {
 		enrichActivityView(&view, activity.Activity)
 		views = append(views, view)
 	}
+	contrib := s.buildContributionData(r.Context(), time.Now())
 	data := ProfilePageData{
 		PageData: PageData{
 			Title:      "Profile",
@@ -351,7 +400,8 @@ func (s *Server) Profile(w http.ResponseWriter, r *http.Request) {
 			Strava:     s.getStravaInfo(r.Context()),
 			UserCount:  s.userCount(r.Context()),
 		},
-		Activities: views,
+		Activities:    views,
+		Contributions: contrib,
 	}
 	if err := s.templates["profile"].ExecuteTemplate(w, "base", data); err != nil {
 		http.Error(w, "template render failed", http.StatusInternalServerError)
@@ -591,19 +641,33 @@ func (s *Server) Settings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rules, err := s.store.ListHideRules(r.Context(), 1)
+	registry := rules.DefaultRegistry()
+	ruleRows, err := s.store.ListHideRules(r.Context(), 1)
 	if err != nil {
 		http.Error(w, "failed to load rules", http.StatusInternalServerError)
 		return
 	}
 	var viewRules []SettingsRule
-	for _, rule := range rules {
+	for _, ruleRow := range ruleRows {
+		description := ruleRow.Condition
+		isLegacy := false
+		if parsed, err := rules.ParseRuleJSON(ruleRow.Condition); err == nil {
+			description = rules.Describe(parsed, registry)
+		} else {
+			isLegacy = true
+		}
 		viewRules = append(viewRules, SettingsRule{
-			ID:          rule.ID,
-			Name:        rule.Name,
-			Description: rule.Condition,
-			Enabled:     rule.Enabled,
+			ID:          ruleRow.ID,
+			Name:        ruleRow.Name,
+			Description: description,
+			Enabled:     ruleRow.Enabled,
+			IsLegacy:    isLegacy,
 		})
+	}
+	meta := rules.BuildMetadata(registry, rules.DefaultOperators())
+	metaJSON, err := json.Marshal(meta)
+	if err != nil {
+		metaJSON = []byte(`{\"metrics\":[],\"operators\":{}}`)
 	}
 
 	data := SettingsPageData{
@@ -615,7 +679,8 @@ func (s *Server) Settings(w http.ResponseWriter, r *http.Request) {
 			Strava:     s.getStravaInfo(r.Context()),
 			UserCount:  s.userCount(r.Context()),
 		},
-		Rules: viewRules,
+		Rules:         viewRules,
+		RulesMetaJSON: template.JS(string(metaJSON)),
 	}
 	if err := s.templates["settings"].ExecuteTemplate(w, "base", data); err != nil {
 		http.Error(w, "template render failed", http.StatusInternalServerError)
@@ -868,6 +933,21 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/profile/settings?msg=missing+rule+fields", http.StatusFound)
 			return
 		}
+		parsedRule, err := rules.ParseRuleJSON(condition)
+		if err != nil {
+			http.Redirect(w, r, "/profile/settings?msg=invalid+rule+json", http.StatusFound)
+			return
+		}
+		if err := rules.ValidateRule(parsedRule, rules.DefaultRegistry()); err != nil {
+			http.Redirect(w, r, "/profile/settings?msg=invalid+rule+definition", http.StatusFound)
+			return
+		}
+		normalized, err := json.Marshal(parsedRule)
+		if err != nil {
+			http.Redirect(w, r, "/profile/settings?msg=rule+save+failed", http.StatusFound)
+			return
+		}
+		condition = string(normalized)
 		if _, err := s.store.CreateHideRule(r.Context(), storage.HideRule{
 			UserID:    1,
 			Name:      name,
@@ -1037,6 +1117,96 @@ func formatDistance(meters float64) string {
 	return fmt.Sprintf("%.2f km", km)
 }
 
+func (s *Server) buildContributionData(ctx context.Context, now time.Time) ContributionData {
+	loc := time.Local
+	end := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	start := end.AddDate(0, 0, -364)
+	startGrid := start
+	for startGrid.Weekday() != time.Sunday {
+		startGrid = startGrid.AddDate(0, 0, -1)
+	}
+	endGrid := end
+	for endGrid.Weekday() != time.Saturday {
+		endGrid = endGrid.AddDate(0, 0, 1)
+	}
+
+	activities, err := s.store.ListActivityTimes(ctx, 1, startGrid, endGrid.AddDate(0, 0, 1))
+	if err != nil {
+		log.Printf("contrib load failed: %v", err)
+	}
+
+	hoursByDay := make(map[string]float64)
+	for _, activity := range activities {
+		if activity.MovingTime <= 0 {
+			continue
+		}
+		dayKey := activity.StartTime.In(loc).Format("2006-01-02")
+		hoursByDay[dayKey] += float64(activity.MovingTime) / 3600
+	}
+
+	maxHours := 0.0
+	totalHours := 0.0
+	for day := start; !day.After(end); day = day.AddDate(0, 0, 1) {
+		hours := hoursByDay[day.Format("2006-01-02")]
+		if hours > maxHours {
+			maxHours = hours
+		}
+		totalHours += hours
+	}
+
+	var days []ContributionDay
+	var months []ContributionMonth
+	lastMonth := time.Month(0)
+	dayIndex := 0
+	for day := startGrid; !day.After(endGrid); day = day.AddDate(0, 0, 1) {
+		inRange := !day.Before(start) && !day.After(end)
+		dateKey := day.Format("2006-01-02")
+		hours := 0.0
+		if inRange {
+			hours = hoursByDay[dateKey]
+		}
+		level := 0
+		if inRange {
+			level = contributionLevel(hours, maxHours)
+		}
+		hoursLabel := ""
+		if inRange {
+			hoursLabel = formatHours(hours)
+		}
+		if inRange && day.Day() == 1 && day.Month() != lastMonth {
+			months = append(months, ContributionMonth{
+				Label:  day.Format("Jan"),
+				Column: dayIndex/7 + 1,
+			})
+			lastMonth = day.Month()
+		}
+		days = append(days, ContributionDay{
+			Date:       dateKey,
+			Label:      day.Format("Jan 2, 2006"),
+			Hours:      hours,
+			HoursLabel: hoursLabel,
+			Level:      level,
+			InRange:    inRange,
+		})
+		dayIndex++
+	}
+
+	weeks := (dayIndex + 6) / 7
+	if weeks < 1 {
+		weeks = 1
+	}
+
+	return ContributionData{
+		Days:       days,
+		Months:     months,
+		Weeks:      weeks,
+		StartLabel: start.Format("Jan 2, 2006"),
+		EndLabel:   end.Format("Jan 2, 2006"),
+		MaxHours:   maxHours,
+		TotalHours: totalHours,
+	}
+}
+
 func enrichActivityView(view *ActivityView, activity storage.Activity) {
 	view.TypeLabel = activityTypeLabel(activity.Type)
 	view.TypeClass = activityTypeClass(activity.Type)
@@ -1090,6 +1260,33 @@ func formatPower(watts float64) (string, string, bool) {
 		return "—", "", false
 	}
 	return fmt.Sprintf("%.0f", math.Round(watts)), "W", true
+}
+
+func formatHours(hours float64) string {
+	if hours <= 0 {
+		return "No activity"
+	}
+	if hours < 10 {
+		return fmt.Sprintf("%.1f h", hours)
+	}
+	return fmt.Sprintf("%.0f h", hours)
+}
+
+func contributionLevel(hours, max float64) int {
+	if hours <= 0 || max <= 0 {
+		return 0
+	}
+	ratio := hours / max
+	switch {
+	case ratio <= 0.25:
+		return 1
+	case ratio <= 0.5:
+		return 2
+	case ratio <= 0.75:
+		return 3
+	default:
+		return 4
+	}
 }
 
 func activityTypeClass(activityType string) string {
@@ -1154,6 +1351,9 @@ func isPaceType(activityType string) bool {
 }
 
 func isActivityHidden(activity storage.Activity) bool {
+	if activity.HiddenByRule {
+		return true
+	}
 	if activity.HideFromHome || activity.IsPrivate {
 		return true
 	}

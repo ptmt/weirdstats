@@ -31,7 +31,7 @@
     </script>
   </head>
   <body>
-    <div class="wrap">
+    <div class="wrap{{if eq .Page "settings"}} wrap-wide{{end}}">
       <div class="nav">
         <a href="/" class="brand">
           <img src="/static/weirdstats.png" alt="weirdstats" class="logo">

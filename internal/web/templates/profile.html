@@ -8,6 +8,40 @@
     <h2 class="section-title">Your parsed activities</h2>
   </section>
 
+  {{if .Contributions.Days}}
+    <section class="card contrib-card">
+      <div class="contrib-header">
+        <div>
+          <h3>Activity intensity</h3>
+          <p class="muted">Last 12 months · {{.Contributions.StartLabel}}–{{.Contributions.EndLabel}}</p>
+        </div>
+        <div class="contrib-legend">
+          <span class="legend-label">Less</span>
+          <span class="legend-swatch level-0"></span>
+          <span class="legend-swatch level-1"></span>
+          <span class="legend-swatch level-2"></span>
+          <span class="legend-swatch level-3"></span>
+          <span class="legend-swatch level-4"></span>
+          <span class="legend-label">More</span>
+        </div>
+      </div>
+      <div class="contrib-grid-scroll">
+        <div class="contrib-grid-wrap" style="--contrib-weeks: {{.Contributions.Weeks}}">
+          <div class="contrib-months">
+            {{range .Contributions.Months}}
+              <span class="contrib-month" style="grid-column: {{.Column}}">{{.Label}}</span>
+            {{end}}
+          </div>
+          <div class="contrib-grid">
+            {{range .Contributions.Days}}
+              <span class="contrib-day level-{{.Level}}{{if not .InRange}} is-outside{{end}}" title="{{.Label}}{{if .InRange}} · {{.HoursLabel}}{{end}}"></span>
+            {{end}}
+          </div>
+        </div>
+      </div>
+    </section>
+  {{end}}
+
   {{if .Activities}}
     <section class="stats-grid">
       {{range .Activities}}

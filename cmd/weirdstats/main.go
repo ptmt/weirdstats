@@ -15,6 +15,7 @@ import (
 	"weirdstats/internal/ingest"
 	"weirdstats/internal/maps"
 	"weirdstats/internal/processor"
+	"weirdstats/internal/rules"
 	"weirdstats/internal/storage"
 	"weirdstats/internal/strava"
 	"weirdstats/internal/web"
@@ -69,7 +70,11 @@ func main() {
 		Overpass: overpassClient,
 		Options:  stopOpts,
 	}
-	pipeline := &processor.PipelineProcessor{Ingest: ingestor, Stats: statsProcessor}
+	rulesProcessor := &processor.RulesProcessor{
+		Store:    store,
+		Registry: rules.DefaultRegistry(),
+	}
+	pipeline := &processor.PipelineProcessor{Ingest: ingestor, Stats: statsProcessor, Rules: rulesProcessor}
 	queueWorker := &worker.Worker{Store: store, Processor: pipeline}
 
 	webServer, err := web.NewServer(store, ingestor, mapAPI, overpassClient, stopOpts, web.StravaConfig{
@@ -90,6 +95,7 @@ func main() {
 	mux.HandleFunc("/profile", webServer.Profile)
 	mux.HandleFunc("/profile/", webServer.Profile)
 	mux.HandleFunc("/profile/settings", webServer.Settings)
+	mux.HandleFunc("/api/rules/metadata", webServer.RulesMetadata)
 	mux.HandleFunc("/activity/", webServer.Activity)
 	mux.HandleFunc("/admin", webServer.Admin)
 	mux.HandleFunc("/admin/", webServer.Admin)

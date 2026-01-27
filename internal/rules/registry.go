@@ -54,7 +54,7 @@ func DefaultRegistry() Registry {
 		"start_hour": {
 			ID:          "start_hour",
 			Label:       "Start hour",
-			Description: "Hour of day activity started (0-23)",
+			Description: "Hour of day activity started (0-23, UTC)",
 			Unit:        "h",
 			Example:     "22",
 			Type:        ValueNumber,
