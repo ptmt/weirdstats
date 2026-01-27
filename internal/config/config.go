@@ -10,28 +10,28 @@ import (
 )
 
 type Config struct {
-	DatabasePath          string
-	ServerAddr            string
-	StravaAccessToken     string
-	StravaAccessExpiry    int64
-	StravaRefreshToken    string
-	StravaClientID        string
-	StravaClientSecret    string
-	StravaBaseURL         string
-	StravaAuthBaseURL     string
-	StravaRedirectURL     string
-	StravaVerifyToken     string
-	StravaWebhookSecret   string
-	StravaWebhookCallbackURL string
+	DatabasePath              string
+	ServerAddr                string
+	StravaAccessToken         string
+	StravaAccessExpiry        int64
+	StravaRefreshToken        string
+	StravaClientID            string
+	StravaClientSecret        string
+	StravaBaseURL             string
+	StravaAuthBaseURL         string
+	StravaRedirectURL         string
+	StravaVerifyToken         string
+	StravaWebhookSecret       string
+	StravaWebhookCallbackURL  string
 	StravaWebhookAutoRegister bool
 	StravaWebhookAutoReplace  bool
-	StravaInitialSyncDays int
-	MapsAPIKey            string
-	OverpassURL           string
-	OverpassURLs          []string
-	OverpassTimeoutSec    int
-	OverpassCacheHours    int
-	WorkerPollIntervalMS  int
+	StravaInitialSyncDays     int
+	MapsAPIKey                string
+	OverpassURL               string
+	OverpassURLs              []string
+	OverpassTimeoutSec        int
+	OverpassCacheHours        int
+	WorkerPollIntervalMS      int
 }
 
 func Load(path string) (Config, error) {

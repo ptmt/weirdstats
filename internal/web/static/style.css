@@ -1262,15 +1262,15 @@ a {
 
 .rule-list {
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 
 .rule-row {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  padding: 16px;
+  gap: 12px;
+  padding: 12px;
   border-radius: 16px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1293,91 +1293,110 @@ a {
 .rule-actions {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   align-items: flex-start;
 }
 
 .rule-action {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
 .rule-builder {
   display: grid;
-  gap: 18px;
+  gap: 14px;
+}
+
+.rule-builder input[type="text"],
+.rule-builder input[type="email"],
+.rule-builder input[type="number"],
+.rule-builder input:not([type]),
+.rule-builder select,
+.rule-builder textarea {
+  padding: 10px 12px;
+  font-size: 13px;
+  border-radius: 10px;
+}
+
+.rule-builder .btn:not(.small),
+.rule-actions .btn:not(.small) {
+  padding: 10px 18px;
+  font-size: 13px;
+  letter-spacing: 1px;
+  border-radius: 12px;
 }
 
 .builder-header {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
 .builder-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 24px;
+  gap: 18px;
 }
 
 .builder-main {
   display: grid;
-  gap: 18px;
+  gap: 14px;
 }
 
 .builder-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 16px;
+  gap: 12px;
 }
 
 .builder-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .builder-preview {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .builder-preview pre {
   margin: 0;
-  padding: 12px;
+  padding: 10px;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--bg-subtle);
   color: var(--ink-muted);
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.5;
-  max-height: 220px;
+  max-height: 200px;
   overflow: auto;
 }
 
 .rule-error {
   color: #f87171;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .conditions {
   display: grid;
-  gap: 14px;
+  gap: 10px;
 }
 
 .condition-row {
   display: grid;
   grid-template-columns: minmax(160px, 1.2fr) minmax(140px, 0.8fr) minmax(200px, 1fr) auto;
-  gap: 12px;
+  gap: 10px;
   align-items: end;
 }
 
 .condition-values .value-wrap {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
 }
 
@@ -1389,8 +1408,8 @@ a {
 
 .builder-reference {
   display: grid;
-  gap: 16px;
-  padding: 16px;
+  gap: 12px;
+  padding: 12px;
   border-radius: 16px;
   border: 1px solid var(--border);
   background: var(--bg-subtle);
@@ -1405,7 +1424,7 @@ a {
 
 .reference-block {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .reference-title {
@@ -1417,13 +1436,13 @@ a {
 
 .reference-list {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .reference-item {
   display: grid;
-  gap: 6px;
-  padding: 10px;
+  gap: 5px;
+  padding: 8px;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--surface);

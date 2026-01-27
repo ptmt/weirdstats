@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -118,16 +119,22 @@ func main() {
 		WriteTimeout: 10 * time.Second,
 	}
 
+	listener, err := net.Listen("tcp", cfg.ServerAddr)
+	if err != nil {
+		log.Fatalf("listen: %v", err)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	go func() {
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Printf("http server error: %v", err)
 			stop()
 		}
 	}()
 
+	go ensureWebhookSubscription(ctx, cfg)
 	go runWorker(ctx, queueWorker, time.Duration(cfg.WorkerPollIntervalMS)*time.Millisecond)
 
 	<-ctx.Done()
