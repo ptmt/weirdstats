@@ -1122,7 +1122,8 @@ func (s *Server) buildContributionData(ctx context.Context, now time.Time) Contr
 	loc := time.Local
 	year := now.Year()
 	start := time.Date(year, time.January, 1, 0, 0, 0, 0, loc)
-	end := time.Date(year, now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	today := time.Date(year, now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	end := time.Date(year, time.December, 31, 0, 0, 0, 0, loc)
 	startGrid := start
 	for startGrid.Weekday() != time.Sunday {
 		startGrid = startGrid.AddDate(0, 0, -1)
@@ -1132,7 +1133,7 @@ func (s *Server) buildContributionData(ctx context.Context, now time.Time) Contr
 		endGrid = endGrid.AddDate(0, 0, 1)
 	}
 
-	activities, err := s.store.ListActivityTimes(ctx, 1, startGrid, endGrid.AddDate(0, 0, 1))
+	activities, err := s.store.ListActivityTimes(ctx, 1, startGrid, today.AddDate(0, 0, 1))
 	if err != nil {
 		log.Printf("contrib load failed: %v", err)
 	}
@@ -1148,7 +1149,7 @@ func (s *Server) buildContributionData(ctx context.Context, now time.Time) Contr
 
 	maxHours := 0.0
 	totalHours := 0.0
-	for day := start; !day.After(end); day = day.AddDate(0, 0, 1) {
+	for day := start; !day.After(today); day = day.AddDate(0, 0, 1) {
 		hours := hoursByDay[day.Format("2006-01-02")]
 		if hours > maxHours {
 			maxHours = hours
@@ -1161,7 +1162,8 @@ func (s *Server) buildContributionData(ctx context.Context, now time.Time) Contr
 	lastMonth := time.Month(0)
 	dayIndex := 0
 	for day := startGrid; !day.After(endGrid); day = day.AddDate(0, 0, 1) {
-		inRange := !day.Before(start) && !day.After(end)
+		inYear := !day.Before(start) && !day.After(end)
+		inRange := !day.Before(start) && !day.After(today)
 		dateKey := day.Format("2006-01-02")
 		hours := 0.0
 		if inRange {
@@ -1175,7 +1177,7 @@ func (s *Server) buildContributionData(ctx context.Context, now time.Time) Contr
 		if inRange {
 			hoursLabel = formatHours(hours)
 		}
-		if inRange && day.Day() == 1 && day.Month() != lastMonth {
+		if inYear && day.Day() == 1 && day.Month() != lastMonth {
 			months = append(months, ContributionMonth{
 				Label:  day.Format("Jan"),
 				Column: dayIndex/7 + 1,
