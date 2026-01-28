@@ -156,6 +156,7 @@ type ContributionData struct {
 	Days       []ContributionDay
 	Months     []ContributionMonth
 	Weeks      int
+	Year       int
 	StartLabel string
 	EndLabel   string
 	MaxHours   float64
@@ -1119,8 +1120,9 @@ func formatDistance(meters float64) string {
 
 func (s *Server) buildContributionData(ctx context.Context, now time.Time) ContributionData {
 	loc := time.Local
-	end := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
-	start := end.AddDate(0, 0, -364)
+	year := now.Year()
+	start := time.Date(year, time.January, 1, 0, 0, 0, 0, loc)
+	end := time.Date(year, now.Month(), now.Day(), 0, 0, 0, 0, loc)
 	startGrid := start
 	for startGrid.Weekday() != time.Sunday {
 		startGrid = startGrid.AddDate(0, 0, -1)
@@ -1200,6 +1202,7 @@ func (s *Server) buildContributionData(ctx context.Context, now time.Time) Contr
 		Days:       days,
 		Months:     months,
 		Weeks:      weeks,
+		Year:       year,
 		StartLabel: start.Format("Jan 2, 2006"),
 		EndLabel:   end.Format("Jan 2, 2006"),
 		MaxHours:   maxHours,

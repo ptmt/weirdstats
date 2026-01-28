@@ -1309,6 +1309,67 @@ a {
   gap: 14px;
 }
 
+.rule-templates {
+  display: grid;
+  gap: 12px;
+}
+
+.rule-templates-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.rule-templates-header h4 {
+  margin: 0;
+  font-family: "Bebas Neue", sans-serif;
+  font-size: 20px;
+  letter-spacing: 1px;
+}
+
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.template-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.template-title {
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.template-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.template-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.template-actions {
+  display: flex;
+  align-items: center;
+}
+
 .rule-builder input[type="text"],
 .rule-builder input[type="email"],
 .rule-builder input[type="number"],
@@ -1326,6 +1387,11 @@ a {
   font-size: 13px;
   letter-spacing: 1px;
   border-radius: 12px;
+}
+
+#rule-submit {
+  justify-self: start;
+  width: auto;
 }
 
 .builder-header {

@@ -37,12 +37,12 @@
                     <input type="checkbox" name="enabled" {{if .Enabled}}checked{{end}} />
                     Status: {{boolLabel .Enabled}}
                   </label>
-                  <button class="btn secondary" type="submit">Update</button>
+                  <button class="btn secondary small" type="submit">Update</button>
                 </form>
                 <form method="post" action="/profile/settings" class="rule-action">
                   <input type="hidden" name="action" value="delete-rule" />
                   <input type="hidden" name="rule_id" value="{{.ID}}" />
-                  <button class="btn secondary" type="submit">Delete rule</button>
+                  <button class="btn secondary small" type="submit">Delete rule</button>
                 </form>
               </div>
             </div>
@@ -64,6 +64,13 @@
           <h3>Build a rule</h3>
           <p class="muted">Pick metrics, operators, and values. Everything saves as structured JSON.</p>
         </div>
+      </div>
+      <div class="rule-templates">
+        <div class="rule-templates-header">
+          <h4>Template starters</h4>
+          <span class="muted">Apply one, then tweak it.</span>
+        </div>
+        <div class="template-grid" id="rule-templates"></div>
       </div>
       <form method="post" action="/profile/settings" class="rule-builder" id="rule-builder-form">
         <input type="hidden" name="action" value="add-rule" />
@@ -98,7 +105,7 @@
 
             <div class="conditions" id="rule-conditions"></div>
             <div class="builder-actions">
-              <button type="button" class="btn secondary" id="rule-add-condition">Add condition</button>
+              <button type="button" class="btn secondary small" id="rule-add-condition">Add condition</button>
             </div>
 
             <div class="builder-preview">
@@ -106,7 +113,7 @@
               <pre id="rule-preview">{}</pre>
               <div class="rule-error" id="rule-error"></div>
             </div>
-            <button class="btn" type="submit" id="rule-submit">Add rule</button>
+            <button class="btn small" type="submit" id="rule-submit">Add rule</button>
           </div>
 
           <aside class="builder-reference">
@@ -178,6 +185,11 @@
       const submitBtn = document.getElementById('rule-submit');
       const conditionInput = document.getElementById('rule-condition');
       const metricList = document.getElementById('rule-metric-options');
+      const formEl = document.getElementById('rule-builder-form');
+      const nameInput = formEl ? formEl.querySelector('input[name="name"]') : null;
+      const enabledInput = formEl ? formEl.querySelector('input[name="enabled"]') : null;
+      const templatesEl = document.getElementById('rule-templates');
+      let isApplyingTemplate = false;
 
       metrics.forEach(metric => {
         const option = document.createElement('option');
@@ -185,6 +197,63 @@
         option.label = metric.label + (metric.unit ? ` (${metric.unit})` : '');
         metricList.appendChild(option);
       });
+
+      const templates = [
+        {
+          id: 'short-rides',
+          name: 'Hide short rides',
+          description: 'Hide rides under 5 km.',
+          tags: ['Ride', '<5km'],
+          rule: {
+            match: 'all',
+            conditions: [
+              { metric: 'activity_type', op: 'in', values: ['Ride', 'VirtualRide', 'EBikeRide', 'GravelRide'] },
+              { metric: 'distance_m', op: 'lt', values: [5000] }
+            ],
+            action: { type: 'hide' }
+          }
+        },
+        {
+          id: 'short-walks',
+          name: 'Hide short walks',
+          description: 'Hide walks under 15 minutes.',
+          tags: ['Walk', '<15m'],
+          rule: {
+            match: 'all',
+            conditions: [
+              { metric: 'activity_type', op: 'eq', values: ['Walk'] },
+              { metric: 'moving_time_s', op: 'lt', values: [900] }
+            ],
+            action: { type: 'hide' }
+          }
+        },
+        {
+          id: 'stop-heavy',
+          name: 'Hide stop-heavy activities',
+          description: 'Hide activities with more than 8 stops.',
+          tags: ['Stops', '>8'],
+          rule: {
+            match: 'all',
+            conditions: [
+              { metric: 'stop_count', op: 'gt', values: [8] }
+            ],
+            action: { type: 'hide' }
+          }
+        },
+        {
+          id: 'workouts',
+          name: 'Hide workouts',
+          description: 'Hide Workout activities entirely.',
+          tags: ['Workout'],
+          rule: {
+            match: 'all',
+            conditions: [
+              { metric: 'activity_type', op: 'eq', values: ['Workout'] }
+            ],
+            action: { type: 'hide' }
+          }
+        }
+      ];
 
       function operatorSpec(valueType, opId) {
         const list = operatorsByType[valueType] || [];
@@ -411,6 +480,9 @@
       }
 
       function updatePreview() {
+        if (isApplyingTemplate) {
+          return;
+        }
         const { rule, errors } = buildRule();
         if (errors.length) {
           errorEl.textContent = errors[0];
@@ -423,6 +495,92 @@
         previewEl.textContent = JSON.stringify(rule, null, 2);
         conditionInput.value = JSON.stringify(rule);
         if (submitBtn) submitBtn.disabled = false;
+      }
+
+      function setConditions(conditions) {
+        conditionsEl.innerHTML = '';
+        (conditions || []).forEach(condition => {
+          const row = createConditionRow();
+          conditionsEl.appendChild(row);
+          const metricInput = row.querySelector('input[list="rule-metric-options"]');
+          const opSelect = row.querySelector('select');
+          if (metricInput) {
+            metricInput.value = condition.metric || '';
+            metricInput.dispatchEvent(new Event('change'));
+          }
+          if (opSelect && condition.op) {
+            opSelect.value = condition.op;
+            opSelect.dispatchEvent(new Event('change'));
+          }
+          const valueInputs = row.querySelectorAll('.value-wrap input');
+          const values = Array.isArray(condition.values) ? condition.values : [];
+          if (valueInputs.length === 1 && values.length > 1) {
+            valueInputs[0].value = values.join(', ');
+          } else {
+            values.forEach((value, idx) => {
+              if (valueInputs[idx]) {
+                valueInputs[idx].value = value;
+              }
+            });
+          }
+        });
+        if (!conditionsEl.children.length) {
+          conditionsEl.appendChild(createConditionRow());
+        }
+      }
+
+      function applyTemplate(template) {
+        if (!template || !template.rule) return;
+        isApplyingTemplate = true;
+        if (nameInput) nameInput.value = template.name || '';
+        if (enabledInput) enabledInput.checked = template.enabled !== false;
+        if (matchEl) matchEl.value = template.rule.match || 'all';
+        const allow = template.rule.action && template.rule.action.allow;
+        if (allowEl) allowEl.value = allow && allow.one_in ? allow.one_in : '';
+        setConditions(template.rule.conditions || []);
+        isApplyingTemplate = false;
+        updatePreview();
+        if (formEl) {
+          formEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }
+
+      function renderTemplates() {
+        if (!templatesEl) return;
+        templatesEl.innerHTML = '';
+        templates.forEach(template => {
+          const card = document.createElement('div');
+          card.className = 'template-card';
+          const title = document.createElement('div');
+          title.className = 'template-title';
+          title.textContent = template.name;
+          const desc = document.createElement('div');
+          desc.className = 'muted';
+          desc.textContent = template.description;
+          card.appendChild(title);
+          card.appendChild(desc);
+          if (template.tags && template.tags.length) {
+            const tags = document.createElement('div');
+            tags.className = 'template-tags';
+            template.tags.forEach(tag => {
+              const pill = document.createElement('span');
+              pill.className = 'template-tag';
+              pill.textContent = tag;
+              tags.appendChild(pill);
+            });
+            card.appendChild(tags);
+          }
+          const actions = document.createElement('div');
+          actions.className = 'template-actions';
+          const useBtn = document.createElement('button');
+          useBtn.type = 'button';
+          useBtn.className = 'btn secondary small';
+          useBtn.textContent = 'Use template';
+          useBtn.addEventListener('click', () => applyTemplate(template));
+          actions.appendChild(useBtn);
+          card.appendChild(actions);
+          templatesEl.appendChild(card);
+        });
       }
 
       function renderReference() {
@@ -459,6 +617,7 @@
       allowEl.addEventListener('input', updatePreview);
 
       conditionsEl.appendChild(createConditionRow());
+      renderTemplates();
       renderReference();
       updatePreview();
     })();
