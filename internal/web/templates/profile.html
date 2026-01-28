@@ -34,7 +34,7 @@
           </div>
           <div class="contrib-grid">
             {{range .Contributions.Days}}
-              <span class="contrib-day level-{{.Level}}{{if not .InRange}} is-outside{{end}}" title="{{.Label}}{{if .InRange}} · {{.HoursLabel}}{{end}}"></span>
+              <span class="contrib-day level-{{.Level}}{{if not .InRange}} is-outside{{end}}" data-tooltip="{{.Tooltip}}" aria-label="{{.Tooltip}}"></span>
             {{end}}
           </div>
         </div>

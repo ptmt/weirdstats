@@ -141,6 +141,7 @@ type AdminPageData struct {
 type ContributionDay struct {
 	Date       string
 	Label      string
+	Tooltip    string
 	Hours      float64
 	HoursLabel string
 	Level      int
@@ -1159,43 +1160,52 @@ func (s *Server) buildContributionData(ctx context.Context, now time.Time) Contr
 
 	var days []ContributionDay
 	var months []ContributionMonth
-	lastMonth := time.Month(0)
-	dayIndex := 0
-	for day := startGrid; !day.After(endGrid); day = day.AddDate(0, 0, 1) {
-		inYear := !day.Before(start) && !day.After(end)
-		inRange := !day.Before(start) && !day.After(today)
-		dateKey := day.Format("2006-01-02")
-		hours := 0.0
-		if inRange {
-			hours = hoursByDay[dateKey]
+	weekIndex := 0
+	for weekStart := startGrid; !weekStart.After(endGrid); weekStart = weekStart.AddDate(0, 0, 7) {
+		weekIndex++
+		for i := 0; i < 7; i++ {
+			day := weekStart.AddDate(0, 0, i)
+			if day.Before(start) || day.After(end) {
+				continue
+			}
+			if day.Day() == 1 {
+				months = append(months, ContributionMonth{
+					Label:  day.Format("Jan"),
+					Column: weekIndex,
+				})
+				break
+			}
 		}
-		level := 0
-		if inRange {
-			level = contributionLevel(hours, maxHours)
-		}
-		hoursLabel := ""
-		if inRange {
-			hoursLabel = formatHours(hours)
-		}
-		if inYear && day.Day() == 1 && day.Month() != lastMonth {
-			months = append(months, ContributionMonth{
-				Label:  day.Format("Jan"),
-				Column: dayIndex/7 + 1,
+		for i := 0; i < 7; i++ {
+			day := weekStart.AddDate(0, 0, i)
+			inYear := !day.Before(start) && !day.After(end)
+			inRange := !day.Before(start) && !day.After(today)
+			dateKey := day.Format("2006-01-02")
+			hours := 0.0
+			if inRange {
+				hours = hoursByDay[dateKey]
+			}
+			level := 0
+			if inRange {
+				level = contributionLevel(hours, maxHours)
+			}
+			hoursLabel := ""
+			if inRange {
+				hoursLabel = formatHours(hours)
+			}
+			days = append(days, ContributionDay{
+				Date:       dateKey,
+				Label:      day.Format("Jan 2, 2006"),
+				Tooltip:    contributionTooltip(day, inRange, inYear, hoursLabel),
+				Hours:      hours,
+				HoursLabel: hoursLabel,
+				Level:      level,
+				InRange:    inRange,
 			})
-			lastMonth = day.Month()
 		}
-		days = append(days, ContributionDay{
-			Date:       dateKey,
-			Label:      day.Format("Jan 2, 2006"),
-			Hours:      hours,
-			HoursLabel: hoursLabel,
-			Level:      level,
-			InRange:    inRange,
-		})
-		dayIndex++
 	}
 
-	weeks := (dayIndex + 6) / 7
+	weeks := weekIndex
 	if weeks < 1 {
 		weeks = 1
 	}
@@ -1209,6 +1219,21 @@ func (s *Server) buildContributionData(ctx context.Context, now time.Time) Contr
 		EndLabel:   end.Format("Jan 2, 2006"),
 		MaxHours:   maxHours,
 		TotalHours: totalHours,
+	}
+}
+
+func contributionTooltip(day time.Time, inRange, inYear bool, hoursLabel string) string {
+	label := day.Format("Mon, Jan 2, 2006")
+	switch {
+	case inRange:
+		if hoursLabel == "" {
+			return label
+		}
+		return fmt.Sprintf("%s · %s", label, hoursLabel)
+	case inYear:
+		return fmt.Sprintf("%s · Future day", label)
+	default:
+		return fmt.Sprintf("%s · Outside current year", label)
 	}
 }
 

@@ -59,10 +59,10 @@
     </article>
 
     <article class="card settings-section">
-      <div class="section-head">
+      <div class="section-head rule-editor-head">
         <div>
-          <h3>Build a rule</h3>
-          <p class="muted">Pick metrics, operators, and values. Everything saves as structured JSON.</p>
+          <h3 class="rule-editor-title">Rule editor</h3>
+          <p class="muted">Start from a template or add conditions manually. Everything saves as JSON.</p>
         </div>
       </div>
       <div class="rule-templates">
@@ -75,19 +75,23 @@
       <form method="post" action="/profile/settings" class="rule-builder" id="rule-builder-form">
         <input type="hidden" name="action" value="add-rule" />
         <input type="hidden" name="condition" id="rule-condition" />
-        <div class="builder-header">
-          <label>
-            <div class="muted">Rule name</div>
-            <input name="name" placeholder="Hide short late-night rides" />
-          </label>
-          <label class="toggle">
-            <input type="checkbox" name="enabled" checked />
-            Enabled
-          </label>
-        </div>
+        <div class="builder-stack">
+          <div class="builder-section">
+            <h4>Basics</h4>
+            <div class="builder-header">
+              <label>
+                <div class="muted">Rule name</div>
+                <input name="name" placeholder="Hide short late-night rides" />
+              </label>
+              <label class="toggle">
+                <input type="checkbox" name="enabled" checked />
+                Enabled
+              </label>
+            </div>
+          </div>
 
-        <div class="builder-grid">
-          <div class="builder-main">
+          <div class="builder-section">
+            <h4>Conditions</h4>
             <div class="builder-row">
               <label>
                 <div class="muted">Match</div>
@@ -107,17 +111,23 @@
             <div class="builder-actions">
               <button type="button" class="btn secondary small" id="rule-add-condition">Add condition</button>
             </div>
+          </div>
 
+          <div class="builder-section">
+            <h4>Preview</h4>
             <div class="builder-preview">
               <div class="muted">Rule JSON preview</div>
               <pre id="rule-preview">{}</pre>
               <div class="rule-error" id="rule-error"></div>
             </div>
-            <button class="btn small" type="submit" id="rule-submit">Add rule</button>
           </div>
 
-          <aside class="builder-reference">
-            <h4>Reference</h4>
+          <button class="btn small" type="submit" id="rule-submit">Add rule</button>
+        </div>
+
+        <details class="rule-reference">
+          <summary>Reference</summary>
+          <div class="builder-reference">
             <div class="reference-block">
               <div class="reference-title">Metrics</div>
               <div class="reference-list" id="rule-metrics-ref"></div>
@@ -126,8 +136,8 @@
               <div class="reference-title">Operators</div>
               <div class="reference-list" id="rule-operators-ref"></div>
             </div>
-          </aside>
-        </div>
+          </div>
+        </details>
         <noscript>
           <p class="muted">JavaScript is required to build rules. Enable it to continue.</p>
         </noscript>
