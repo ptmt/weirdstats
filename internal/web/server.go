@@ -357,12 +357,12 @@ func (s *Server) RulesMetadata(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) Profile(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/profile" {
-		http.Redirect(w, r, "/profile/", http.StatusFound)
+func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/activities" {
+		http.Redirect(w, r, "/activities/", http.StatusFound)
 		return
 	}
-	if r.URL.Path != "/profile/" {
+	if r.URL.Path != "/activities/" {
 		http.NotFound(w, r)
 		return
 	}
@@ -395,8 +395,8 @@ func (s *Server) Profile(w http.ResponseWriter, r *http.Request) {
 	contrib := s.buildContributionData(r.Context(), time.Now())
 	data := ProfilePageData{
 		PageData: PageData{
-			Title:      "Profile",
-			Page:       "profile",
+			Title:      "Activities",
+			Page:       "activities",
 			Message:    r.URL.Query().Get("msg"),
 			FooterText: "Tip: the worker runs in the background and fills in stats after ingest.",
 			Strava:     s.getStravaInfo(r.Context()),
@@ -631,7 +631,7 @@ func countRoadCrossings(stops []StopView) int {
 }
 
 func (s *Server) Settings(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/profile/settings" {
+	if r.URL.Path != "/activities/settings" {
 		http.NotFound(w, r)
 		return
 	}
@@ -853,7 +853,7 @@ func (s *Server) StravaCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if errParam := r.URL.Query().Get("error"); errParam != "" {
-		http.Redirect(w, r, "/profile/settings?msg=strava+authorization+failed", http.StatusFound)
+		http.Redirect(w, r, "/activities/settings?msg=strava+authorization+failed", http.StatusFound)
 		return
 	}
 	code := r.URL.Query().Get("code")
@@ -867,7 +867,7 @@ func (s *Server) StravaCallback(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		log.Printf("strava oauth exchange failed: %v", err)
-		http.Redirect(w, r, "/profile/settings?msg=strava+authorization+failed", http.StatusFound)
+		http.Redirect(w, r, "/activities/settings?msg=strava+authorization+failed", http.StatusFound)
 		return
 	}
 	existing, err := s.store.GetStravaToken(r.Context(), 1)
@@ -895,7 +895,7 @@ func (s *Server) StravaCallback(w http.ResponseWriter, r *http.Request) {
 		AthleteName:  athleteName,
 	}); err != nil {
 		log.Printf("strava token save failed: %v", err)
-		http.Redirect(w, r, "/profile/settings?msg=strava+token+save+failed", http.StatusFound)
+		http.Redirect(w, r, "/activities/settings?msg=strava+token+save+failed", http.StatusFound)
 		return
 	}
 	if firstConnect {
@@ -917,12 +917,12 @@ func (s *Server) StravaCallback(w http.ResponseWriter, r *http.Request) {
 			}()
 		}
 	}
-	http.Redirect(w, r, "/profile/?msg=strava+connected", http.StatusFound)
+	http.Redirect(w, r, "/activities/?msg=strava+connected", http.StatusFound)
 }
 
 func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		http.Redirect(w, r, "/profile/settings?msg=invalid+form", http.StatusFound)
+		http.Redirect(w, r, "/activities/settings?msg=invalid+form", http.StatusFound)
 		return
 	}
 	action := strings.TrimSpace(r.FormValue("action"))
@@ -932,21 +932,21 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 		condition := strings.TrimSpace(r.FormValue("condition"))
 		enabled := r.FormValue("enabled") == "on"
 		if name == "" || condition == "" {
-			http.Redirect(w, r, "/profile/settings?msg=missing+rule+fields", http.StatusFound)
+			http.Redirect(w, r, "/activities/settings?msg=missing+rule+fields", http.StatusFound)
 			return
 		}
 		parsedRule, err := rules.ParseRuleJSON(condition)
 		if err != nil {
-			http.Redirect(w, r, "/profile/settings?msg=invalid+rule+json", http.StatusFound)
+			http.Redirect(w, r, "/activities/settings?msg=invalid+rule+json", http.StatusFound)
 			return
 		}
 		if err := rules.ValidateRule(parsedRule, rules.DefaultRegistry()); err != nil {
-			http.Redirect(w, r, "/profile/settings?msg=invalid+rule+definition", http.StatusFound)
+			http.Redirect(w, r, "/activities/settings?msg=invalid+rule+definition", http.StatusFound)
 			return
 		}
 		normalized, err := json.Marshal(parsedRule)
 		if err != nil {
-			http.Redirect(w, r, "/profile/settings?msg=rule+save+failed", http.StatusFound)
+			http.Redirect(w, r, "/activities/settings?msg=rule+save+failed", http.StatusFound)
 			return
 		}
 		condition = string(normalized)
@@ -956,53 +956,53 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 			Condition: condition,
 			Enabled:   enabled,
 		}); err != nil {
-			http.Redirect(w, r, "/profile/settings?msg=rule+save+failed", http.StatusFound)
+			http.Redirect(w, r, "/activities/settings?msg=rule+save+failed", http.StatusFound)
 			return
 		}
-		http.Redirect(w, r, "/profile/settings?msg=rule+added", http.StatusFound)
+		http.Redirect(w, r, "/activities/settings?msg=rule+added", http.StatusFound)
 	case "toggle-rule":
 		idValue := r.FormValue("rule_id")
 		enabled := r.FormValue("enabled") == "on"
 		ruleID, err := strconv.ParseInt(idValue, 10, 64)
 		if err != nil || ruleID == 0 {
-			http.Redirect(w, r, "/profile/settings?msg=invalid+rule", http.StatusFound)
+			http.Redirect(w, r, "/activities/settings?msg=invalid+rule", http.StatusFound)
 			return
 		}
 		if err := s.store.UpdateHideRuleEnabled(r.Context(), ruleID, enabled); err != nil {
-			http.Redirect(w, r, "/profile/settings?msg=rule+update+failed", http.StatusFound)
+			http.Redirect(w, r, "/activities/settings?msg=rule+update+failed", http.StatusFound)
 			return
 		}
-		http.Redirect(w, r, "/profile/settings?msg=rule+updated", http.StatusFound)
+		http.Redirect(w, r, "/activities/settings?msg=rule+updated", http.StatusFound)
 	case "delete-rule":
 		idValue := r.FormValue("rule_id")
 		ruleID, err := strconv.ParseInt(idValue, 10, 64)
 		if err != nil || ruleID == 0 {
-			http.Redirect(w, r, "/profile/settings?msg=invalid+rule", http.StatusFound)
+			http.Redirect(w, r, "/activities/settings?msg=invalid+rule", http.StatusFound)
 			return
 		}
 		if err := s.store.DeleteHideRule(r.Context(), ruleID); err != nil {
-			http.Redirect(w, r, "/profile/settings?msg=rule+delete+failed", http.StatusFound)
+			http.Redirect(w, r, "/activities/settings?msg=rule+delete+failed", http.StatusFound)
 			return
 		}
-		http.Redirect(w, r, "/profile/settings?msg=rule+deleted", http.StatusFound)
+		http.Redirect(w, r, "/activities/settings?msg=rule+deleted", http.StatusFound)
 	case "sign-out":
 		if err := s.store.DeleteStravaToken(r.Context(), 1); err != nil {
-			http.Redirect(w, r, "/profile/settings?msg=sign+out+failed", http.StatusFound)
+			http.Redirect(w, r, "/activities/settings?msg=sign+out+failed", http.StatusFound)
 			return
 		}
 		http.Redirect(w, r, "/?msg=signed+out", http.StatusFound)
 	case "delete-account":
 		if strings.TrimSpace(r.FormValue("confirm")) != "delete" {
-			http.Redirect(w, r, "/profile/settings?msg=confirm+delete+account", http.StatusFound)
+			http.Redirect(w, r, "/activities/settings?msg=confirm+delete+account", http.StatusFound)
 			return
 		}
 		if err := s.store.DeleteUserData(r.Context(), 1); err != nil {
-			http.Redirect(w, r, "/profile/settings?msg=delete+failed", http.StatusFound)
+			http.Redirect(w, r, "/activities/settings?msg=delete+failed", http.StatusFound)
 			return
 		}
 		http.Redirect(w, r, "/?msg=account+deleted", http.StatusFound)
 	default:
-		http.Redirect(w, r, "/profile/settings?msg=unknown+action", http.StatusFound)
+		http.Redirect(w, r, "/activities/settings?msg=unknown+action", http.StatusFound)
 	}
 }
 

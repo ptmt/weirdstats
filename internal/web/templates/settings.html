@@ -30,7 +30,7 @@
                 <span class="muted">{{.Description}}</span>
               </div>
               <div class="rule-actions">
-                <form method="post" action="/profile/settings" class="rule-action">
+                <form method="post" action="/activities/settings" class="rule-action">
                   <input type="hidden" name="action" value="toggle-rule" />
                   <input type="hidden" name="rule_id" value="{{.ID}}" />
                   <label class="toggle">
@@ -39,7 +39,7 @@
                   </label>
                   <button class="btn secondary small" type="submit">Update</button>
                 </form>
-                <form method="post" action="/profile/settings" class="rule-action">
+                <form method="post" action="/activities/settings" class="rule-action">
                   <input type="hidden" name="action" value="delete-rule" />
                   <input type="hidden" name="rule_id" value="{{.ID}}" />
                   <button class="btn secondary small" type="submit">Delete rule</button>
@@ -72,7 +72,7 @@
         </div>
         <div class="template-grid" id="rule-templates"></div>
       </div>
-      <form method="post" action="/profile/settings" class="rule-builder" id="rule-builder-form">
+      <form method="post" action="/activities/settings" class="rule-builder" id="rule-builder-form">
         <input type="hidden" name="action" value="add-rule" />
         <input type="hidden" name="condition" id="rule-condition" />
         <div class="builder-stack">
@@ -149,7 +149,7 @@
       <p class="muted">Manage your Strava account connection. Reconnect if you're having permission issues.</p>
       <div class="settings-actions">
         <a class="btn secondary" href="/connect/strava?force=1">Reconnect Strava</a>
-        <form method="post" action="/profile/settings">
+        <form method="post" action="/activities/settings">
           <input type="hidden" name="action" value="sign-out" />
           <button class="btn secondary" type="submit">Sign out</button>
         </form>
@@ -159,7 +159,7 @@
     <article class="card settings-section">
       <h3>Danger zone</h3>
       <p class="muted">Delete your data, revoke tokens, and stop processing.</p>
-      <form method="post" action="/profile/settings" class="rule">
+      <form method="post" action="/activities/settings" class="rule">
         <input type="hidden" name="action" value="delete-account" />
         <label>
           <div class="muted">Type "delete" to confirm</div>

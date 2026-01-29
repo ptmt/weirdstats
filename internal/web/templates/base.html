@@ -39,8 +39,8 @@
         <div class="nav-links">
           <a href="/"{{if eq .Page "home"}} class="active"{{end}}>Home</a>
           {{if .Strava.Connected}}
-            <a href="/profile/"{{if eq .Page "profile"}} class="active"{{end}}>Activities</a>
-            <a href="/profile/settings"{{if eq .Page "settings"}} class="active"{{end}}>Settings</a>
+            <a href="/activities/"{{if eq .Page "activities"}} class="active"{{end}}>Activities</a>
+            <a href="/activities/settings"{{if eq .Page "settings"}} class="active"{{end}}>Settings</a>
             <a href="/admin/"{{if eq .Page "admin"}} class="active"{{end}}>Admin</a>
             <span class="pill">{{if .Strava.AthleteName}}{{.Strava.AthleteName}}{{else}}Strava #{{.Strava.AthleteID}}{{end}}</span>
           {{else}}

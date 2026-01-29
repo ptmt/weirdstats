@@ -14,11 +14,11 @@
       </ul>
       <div class="cta-row">
         {{if .Strava.Connected}}
-          <a class="btn" href="/profile/">View Profile</a>
-          <a class="btn secondary" href="/profile/settings">Settings</a>
+          <a class="btn" href="/activities/">View Activities</a>
+          <a class="btn secondary" href="/activities/settings">Settings</a>
         {{else}}
           <a class="btn" href="/connect/strava">Connect Strava</a>
-          <a class="btn secondary" href="/profile/">Preview profile</a>
+          <a class="btn secondary" href="/activities/">Preview activities</a>
         {{end}}
       </div>
     </div>
@@ -53,8 +53,8 @@
   <section class="card">
     {{if .Strava.Connected}}
       <h2 class="section-title">You're all set!</h2>
-      <p class="muted">Your Strava account is connected. Head to your profile to see your activity stats.</p>
-      <a class="btn" href="/profile/">View Profile</a>
+      <p class="muted">Your Strava account is connected. Head to your activities to see your stats.</p>
+      <a class="btn" href="/activities/">View Activities</a>
     {{else}}
       <h2 class="section-title">Ready to connect?</h2>
       <p class="muted">Hook up Strava to start capturing your activity stats and apply your rules automatically.</p>
