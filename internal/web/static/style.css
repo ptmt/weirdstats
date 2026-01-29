@@ -1376,6 +1376,10 @@ a {
 .rule-templates {
   display: grid;
   gap: 12px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
 }
 
 .rule-templates-header {
@@ -1441,8 +1445,19 @@ a {
 .rule-builder select,
 .rule-builder textarea {
   padding: 10px 12px;
-  font-size: 13px;
+  font-size: 14px;
   border-radius: 10px;
+  line-height: 1.4;
+}
+
+.rule-builder label {
+  display: grid;
+  gap: 6px;
+}
+
+.rule-builder label .muted {
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .rule-builder .btn:not(.small),
@@ -1473,6 +1488,14 @@ a {
   flex-wrap: wrap;
 }
 
+.builder-header label:not(.toggle) {
+  flex: 1 1 240px;
+}
+
+.builder-header .toggle {
+  align-self: flex-end;
+}
+
 .builder-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
@@ -1488,6 +1511,7 @@ a {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 12px;
+  align-items: start;
 }
 
 .builder-actions {
@@ -1522,6 +1546,9 @@ a {
 .conditions {
   display: grid;
   gap: 10px;
+  padding-left: 14px;
+  margin-left: 4px;
+  border-left: 2px solid var(--border);
 }
 
 .condition-row {
@@ -1533,6 +1560,24 @@ a {
   border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--bg-subtle);
+}
+
+.condition-row .field {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+
+.condition-row input[type="text"],
+.condition-row input[type="number"],
+.condition-row input:not([type]),
+.condition-row select {
+  width: 100%;
+  max-width: 220px;
+}
+
+.condition-values .value-wrap input {
+  max-width: 180px;
 }
 
 .condition-values .value-wrap {
