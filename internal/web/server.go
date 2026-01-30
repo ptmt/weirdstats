@@ -1303,16 +1303,15 @@ func formatHours(hours float64) string {
 }
 
 func contributionLevel(hours, max float64) int {
-	if hours <= 0 || max <= 0 {
+	if hours <= 0 {
 		return 0
 	}
-	ratio := hours / max
 	switch {
-	case ratio <= 0.25:
+	case hours <= 0.5:
 		return 1
-	case ratio <= 0.5:
+	case hours <= 1:
 		return 2
-	case ratio <= 0.75:
+	case hours <= 2:
 		return 3
 	default:
 		return 4

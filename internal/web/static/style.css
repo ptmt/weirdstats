@@ -1509,9 +1509,16 @@ a {
 
 .builder-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 260px));
   gap: 12px;
   align-items: start;
+  justify-content: start;
+}
+
+.builder-row select,
+.builder-row input[type="number"] {
+  width: 100%;
+  max-width: 260px;
 }
 
 .builder-actions {
@@ -1555,7 +1562,7 @@ a {
   display: grid;
   grid-template-columns: minmax(160px, 1.2fr) minmax(140px, 0.8fr) minmax(200px, 1fr) auto;
   gap: 10px;
-  align-items: end;
+  align-items: start;
   padding: 10px;
   border-radius: 12px;
   border: 1px solid var(--border);
@@ -1566,6 +1573,11 @@ a {
   display: grid;
   gap: 6px;
   align-content: start;
+  justify-items: start;
+}
+
+.condition-row > button {
+  align-self: end;
 }
 
 .condition-row input[type="text"],
