@@ -41,10 +41,17 @@
 
   /* Contribution wall */
   --contrib-0: rgba(255, 255, 255, 0.06);
-  --contrib-1: rgba(0, 212, 255, 0.18);
-  --contrib-2: rgba(0, 212, 255, 0.35);
-  --contrib-3: rgba(168, 85, 247, 0.55);
-  --contrib-4: rgba(236, 72, 153, 0.75);
+  --contrib-1: rgba(0, 212, 255, 0.1);
+  --contrib-2: rgba(0, 212, 255, 0.16);
+  --contrib-3: rgba(0, 212, 255, 0.22);
+  --contrib-4: rgba(0, 212, 255, 0.3);
+  --contrib-5: rgba(0, 212, 255, 0.38);
+  --contrib-6: rgba(0, 212, 255, 0.46);
+  --contrib-7: rgba(168, 85, 247, 0.4);
+  --contrib-8: rgba(168, 85, 247, 0.55);
+  --contrib-9: rgba(168, 85, 247, 0.7);
+  --contrib-10: rgba(236, 72, 153, 0.6);
+  --contrib-11: rgba(236, 72, 153, 0.8);
 }
 
 /* Light Theme */
@@ -86,10 +93,17 @@
 
   /* Contribution wall */
   --contrib-0: rgba(0, 0, 0, 0.08);
-  --contrib-1: rgba(6, 182, 212, 0.25);
-  --contrib-2: rgba(6, 182, 212, 0.45);
-  --contrib-3: rgba(168, 85, 247, 0.45);
-  --contrib-4: rgba(236, 72, 153, 0.55);
+  --contrib-1: rgba(6, 182, 212, 0.12);
+  --contrib-2: rgba(6, 182, 212, 0.18);
+  --contrib-3: rgba(6, 182, 212, 0.24);
+  --contrib-4: rgba(6, 182, 212, 0.3);
+  --contrib-5: rgba(6, 182, 212, 0.36);
+  --contrib-6: rgba(6, 182, 212, 0.42);
+  --contrib-7: rgba(168, 85, 247, 0.3);
+  --contrib-8: rgba(168, 85, 247, 0.45);
+  --contrib-9: rgba(168, 85, 247, 0.6);
+  --contrib-10: rgba(236, 72, 153, 0.45);
+  --contrib-11: rgba(236, 72, 153, 0.65);
 }
 
 /* Reset */
@@ -846,6 +860,34 @@ a {
   background: var(--contrib-4);
 }
 
+.legend-swatch.level-5 {
+  background: var(--contrib-5);
+}
+
+.legend-swatch.level-6 {
+  background: var(--contrib-6);
+}
+
+.legend-swatch.level-7 {
+  background: var(--contrib-7);
+}
+
+.legend-swatch.level-8 {
+  background: var(--contrib-8);
+}
+
+.legend-swatch.level-9 {
+  background: var(--contrib-9);
+}
+
+.legend-swatch.level-10 {
+  background: var(--contrib-10);
+}
+
+.legend-swatch.level-11 {
+  background: var(--contrib-11);
+}
+
 .contrib-grid-scroll {
   overflow-x: auto;
   padding-bottom: 4px;
@@ -940,6 +982,34 @@ a {
 
 .contrib-day.level-4 {
   background: var(--contrib-4);
+}
+
+.contrib-day.level-5 {
+  background: var(--contrib-5);
+}
+
+.contrib-day.level-6 {
+  background: var(--contrib-6);
+}
+
+.contrib-day.level-7 {
+  background: var(--contrib-7);
+}
+
+.contrib-day.level-8 {
+  background: var(--contrib-8);
+}
+
+.contrib-day.level-9 {
+  background: var(--contrib-9);
+}
+
+.contrib-day.level-10 {
+  background: var(--contrib-10);
+}
+
+.contrib-day.level-11 {
+  background: var(--contrib-11);
 }
 
 .contrib-day.is-outside {

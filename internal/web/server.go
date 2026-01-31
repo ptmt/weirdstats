@@ -116,7 +116,7 @@ type LandingPageData struct {
 type ProfilePageData struct {
 	PageData
 	Activities    []ActivityView
-	Contributions ContributionData
+	Contributions []ContributionData
 }
 
 type SettingsRule struct {
@@ -158,6 +158,7 @@ type ContributionData struct {
 	Months     []ContributionMonth
 	Weeks      int
 	Year       int
+	Levels     int
 	StartLabel string
 	EndLabel   string
 	MaxHours   float64
@@ -188,6 +189,16 @@ func NewServer(store *storage.Store, ingestor *ingest.Ingestor, mapAPI maps.API,
 				return "On"
 			}
 			return "Off"
+		},
+		"seq": func(n int) []int {
+			if n <= 0 {
+				return nil
+			}
+			seq := make([]int, n)
+			for i := range seq {
+				seq[i] = i + 1
+			}
+			return seq
 		},
 	}
 	landing, err := template.New("base").Funcs(funcs).ParseFS(
@@ -392,7 +403,24 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 		enrichActivityView(&view, activity.Activity)
 		views = append(views, view)
 	}
-	contrib := s.buildContributionData(r.Context(), time.Now())
+	now := time.Now()
+	years, err := s.store.ListActivityYears(r.Context(), 1)
+	if err != nil {
+		log.Printf("contrib years load failed: %v", err)
+	}
+	currentYear := now.Year()
+	seenYears := map[int]bool{currentYear: true}
+	orderedYears := []int{currentYear}
+	for _, year := range years {
+		if !seenYears[year] {
+			orderedYears = append(orderedYears, year)
+			seenYears[year] = true
+		}
+	}
+	var contribs []ContributionData
+	for _, year := range orderedYears {
+		contribs = append(contribs, s.buildContributionDataForYear(r.Context(), year, now))
+	}
 	data := ProfilePageData{
 		PageData: PageData{
 			Title:      "Activities",
@@ -403,7 +431,7 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 			UserCount:  s.userCount(r.Context()),
 		},
 		Activities:    views,
-		Contributions: contrib,
+		Contributions: contribs,
 	}
 	if err := s.templates["profile"].ExecuteTemplate(w, "base", data); err != nil {
 		http.Error(w, "template render failed", http.StatusInternalServerError)
@@ -1120,11 +1148,17 @@ func formatDistance(meters float64) string {
 }
 
 func (s *Server) buildContributionData(ctx context.Context, now time.Time) ContributionData {
+	return s.buildContributionDataForYear(ctx, now.Year(), now)
+}
+
+func (s *Server) buildContributionDataForYear(ctx context.Context, year int, now time.Time) ContributionData {
 	loc := time.Local
-	year := now.Year()
 	start := time.Date(year, time.January, 1, 0, 0, 0, 0, loc)
-	today := time.Date(year, now.Month(), now.Day(), 0, 0, 0, 0, loc)
 	end := time.Date(year, time.December, 31, 0, 0, 0, 0, loc)
+	rangeEnd := end
+	if year == now.Year() {
+		rangeEnd = time.Date(year, now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	}
 	startGrid := start
 	for startGrid.Weekday() != time.Sunday {
 		startGrid = startGrid.AddDate(0, 0, -1)
@@ -1134,7 +1168,7 @@ func (s *Server) buildContributionData(ctx context.Context, now time.Time) Contr
 		endGrid = endGrid.AddDate(0, 0, 1)
 	}
 
-	activities, err := s.store.ListActivityTimes(ctx, 1, startGrid, today.AddDate(0, 0, 1))
+	activities, err := s.store.ListActivityTimes(ctx, 1, startGrid, rangeEnd.AddDate(0, 0, 1))
 	if err != nil {
 		log.Printf("contrib load failed: %v", err)
 	}
@@ -1150,7 +1184,7 @@ func (s *Server) buildContributionData(ctx context.Context, now time.Time) Contr
 
 	maxHours := 0.0
 	totalHours := 0.0
-	for day := start; !day.After(today); day = day.AddDate(0, 0, 1) {
+	for day := start; !day.After(rangeEnd); day = day.AddDate(0, 0, 1) {
 		hours := hoursByDay[day.Format("2006-01-02")]
 		if hours > maxHours {
 			maxHours = hours
@@ -1179,7 +1213,7 @@ func (s *Server) buildContributionData(ctx context.Context, now time.Time) Contr
 		for i := 0; i < 7; i++ {
 			day := weekStart.AddDate(0, 0, i)
 			inYear := !day.Before(start) && !day.After(end)
-			inRange := !day.Before(start) && !day.After(today)
+			inRange := !day.Before(start) && !day.After(rangeEnd)
 			dateKey := day.Format("2006-01-02")
 			hours := 0.0
 			if inRange {
@@ -1187,7 +1221,7 @@ func (s *Server) buildContributionData(ctx context.Context, now time.Time) Contr
 			}
 			level := 0
 			if inRange {
-				level = contributionLevel(hours, maxHours)
+				level = contributionLevel(hours)
 			}
 			hoursLabel := ""
 			if inRange {
@@ -1196,7 +1230,7 @@ func (s *Server) buildContributionData(ctx context.Context, now time.Time) Contr
 			days = append(days, ContributionDay{
 				Date:       dateKey,
 				Label:      day.Format("Jan 2, 2006"),
-				Tooltip:    contributionTooltip(day, inRange, inYear, hoursLabel),
+				Tooltip:    contributionTooltip(day, inRange, inYear, hoursLabel, year),
 				Hours:      hours,
 				HoursLabel: hoursLabel,
 				Level:      level,
@@ -1215,6 +1249,7 @@ func (s *Server) buildContributionData(ctx context.Context, now time.Time) Contr
 		Months:     months,
 		Weeks:      weeks,
 		Year:       year,
+		Levels:     contributionMaxLevel,
 		StartLabel: start.Format("Jan 2, 2006"),
 		EndLabel:   end.Format("Jan 2, 2006"),
 		MaxHours:   maxHours,
@@ -1222,7 +1257,7 @@ func (s *Server) buildContributionData(ctx context.Context, now time.Time) Contr
 	}
 }
 
-func contributionTooltip(day time.Time, inRange, inYear bool, hoursLabel string) string {
+func contributionTooltip(day time.Time, inRange, inYear bool, hoursLabel string, year int) string {
 	label := day.Format("Mon, Jan 2, 2006")
 	switch {
 	case inRange:
@@ -1233,7 +1268,7 @@ func contributionTooltip(day time.Time, inRange, inYear bool, hoursLabel string)
 	case inYear:
 		return fmt.Sprintf("%s · Future day", label)
 	default:
-		return fmt.Sprintf("%s · Outside current year", label)
+		return fmt.Sprintf("%s · Outside %d", label, year)
 	}
 }
 
@@ -1302,19 +1337,35 @@ func formatHours(hours float64) string {
 	return fmt.Sprintf("%.0f h", hours)
 }
 
-func contributionLevel(hours, max float64) int {
+const contributionMaxLevel = 11
+
+func contributionLevel(hours float64) int {
 	if hours <= 0 {
 		return 0
 	}
 	switch {
-	case hours <= 0.5:
+	case hours < 1:
 		return 1
-	case hours <= 1:
+	case hours < 2:
 		return 2
-	case hours <= 2:
+	case hours < 3:
 		return 3
-	default:
+	case hours < 4:
 		return 4
+	case hours < 5:
+		return 5
+	case hours < 6:
+		return 6
+	case hours < 7:
+		return 7
+	case hours < 8:
+		return 8
+	case hours < 9:
+		return 9
+	case hours < 10:
+		return 10
+	default:
+		return 11
 	}
 }
 

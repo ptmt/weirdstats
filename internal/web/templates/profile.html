@@ -8,41 +8,41 @@
     <h2 class="section-title">Your parsed activities</h2>
   </section>
 
-  {{if .Contributions.Days}}
-    <section class="card contrib-card">
-      <div class="contrib-header">
-        <div>
-          <h3>{{.Contributions.Year}}</h3>
-        </div>
-        <div class="contrib-legend">
-          <span class="legend-label">Less</span>
-          <span class="legend-swatch level-0"></span>
-          <span class="legend-swatch level-1"></span>
-          <span class="legend-swatch level-2"></span>
-          <span class="legend-swatch level-3"></span>
-          <span class="legend-swatch level-4"></span>
-          <span class="legend-label">More</span>
-        </div>
-      </div>
-      <div class="contrib-grid-scroll">
-        <div class="contrib-grid-wrap" style="--contrib-weeks: {{.Contributions.Weeks}}">
-          <div class="contrib-months">
-            {{range .Contributions.Months}}
-              <span class="contrib-month" style="grid-column: {{.Column}}">{{.Label}}</span>
-            {{end}}
+  {{if .Contributions}}
+    {{range .Contributions}}
+      <section class="card contrib-card">
+        <div class="contrib-header">
+          <div>
+            <h3>{{.Year}}</h3>
           </div>
-          <div class="contrib-grid">
-            {{range .Contributions.Days}}
-              <span class="contrib-day level-{{.Level}}{{if not .InRange}} is-outside{{end}}" data-tooltip="{{.Tooltip}}" aria-label="{{.Tooltip}}"></span>
+          <div class="contrib-legend">
+            <span class="legend-label">Less</span>
+            {{range seq .Levels}}
+              <span class="legend-swatch level-{{.}}"></span>
             {{end}}
+            <span class="legend-label">More</span>
           </div>
         </div>
-      </div>
-    </section>
+        <div class="contrib-grid-scroll">
+          <div class="contrib-grid-wrap" style="--contrib-weeks: {{.Weeks}}">
+            <div class="contrib-months">
+              {{range .Months}}
+                <span class="contrib-month" style="grid-column: {{.Column}}">{{.Label}}</span>
+              {{end}}
+            </div>
+            <div class="contrib-grid">
+              {{range .Days}}
+                <span class="contrib-day level-{{.Level}}{{if not .InRange}} is-outside{{end}}" data-tooltip="{{.Tooltip}}" aria-label="{{.Tooltip}}"></span>
+              {{end}}
+            </div>
+          </div>
+        </div>
+      </section>
+    {{end}}
   {{end}}
 
   {{if .Activities}}
-    <section class="stats-grid{{if .Contributions.Days}} has-contrib{{end}}">
+    <section class="stats-grid{{if .Contributions}} has-contrib{{end}}">
       {{range .Activities}}
         <article class="card activity-card{{if .IsHidden}} is-hidden{{end}}">
           <div class="activity-header">

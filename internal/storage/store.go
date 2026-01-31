@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strconv"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -403,6 +404,39 @@ ORDER BY start_time
 		return nil, err
 	}
 	return activities, nil
+}
+
+func (s *Store) ListActivityYears(ctx context.Context, userID int64) ([]int, error) {
+	if userID == 0 {
+		userID = 1
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT DISTINCT strftime('%Y', start_time, 'unixepoch') AS year
+FROM activities
+WHERE user_id = ?
+ORDER BY year DESC
+`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var years []int
+	for rows.Next() {
+		var yearStr string
+		if err := rows.Scan(&yearStr); err != nil {
+			return nil, err
+		}
+		year, err := strconv.Atoi(yearStr)
+		if err != nil {
+			return nil, err
+		}
+		years = append(years, year)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return years, nil
 }
 
 func (s *Store) InsertWebhookEvent(ctx context.Context, event WebhookEvent) (int64, error) {
