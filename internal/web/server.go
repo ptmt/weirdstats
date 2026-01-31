@@ -20,6 +20,7 @@ import (
 
 	"weirdstats/internal/gps"
 	"weirdstats/internal/ingest"
+	"weirdstats/internal/jobs"
 	"weirdstats/internal/maps"
 	"weirdstats/internal/rules"
 	"weirdstats/internal/storage"
@@ -136,6 +137,7 @@ type SettingsPageData struct {
 type AdminPageData struct {
 	PageData
 	QueueCount int
+	Jobs       []JobView
 }
 
 type ContributionDay struct {
@@ -163,6 +165,18 @@ type ContributionData struct {
 	EndLabel   string
 	MaxHours   float64
 	TotalHours float64
+}
+
+type JobView struct {
+	ID          int64
+	TypeLabel   string
+	Status      string
+	StatusClass string
+	Attempts    int
+	MaxAttempts int
+	NextRunAt   string
+	UpdatedAt   string
+	LastError   string
 }
 
 type StravaConfig struct {
@@ -735,6 +749,7 @@ func (s *Server) Admin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	queueCount, _ := s.store.CountQueue(r.Context())
+	jobsView := s.buildJobViews(r.Context())
 
 	data := AdminPageData{
 		PageData: PageData{
@@ -746,6 +761,7 @@ func (s *Server) Admin(w http.ResponseWriter, r *http.Request) {
 			UserCount:  s.userCount(r.Context()),
 		},
 		QueueCount: queueCount,
+		Jobs:       jobsView,
 	}
 	if err := s.templates["admin"].ExecuteTemplate(w, "base", data); err != nil {
 		http.Error(w, "template render failed", http.StatusInternalServerError)
@@ -767,45 +783,33 @@ func (s *Server) handleAdminPost(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/admin/?msg=sync+not+configured", http.StatusFound)
 			return
 		}
-		go func() {
-			count, err := s.ingestor.SyncLatestActivity(context.Background())
-			if err != nil {
-				log.Printf("sync latest failed: %v", err)
-			} else {
-				log.Printf("sync latest completed: %d activity", count)
-			}
-		}()
-		http.Redirect(w, r, "/admin/?msg=fetching+latest+started", http.StatusFound)
+		if err := s.enqueueLatestJob(r.Context()); err != nil {
+			http.Redirect(w, r, "/admin/?msg=sync+enqueue+failed", http.StatusFound)
+			return
+		}
+		http.Redirect(w, r, "/admin/?msg=sync+queued+latest", http.StatusFound)
 	case "sync-month":
 		if s.ingestor == nil {
 			http.Redirect(w, r, "/admin/?msg=sync+not+configured", http.StatusFound)
 			return
 		}
-		go func() {
-			oneMonthAgo := time.Now().AddDate(0, -1, 0)
-			count, err := s.ingestor.SyncActivitiesSince(context.Background(), oneMonthAgo)
-			if err != nil {
-				log.Printf("sync month failed after %d: %v", count, err)
-			} else {
-				log.Printf("sync month completed: %d activities", count)
-			}
-		}()
-		http.Redirect(w, r, "/admin/?msg=fetching+last+month+started", http.StatusFound)
+		oneMonthAgo := time.Now().AddDate(0, -1, 0)
+		if err := s.enqueueSyncJob(r.Context(), oneMonthAgo); err != nil {
+			http.Redirect(w, r, "/admin/?msg=sync+enqueue+failed", http.StatusFound)
+			return
+		}
+		http.Redirect(w, r, "/admin/?msg=sync+queued+last+month", http.StatusFound)
 	case "sync-year":
 		if s.ingestor == nil {
 			http.Redirect(w, r, "/admin/?msg=sync+not+configured", http.StatusFound)
 			return
 		}
-		go func() {
-			oneYearAgo := time.Now().AddDate(-1, 0, 0)
-			count, err := s.ingestor.SyncActivitiesSince(context.Background(), oneYearAgo)
-			if err != nil {
-				log.Printf("sync year failed after %d: %v", count, err)
-			} else {
-				log.Printf("sync year completed: %d activities", count)
-			}
-		}()
-		http.Redirect(w, r, "/admin/?msg=fetching+last+year+started", http.StatusFound)
+		oneYearAgo := time.Now().AddDate(-1, 0, 0)
+		if err := s.enqueueSyncJob(r.Context(), oneYearAgo); err != nil {
+			http.Redirect(w, r, "/admin/?msg=sync+enqueue+failed", http.StatusFound)
+			return
+		}
+		http.Redirect(w, r, "/admin/?msg=sync+queued+last+year", http.StatusFound)
 	case "test-overpass":
 		if s.overpass == nil {
 			http.Redirect(w, r, "/admin/?msg=overpass+client+not+configured", http.StatusFound)
@@ -934,15 +938,10 @@ func (s *Server) StravaCallback(w http.ResponseWriter, r *http.Request) {
 		} else {
 			days := s.strava.InitialSyncDays
 			log.Printf("strava connected; starting initial sync (%d days)", days)
-			go func() {
-				after := time.Now().AddDate(0, 0, -days)
-				count, err := s.ingestor.SyncActivitiesSince(context.Background(), after)
-				if err != nil {
-					log.Printf("initial sync failed: %v", err)
-				} else {
-					log.Printf("initial sync completed: %d activities", count)
-				}
-			}()
+			after := time.Now().AddDate(0, 0, -days)
+			if err := s.enqueueSyncJob(r.Context(), after); err != nil {
+				log.Printf("initial sync enqueue failed: %v", err)
+			}
 		}
 	}
 	http.Redirect(w, r, "/activities/?msg=strava+connected", http.StatusFound)
@@ -1031,6 +1030,113 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/?msg=account+deleted", http.StatusFound)
 	default:
 		http.Redirect(w, r, "/activities/settings?msg=unknown+action", http.StatusFound)
+	}
+}
+
+func (s *Server) enqueueSyncJob(ctx context.Context, after time.Time) error {
+	if s.store == nil {
+		return fmt.Errorf("store not configured")
+	}
+	payload := jobs.SyncSincePayload{
+		UserID:    1,
+		AfterUnix: after.Unix(),
+		PerPage:   100,
+	}
+	cursor := jobs.SyncSinceCursor{Page: 1}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	cursorJSON, err := json.Marshal(cursor)
+	if err != nil {
+		return err
+	}
+	_, err = s.store.CreateJob(ctx, storage.Job{
+		Type:        jobs.JobTypeSyncActivitiesSince,
+		Payload:     string(payloadJSON),
+		Cursor:      string(cursorJSON),
+		MaxAttempts: 10,
+		NextRunAt:   time.Now(),
+	})
+	return err
+}
+
+func (s *Server) enqueueLatestJob(ctx context.Context) error {
+	if s.store == nil {
+		return fmt.Errorf("store not configured")
+	}
+	payload := jobs.SyncLatestPayload{UserID: 1}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	cursorJSON, err := json.Marshal(jobs.SyncLatestCursor{})
+	if err != nil {
+		return err
+	}
+	_, err = s.store.CreateJob(ctx, storage.Job{
+		Type:        jobs.JobTypeSyncLatest,
+		Payload:     string(payloadJSON),
+		Cursor:      string(cursorJSON),
+		MaxAttempts: 5,
+		NextRunAt:   time.Now(),
+	})
+	return err
+}
+
+func (s *Server) buildJobViews(ctx context.Context) []JobView {
+	jobsList, err := s.store.ListJobs(ctx, 20)
+	if err != nil {
+		log.Printf("jobs load failed: %v", err)
+		return nil
+	}
+	var views []JobView
+	for _, job := range jobsList {
+		view := JobView{
+			ID:          job.ID,
+			TypeLabel:   jobTypeLabel(job),
+			Status:      job.Status,
+			StatusClass: jobStatusClass(job.Status),
+			Attempts:    job.Attempts,
+			MaxAttempts: job.MaxAttempts,
+			NextRunAt:   formatTimestamp(job.NextRunAt),
+			UpdatedAt:   formatTimestamp(job.UpdatedAt),
+			LastError:   job.LastError,
+		}
+		views = append(views, view)
+	}
+	return views
+}
+
+func jobTypeLabel(job storage.Job) string {
+	switch job.Type {
+	case jobs.JobTypeSyncLatest:
+		return "Sync latest"
+	case jobs.JobTypeSyncActivitiesSince:
+		var payload jobs.SyncSincePayload
+		if err := json.Unmarshal([]byte(job.Payload), &payload); err == nil && payload.AfterUnix > 0 {
+			return fmt.Sprintf("Sync since %s", time.Unix(payload.AfterUnix, 0).Format("Jan 2, 2006"))
+		}
+		return "Sync since"
+	default:
+		return job.Type
+	}
+}
+
+func jobStatusClass(status string) string {
+	switch status {
+	case "completed":
+		return "completed"
+	case "running":
+		return "running"
+	case "failed":
+		return "failed"
+	case "retry":
+		return "retry"
+	case "queued":
+		return "queued"
+	default:
+		return "queued"
 	}
 }
 

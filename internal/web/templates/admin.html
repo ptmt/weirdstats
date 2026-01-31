@@ -36,6 +36,39 @@
     </article>
 
     <article class="card">
+      <h3>Jobs</h3>
+      <p class="muted">Durable background jobs for Strava sync (survive restarts).</p>
+      {{if .Jobs}}
+        <div class="job-table">
+          <div class="job-row job-head">
+            <span>Job</span>
+            <span>Status</span>
+            <span>Attempts</span>
+            <span>Next run</span>
+            <span>Updated</span>
+          </div>
+          {{range .Jobs}}
+            <div class="job-row">
+              <span class="job-type">#{{.ID}} · {{.TypeLabel}}</span>
+              <span class="stat-tag status-tag {{.StatusClass}}">{{.Status}}</span>
+              <span>{{.Attempts}} / {{.MaxAttempts}}</span>
+              <span>{{.NextRunAt}}</span>
+              <span>{{.UpdatedAt}}</span>
+            </div>
+            {{if .LastError}}
+              <div class="job-row job-error">
+                <span>Error</span>
+                <span class="job-error-text" title="{{.LastError}}">{{.LastError}}</span>
+              </div>
+            {{end}}
+          {{end}}
+        </div>
+      {{else}}
+        <p class="muted">No jobs yet.</p>
+      {{end}}
+    </article>
+
+    <article class="card">
       <h3>Maps / Overpass</h3>
       <p class="muted">Run a sample Overpass query for traffic lights and cafes near a known busy block.</p>
       <form method="post" action="/admin/">

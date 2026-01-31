@@ -800,6 +800,86 @@ a {
   gap: 24px;
 }
 
+.job-table {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.job-row {
+  display: grid;
+  grid-template-columns: 2.5fr 1fr 1fr 1.2fr 1.2fr;
+  gap: 12px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.job-head {
+  color: var(--ink-muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.job-type {
+  font-weight: 600;
+}
+
+.status-tag {
+  justify-self: start;
+}
+
+.status-tag.queued {
+  background: rgba(0, 212, 255, 0.12);
+  color: var(--cyan);
+  border: 1px solid rgba(0, 212, 255, 0.25);
+}
+
+.status-tag.running {
+  background: rgba(168, 85, 247, 0.18);
+  color: var(--purple);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.status-tag.retry {
+  background: rgba(236, 72, 153, 0.12);
+  color: var(--pink);
+  border: 1px solid rgba(236, 72, 153, 0.25);
+}
+
+.status-tag.failed {
+  background: rgba(239, 68, 68, 0.16);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.status-tag.completed {
+  background: rgba(34, 197, 94, 0.12);
+  color: #34d399;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.job-error {
+  grid-template-columns: 70px 1fr;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.job-error-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .job-row {
+    grid-template-columns: 1fr;
+  }
+  .job-row > span {
+    white-space: nowrap;
+  }
+}
+
 /* Contribution wall */
 .contrib-card {
   display: grid;
@@ -1600,13 +1680,14 @@ a {
 
 .condition-row {
   display: grid;
-  grid-template-columns: minmax(160px, 1.2fr) minmax(140px, 0.8fr) minmax(200px, 1fr) auto;
+  grid-template-columns: minmax(0, 220px) minmax(0, 160px) minmax(0, 240px) auto;
   gap: 10px;
   align-items: start;
   padding: 10px;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--bg-subtle);
+  justify-content: start;
 }
 
 .condition-row .field {
@@ -1614,6 +1695,7 @@ a {
   gap: 6px;
   align-content: start;
   justify-items: start;
+  width: 100%;
 }
 
 .condition-row > button {
@@ -1625,17 +1707,21 @@ a {
 .condition-row input:not([type]),
 .condition-row select {
   width: 100%;
-  max-width: 220px;
+  max-width: 100%;
+}
+
+.condition-values .value-wrap {
+  justify-items: start;
 }
 
 .condition-values .value-wrap input {
-  max-width: 180px;
+  max-width: 100%;
 }
 
 .condition-values .value-wrap {
   display: grid;
   gap: 6px;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
 }
 
 .field-help {

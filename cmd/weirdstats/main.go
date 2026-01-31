@@ -14,6 +14,7 @@ import (
 	"weirdstats/internal/config"
 	"weirdstats/internal/gps"
 	"weirdstats/internal/ingest"
+	"weirdstats/internal/jobs"
 	"weirdstats/internal/maps"
 	"weirdstats/internal/processor"
 	"weirdstats/internal/rules"
@@ -77,6 +78,12 @@ func main() {
 	}
 	pipeline := &processor.PipelineProcessor{Ingest: ingestor, Stats: statsProcessor, Rules: rulesProcessor}
 	queueWorker := &worker.Worker{Store: store, Processor: pipeline}
+	jobRunner := &jobs.Runner{
+		Store:        store,
+		Ingestor:     ingestor,
+		PollInterval: time.Duration(cfg.WorkerPollIntervalMS) * time.Millisecond,
+		StaleAfter:   10 * time.Minute,
+	}
 
 	webServer, err := web.NewServer(store, ingestor, mapAPI, overpassClient, stopOpts, web.StravaConfig{
 		ClientID:        cfg.StravaClientID,
@@ -136,6 +143,7 @@ func main() {
 
 	go ensureWebhookSubscription(ctx, cfg)
 	go runWorker(ctx, queueWorker, time.Duration(cfg.WorkerPollIntervalMS)*time.Millisecond)
+	go runJobRunner(ctx, jobRunner)
 
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -207,6 +215,33 @@ func runWorker(ctx context.Context, queueWorker *worker.Worker, idleDelay time.D
 			log.Printf("worker error: %v", err)
 		} else if processed {
 			rateLimitBackoff = 0
+		}
+		if !processed {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(idleDelay):
+			}
+		}
+	}
+}
+
+func runJobRunner(ctx context.Context, runner *jobs.Runner) {
+	idleDelay := runner.PollInterval
+	if idleDelay <= 0 {
+		idleDelay = 2 * time.Second
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		processed, err := runner.ProcessNext(ctx)
+		if err != nil {
+			log.Printf("job runner error: %v", err)
 		}
 		if !processed {
 			select {

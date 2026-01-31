@@ -44,6 +44,20 @@ type WebhookEvent struct {
 	ReceivedAt time.Time
 }
 
+type Job struct {
+	ID          int64
+	Type        string
+	Status      string
+	Payload     string
+	Cursor      string
+	Attempts    int
+	MaxAttempts int
+	LastError   string
+	NextRunAt   time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
 type StravaToken struct {
 	UserID       int64
 	AccessToken  string
@@ -168,6 +182,19 @@ CREATE TABLE IF NOT EXISTS activity_queue (
 	activity_id INTEGER NOT NULL,
 	enqueued_at INTEGER NOT NULL,
 	processed_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS jobs (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	type TEXT NOT NULL,
+	status TEXT NOT NULL,
+	payload TEXT NOT NULL,
+	cursor TEXT NOT NULL,
+	attempts INTEGER NOT NULL,
+	max_attempts INTEGER NOT NULL,
+	last_error TEXT NOT NULL,
+	next_run_at INTEGER NOT NULL,
+	created_at INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS webhook_events (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -437,6 +464,189 @@ ORDER BY year DESC
 		return nil, err
 	}
 	return years, nil
+}
+
+func (s *Store) ListJobs(ctx context.Context, limit int) ([]Job, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, type, status, payload, cursor, attempts, max_attempts, last_error, next_run_at, created_at, updated_at
+FROM jobs
+ORDER BY updated_at DESC, id DESC
+LIMIT ?
+`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var jobs []Job
+	for rows.Next() {
+		var job Job
+		var nextRunAt int64
+		var createdAt int64
+		var updatedAt int64
+		if err := rows.Scan(&job.ID, &job.Type, &job.Status, &job.Payload, &job.Cursor, &job.Attempts, &job.MaxAttempts, &job.LastError,
+			&nextRunAt, &createdAt, &updatedAt); err != nil {
+			return nil, err
+		}
+		job.NextRunAt = time.Unix(nextRunAt, 0)
+		job.CreatedAt = time.Unix(createdAt, 0)
+		job.UpdatedAt = time.Unix(updatedAt, 0)
+		jobs = append(jobs, job)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return jobs, nil
+}
+
+func (s *Store) CreateJob(ctx context.Context, job Job) (int64, error) {
+	if job.Type == "" {
+		return 0, errors.New("job type required")
+	}
+	if job.Status == "" {
+		job.Status = "queued"
+	}
+	if job.Payload == "" {
+		job.Payload = "{}"
+	}
+	if job.Cursor == "" {
+		job.Cursor = "{}"
+	}
+	if job.MaxAttempts <= 0 {
+		job.MaxAttempts = 10
+	}
+	if job.NextRunAt.IsZero() {
+		job.NextRunAt = time.Now()
+	}
+	now := time.Now()
+	if job.CreatedAt.IsZero() {
+		job.CreatedAt = now
+	}
+	if job.UpdatedAt.IsZero() {
+		job.UpdatedAt = now
+	}
+	res, err := s.db.ExecContext(ctx, `
+INSERT INTO jobs (type, status, payload, cursor, attempts, max_attempts, last_error, next_run_at, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, job.Type, job.Status, job.Payload, job.Cursor, job.Attempts, job.MaxAttempts, job.LastError,
+		job.NextRunAt.Unix(), job.CreatedAt.Unix(), job.UpdatedAt.Unix())
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func (s *Store) ClaimJob(ctx context.Context, now time.Time, staleAfter time.Duration) (Job, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Job{}, err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	staleCutoff := now.Add(-staleAfter).Unix()
+	row := tx.QueryRowContext(ctx, `
+SELECT id, type, status, payload, cursor, attempts, max_attempts, last_error, next_run_at, created_at, updated_at
+FROM jobs
+WHERE (
+	(status IN ('queued', 'retry') AND next_run_at <= ?)
+	OR (status = 'running' AND updated_at <= ?)
+)
+ORDER BY next_run_at, id
+LIMIT 1
+`, now.Unix(), staleCutoff)
+
+	var job Job
+	var nextRunAt int64
+	var createdAt int64
+	var updatedAt int64
+	if err = row.Scan(&job.ID, &job.Type, &job.Status, &job.Payload, &job.Cursor, &job.Attempts, &job.MaxAttempts, &job.LastError,
+		&nextRunAt, &createdAt, &updatedAt); err != nil {
+		_ = tx.Rollback()
+		return Job{}, err
+	}
+	job.NextRunAt = time.Unix(nextRunAt, 0)
+	job.CreatedAt = time.Unix(createdAt, 0)
+	job.UpdatedAt = time.Unix(updatedAt, 0)
+
+	job.Attempts++
+	job.Status = "running"
+	job.UpdatedAt = now
+	if _, err = tx.ExecContext(ctx, `
+UPDATE jobs
+SET status = ?, attempts = ?, updated_at = ?
+WHERE id = ?
+`, job.Status, job.Attempts, job.UpdatedAt.Unix(), job.ID); err != nil {
+		_ = tx.Rollback()
+		return Job{}, err
+	}
+
+	if err = tx.Commit(); err != nil {
+		return Job{}, err
+	}
+	return job, nil
+}
+
+func (s *Store) MarkJobQueued(ctx context.Context, jobID int64, cursor string, nextRunAt time.Time) error {
+	if nextRunAt.IsZero() {
+		nextRunAt = time.Now()
+	}
+	_, err := s.db.ExecContext(ctx, `
+UPDATE jobs
+SET status = 'queued',
+	cursor = ?,
+	last_error = '',
+	next_run_at = ?,
+	updated_at = ?
+WHERE id = ?
+`, cursor, nextRunAt.Unix(), time.Now().Unix(), jobID)
+	return err
+}
+
+func (s *Store) MarkJobRetry(ctx context.Context, jobID int64, cursor string, lastError string, nextRunAt time.Time) error {
+	if nextRunAt.IsZero() {
+		nextRunAt = time.Now()
+	}
+	_, err := s.db.ExecContext(ctx, `
+UPDATE jobs
+SET status = 'retry',
+	cursor = ?,
+	last_error = ?,
+	next_run_at = ?,
+	updated_at = ?
+WHERE id = ?
+`, cursor, lastError, nextRunAt.Unix(), time.Now().Unix(), jobID)
+	return err
+}
+
+func (s *Store) MarkJobFailed(ctx context.Context, jobID int64, cursor string, lastError string) error {
+	_, err := s.db.ExecContext(ctx, `
+UPDATE jobs
+SET status = 'failed',
+	cursor = ?,
+	last_error = ?,
+	updated_at = ?
+WHERE id = ?
+`, cursor, lastError, time.Now().Unix(), jobID)
+	return err
+}
+
+func (s *Store) MarkJobCompleted(ctx context.Context, jobID int64, cursor string) error {
+	_, err := s.db.ExecContext(ctx, `
+UPDATE jobs
+SET status = 'completed',
+	cursor = ?,
+	last_error = '',
+	updated_at = ?
+WHERE id = ?
+`, cursor, time.Now().Unix(), jobID)
+	return err
 }
 
 func (s *Store) InsertWebhookEvent(ctx context.Context, event WebhookEvent) (int64, error) {
