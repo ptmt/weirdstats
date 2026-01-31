@@ -804,6 +804,7 @@ a {
 .contrib-card {
   display: grid;
   gap: 16px;
+  overflow: visible;
 }
 
 .contrib-card h3 {
@@ -899,7 +900,7 @@ a {
   display: grid;
   gap: 6px;
   min-width: calc(var(--contrib-weeks) * (var(--contrib-size) + var(--contrib-gap)));
-  width: max-content;
+  width: 100%;
 }
 
 .contrib-months {
@@ -908,7 +909,8 @@ a {
   column-gap: var(--contrib-gap);
   min-height: 14px;
   align-items: end;
-  justify-content: start;
+  justify-content: space-between;
+  width: 100%;
 }
 
 .contrib-month {
@@ -925,7 +927,8 @@ a {
   grid-template-rows: repeat(7, var(--contrib-size));
   column-gap: var(--contrib-gap);
   row-gap: var(--contrib-gap);
-  justify-content: start;
+  justify-content: space-between;
+  width: 100%;
 }
 
 .contrib-day {
