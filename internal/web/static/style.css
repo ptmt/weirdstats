@@ -804,7 +804,6 @@ a {
 .contrib-card {
   display: grid;
   gap: 16px;
-  overflow: visible;
 }
 
 .contrib-card h3 {
@@ -899,18 +898,15 @@ a {
   --contrib-gap: 4px;
   display: grid;
   gap: 6px;
-  min-width: calc(var(--contrib-weeks) * (var(--contrib-size) + var(--contrib-gap)));
   width: 100%;
 }
 
 .contrib-months {
   display: grid;
-  grid-template-columns: repeat(var(--contrib-weeks), var(--contrib-size));
+  grid-template-columns: repeat(var(--contrib-weeks), minmax(var(--contrib-size), 1fr));
   column-gap: var(--contrib-gap);
   min-height: 14px;
   align-items: end;
-  justify-content: space-between;
-  width: 100%;
 }
 
 .contrib-month {
@@ -923,48 +919,19 @@ a {
 .contrib-grid {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: var(--contrib-size);
+  grid-template-columns: repeat(var(--contrib-weeks), minmax(var(--contrib-size), 1fr));
   grid-template-rows: repeat(7, var(--contrib-size));
   column-gap: var(--contrib-gap);
   row-gap: var(--contrib-gap);
-  justify-content: space-between;
-  width: 100%;
 }
 
 .contrib-day {
   width: var(--contrib-size);
   height: var(--contrib-size);
-  position: relative;
   border-radius: 3px;
   background: var(--contrib-0);
   border: 1px solid rgba(255, 255, 255, 0.05);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-
-.contrib-day::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  left: 50%;
-  top: -8px;
-  transform: translate(-50%, -100%);
-  background: var(--surface-elevated);
-  color: var(--ink);
-  font-size: 11px;
-  line-height: 1.2;
-  padding: 6px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.12s ease, transform 0.12s ease;
-  z-index: 20;
-}
-
-.contrib-day:hover::after,
-.contrib-day:focus::after {
-  opacity: 1;
-  transform: translate(-50%, -110%);
 }
 
 .contrib-day.level-0 {
