@@ -703,7 +703,7 @@ func (s *Server) ApplyActivityRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.ingestor == nil || s.ingestor.Strava == nil {
-		http.Error(w, "strava client not configured", http.StatusInternalServerError)
+		s.redirectBack(w, r, activityID, "sync+not+configured")
 		return
 	}
 
@@ -712,7 +712,7 @@ func (s *Server) ApplyActivityRules(w http.ResponseWriter, r *http.Request) {
 		HideFromHome: hidePtr,
 	}); err != nil {
 		log.Printf("strava update failed: %v", err)
-		http.Error(w, "failed to update activity on strava", http.StatusBadGateway)
+		s.redirectBack(w, r, activityID, "sync+failed")
 		return
 	}
 
