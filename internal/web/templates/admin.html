@@ -55,6 +55,12 @@
               <span>{{.NextRunAt}}</span>
               <span>{{.UpdatedAt}}</span>
             </div>
+            {{if .CursorSummary}}
+              <div class="job-row job-cursor">
+                <span>Cursor</span>
+                <span class="job-cursor-text" title="{{.CursorSummary}}">{{.CursorSummary}}</span>
+              </div>
+            {{end}}
             {{if .LastError}}
               <div class="job-row job-error">
                 <span>Error</span>

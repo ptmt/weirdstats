@@ -170,15 +170,16 @@ type ContributionData struct {
 }
 
 type JobView struct {
-	ID          int64
-	TypeLabel   string
-	Status      string
-	StatusClass string
-	Attempts    int
-	MaxAttempts int
-	NextRunAt   string
-	UpdatedAt   string
-	LastError   string
+	ID            int64
+	TypeLabel     string
+	Status        string
+	StatusClass   string
+	Attempts      int
+	MaxAttempts   int
+	NextRunAt     string
+	UpdatedAt     string
+	LastError     string
+	CursorSummary string
 }
 
 type StravaConfig struct {
@@ -1293,15 +1294,16 @@ func (s *Server) buildJobViews(ctx context.Context) []JobView {
 	var views []JobView
 	for _, job := range jobsList {
 		view := JobView{
-			ID:          job.ID,
-			TypeLabel:   jobTypeLabel(job),
-			Status:      job.Status,
-			StatusClass: jobStatusClass(job.Status),
-			Attempts:    job.Attempts,
-			MaxAttempts: job.MaxAttempts,
-			NextRunAt:   formatTimestamp(job.NextRunAt),
-			UpdatedAt:   formatTimestamp(job.UpdatedAt),
-			LastError:   job.LastError,
+			ID:            job.ID,
+			TypeLabel:     jobTypeLabel(job),
+			Status:        job.Status,
+			StatusClass:   jobStatusClass(job.Status),
+			Attempts:      job.Attempts,
+			MaxAttempts:   job.MaxAttempts,
+			NextRunAt:     formatTimestamp(job.NextRunAt),
+			UpdatedAt:     formatTimestamp(job.UpdatedAt),
+			LastError:     job.LastError,
+			CursorSummary: jobCursorSummary(job),
 		}
 		views = append(views, view)
 	}
@@ -1337,6 +1339,28 @@ func jobStatusClass(status string) string {
 		return "queued"
 	default:
 		return "queued"
+	}
+}
+
+func jobCursorSummary(job storage.Job) string {
+	switch job.Type {
+	case jobs.JobTypeSyncActivitiesSince:
+		var cursor jobs.SyncSinceCursor
+		if err := json.Unmarshal([]byte(job.Cursor), &cursor); err != nil {
+			return ""
+		}
+		if cursor.Page <= 0 {
+			cursor.Page = 1
+		}
+		return fmt.Sprintf("cursor: page %d, enqueued %d", cursor.Page, cursor.Enqueued)
+	case jobs.JobTypeSyncLatest:
+		var cursor jobs.SyncLatestCursor
+		if err := json.Unmarshal([]byte(job.Cursor), &cursor); err != nil {
+			return ""
+		}
+		return fmt.Sprintf("cursor: enqueued %d", cursor.Enqueued)
+	default:
+		return ""
 	}
 }
 

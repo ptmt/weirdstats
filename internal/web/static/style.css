@@ -871,6 +871,18 @@ a {
   white-space: nowrap;
 }
 
+.job-cursor {
+  grid-template-columns: 70px 1fr;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.job-cursor-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @media (max-width: 720px) {
   .job-row {
     grid-template-columns: 1fr;
