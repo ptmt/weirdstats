@@ -1198,3 +1198,27 @@ WHERE id = ?
 `, boolToInt(hidden), activityID)
 	return err
 }
+
+func (s *Store) UpdateActivityDescriptionAndHideFromHome(ctx context.Context, activityID int64, description string, hideFromHome *bool) error {
+	if activityID == 0 {
+		return errors.New("activity id required")
+	}
+	updatedAt := time.Now().Unix()
+	if hideFromHome == nil {
+		_, err := s.db.ExecContext(ctx, `
+UPDATE activities
+SET description = ?,
+	updated_at = ?
+WHERE id = ?
+`, description, updatedAt, activityID)
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `
+UPDATE activities
+SET description = ?,
+	hide_from_home = ?,
+	updated_at = ?
+WHERE id = ?
+`, description, boolToInt(*hideFromHome), updatedAt, activityID)
+	return err
+}

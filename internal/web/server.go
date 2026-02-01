@@ -23,6 +23,7 @@ import (
 	"weirdstats/internal/jobs"
 	"weirdstats/internal/maps"
 	"weirdstats/internal/rules"
+	"weirdstats/internal/stats"
 	"weirdstats/internal/storage"
 	"weirdstats/internal/strava"
 )
@@ -603,6 +604,10 @@ func (s *Server) Activity(w http.ResponseWriter, r *http.Request) {
 		s.RefreshActivity(w, r)
 		return
 	}
+	if strings.HasSuffix(r.URL.Path, "/apply") {
+		s.ApplyActivityRules(w, r)
+		return
+	}
 	s.ActivityDetail(w, r)
 }
 
@@ -644,12 +649,206 @@ func (s *Server) RefreshActivity(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
+func (s *Server) ApplyActivityRules(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAuth(w, r) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	idStr := strings.TrimPrefix(r.URL.Path, "/activity/")
+	idStr = strings.TrimSuffix(idStr, "/apply")
+	activityID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || activityID == 0 {
+		http.Error(w, "invalid activity id", http.StatusBadRequest)
+		return
+	}
+
+	activity, err := s.store.GetActivity(r.Context(), activityID)
+	if err != nil {
+		http.Error(w, "activity not found", http.StatusNotFound)
+		return
+	}
+	if activity.UserID != 1 {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	hide, statsSnapshot, err := s.evaluateHideRules(r.Context(), activity)
+	if err != nil {
+		http.Error(w, "failed to evaluate rules", http.StatusInternalServerError)
+		return
+	}
+	if err := s.store.UpdateActivityHiddenByRule(r.Context(), activityID, hide); err != nil {
+		http.Error(w, "failed to update rule status", http.StatusInternalServerError)
+		return
+	}
+
+	var descPtr *string
+	newDesc, descChanged := applyWeirdStatsDescription(activity.Description, statsSnapshot)
+	if descChanged {
+		descPtr = &newDesc
+	}
+
+	var hidePtr *bool
+	if hide && !activity.HideFromHome {
+		val := true
+		hidePtr = &val
+	}
+
+	if descPtr == nil && hidePtr == nil {
+		s.redirectBack(w, r, activityID, "sync+no+changes")
+		return
+	}
+	if s.ingestor == nil || s.ingestor.Strava == nil {
+		http.Error(w, "strava client not configured", http.StatusInternalServerError)
+		return
+	}
+
+	if _, err := s.ingestor.Strava.UpdateActivity(r.Context(), activityID, strava.UpdateActivityRequest{
+		Description:  descPtr,
+		HideFromHome: hidePtr,
+	}); err != nil {
+		log.Printf("strava update failed: %v", err)
+		http.Error(w, "failed to update activity on strava", http.StatusBadGateway)
+		return
+	}
+
+	descToStore := activity.Description
+	if descPtr != nil {
+		descToStore = *descPtr
+	}
+	if err := s.store.UpdateActivityDescriptionAndHideFromHome(r.Context(), activityID, descToStore, hidePtr); err != nil {
+		log.Printf("local update failed: %v", err)
+	}
+
+	s.redirectBack(w, r, activityID, "sync+updated")
+}
+
 func totalStopSeconds(stops []StopView) int {
 	total := 0
 	for _, s := range stops {
 		total += s.DurationSeconds
 	}
 	return total
+}
+
+func (s *Server) evaluateHideRules(ctx context.Context, activity storage.Activity) (bool, stats.StopStats, error) {
+	statsSnapshot, err := s.store.GetActivityStats(ctx, activity.ID)
+	if err != nil && err != sql.ErrNoRows {
+		return false, stats.StopStats{}, err
+	}
+	ruleRows, err := s.store.ListHideRules(ctx, activity.UserID)
+	if err != nil {
+		return false, stats.StopStats{}, err
+	}
+
+	reg := rules.DefaultRegistry()
+	startUnix := int64(0)
+	if !activity.StartTime.IsZero() {
+		startUnix = activity.StartTime.Unix()
+	}
+	ctxData := rules.Context{
+		Activity: rules.ActivitySource{
+			ID:          activity.ID,
+			Type:        activity.Type,
+			Name:        activity.Name,
+			StartUnix:   startUnix,
+			DistanceM:   activity.Distance,
+			MovingTimeS: activity.MovingTime,
+		},
+		Stats: rules.StatsSource{
+			StopCount:             statsSnapshot.StopCount,
+			StopTotalSeconds:      statsSnapshot.StopTotalSeconds,
+			TrafficLightStopCount: statsSnapshot.TrafficLightStopCount,
+		},
+	}
+
+	hide := false
+	for _, ruleRow := range ruleRows {
+		if !ruleRow.Enabled {
+			continue
+		}
+		ruleDef, err := rules.ParseRuleJSON(ruleRow.Condition)
+		if err != nil {
+			continue
+		}
+		if err := rules.ValidateRule(ruleDef, reg); err != nil {
+			continue
+		}
+		matched, shouldHide, err := rules.Evaluate(ruleDef, reg, ctxData, ruleRow.ID)
+		if err != nil {
+			continue
+		}
+		if matched && shouldHide {
+			hide = true
+			break
+		}
+	}
+
+	return hide, statsSnapshot, nil
+}
+
+const weirdStatsPrefix = "Weirdstats:"
+
+func applyWeirdStatsDescription(existing string, statsSnapshot stats.StopStats) (string, bool) {
+	line := buildWeirdStatsLine(statsSnapshot)
+	if line == "" {
+		return existing, false
+	}
+
+	lines := strings.Split(existing, "\n")
+	filtered := make([]string, 0, len(lines)+1)
+	for _, l := range lines {
+		if strings.HasPrefix(strings.TrimSpace(l), weirdStatsPrefix) {
+			continue
+		}
+		if strings.TrimSpace(l) == "" {
+			continue
+		}
+		filtered = append(filtered, l)
+	}
+	filtered = append(filtered, line)
+	updated := strings.Join(filtered, "\n")
+	return updated, updated != existing
+}
+
+func buildWeirdStatsLine(statsSnapshot stats.StopStats) string {
+	if statsSnapshot.StopCount == 0 && statsSnapshot.TrafficLightStopCount == 0 {
+		return ""
+	}
+	parts := make([]string, 0, 2)
+	if statsSnapshot.StopCount > 0 {
+		part := fmt.Sprintf("%d stops", statsSnapshot.StopCount)
+		if statsSnapshot.StopTotalSeconds > 0 {
+			part += fmt.Sprintf(" (%s total)", formatDuration(statsSnapshot.StopTotalSeconds))
+		}
+		parts = append(parts, part)
+	}
+	if statsSnapshot.TrafficLightStopCount > 0 {
+		parts = append(parts, fmt.Sprintf("%d at lights", statsSnapshot.TrafficLightStopCount))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return weirdStatsPrefix + " " + strings.Join(parts, " · ")
+}
+
+func (s *Server) redirectBack(w http.ResponseWriter, r *http.Request, activityID int64, msg string) {
+	redirectURL := r.Header.Get("Referer")
+	if redirectURL == "" {
+		redirectURL = fmt.Sprintf("/activity/%d", activityID)
+	}
+	if msg != "" {
+		sep := "?"
+		if strings.Contains(redirectURL, "?") {
+			sep = "&"
+		}
+		redirectURL = redirectURL + sep + "msg=" + url.QueryEscape(msg)
+	}
+	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
 func countLightStops(stops []StopView) int {

@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -53,6 +55,11 @@ type StreamSet struct {
 	VelocitySmooth []float64
 }
 
+type UpdateActivityRequest struct {
+	Description  *string
+	HideFromHome *bool
+}
+
 func (c *Client) GetActivity(ctx context.Context, id int64) (Activity, error) {
 	var payload struct {
 		ID           int64   `json:"id"`
@@ -86,6 +93,83 @@ func (c *Client) GetActivity(ctx context.Context, id int64) (Activity, error) {
 		Distance:     payload.Distance,
 		MovingTime:   payload.MovingTime,
 		AveragePower: payload.AverageWatts,
+		Visibility:   payload.Visibility,
+		Private:      payload.Private,
+		HideFromHome: payload.HideFromHome,
+	}, nil
+}
+
+func (c *Client) UpdateActivity(ctx context.Context, id int64, update UpdateActivityRequest) (Activity, error) {
+	if id == 0 {
+		return Activity{}, fmt.Errorf("activity id required")
+	}
+	form := url.Values{}
+	if update.Description != nil {
+		form.Set("description", *update.Description)
+	}
+	if update.HideFromHome != nil {
+		form.Set("hide_from_home", strconv.FormatBool(*update.HideFromHome))
+	}
+	if len(form) == 0 {
+		return Activity{}, fmt.Errorf("no updates specified")
+	}
+
+	base := c.BaseURL
+	if base == "" {
+		base = "https://www.strava.com/api/v3"
+	}
+	endpoint, err := url.JoinPath(base, "/activities", fmt.Sprintf("%d", id))
+	if err != nil {
+		return Activity{}, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return Activity{}, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	token := c.AccessToken
+	if token == "" && c.TokenSource != nil {
+		token, err = c.TokenSource.GetAccessToken(ctx)
+		if err != nil {
+			return Activity{}, err
+		}
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	client := c.HTTPClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return Activity{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return Activity{}, &APIError{StatusCode: resp.StatusCode, Body: string(body)}
+	}
+
+	var payload struct {
+		ID           int64  `json:"id"`
+		Description  string `json:"description"`
+		Visibility   string `json:"visibility"`
+		Private      bool   `json:"private"`
+		HideFromHome bool   `json:"hide_from_home"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return Activity{}, err
+	}
+
+	return Activity{
+		ID:           payload.ID,
+		Description:  payload.Description,
 		Visibility:   payload.Visibility,
 		Private:      payload.Private,
 		HideFromHome: payload.HideFromHome,

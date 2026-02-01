@@ -975,7 +975,7 @@ a {
 
 .contrib-grid-wrap {
   --contrib-size: 12px;
-  --contrib-gap: 4px;
+  --contrib-gap: 1px;
   display: grid;
   gap: 6px;
   width: 100%;
@@ -1074,7 +1074,7 @@ a {
 @media (max-width: 600px) {
   .contrib-grid-wrap {
     --contrib-size: 10px;
-    --contrib-gap: 3px;
+    --contrib-gap: 1px;
   }
 }
 
@@ -1197,6 +1197,17 @@ a {
   color: #f87171;
   background: rgba(239, 68, 68, 0.15);
   border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.activity-visibility svg {
+  width: 14px;
+  height: 14px;
+}
+
+.activity-visibility.is-visible {
+  color: #34d399;
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.3);
 }
 
 .activity-meta {
