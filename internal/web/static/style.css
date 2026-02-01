@@ -971,11 +971,13 @@ a {
 .contrib-grid-scroll {
   overflow-x: auto;
   padding-bottom: 4px;
+  display: flex;
+  justify-content: center;
 }
 
 .contrib-grid-wrap {
   --contrib-size: 12px;
-  --contrib-gap: 0px;
+  --contrib-gap: 3px;
   display: grid;
   gap: 6px;
   width: max-content;
@@ -1074,7 +1076,7 @@ a {
 @media (max-width: 600px) {
   .contrib-grid-wrap {
     --contrib-size: 10px;
-    --contrib-gap: 0px;
+    --contrib-gap: 3px;
   }
 }
 
