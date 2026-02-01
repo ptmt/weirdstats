@@ -73,6 +73,7 @@ type ActivityView struct {
 	RecalculatedAt string
 	FetchedAt      string
 	IsHidden       bool
+	FeedMuted      bool
 }
 
 type StopView struct {
@@ -1581,6 +1582,7 @@ func enrichActivityView(view *ActivityView, activity storage.Activity) {
 	view.TypeLabel = activityTypeLabel(activity.Type)
 	view.TypeClass = activityTypeClass(activity.Type)
 	view.IsHidden = isActivityHidden(activity)
+	view.FeedMuted = activity.HideFromHome
 	view.DistanceValue, view.DistanceUnit = formatDistanceParts(activity.Distance)
 	view.PaceLabel, view.PaceValue, view.PaceUnit = formatPaceOrSpeed(activity.Type, activity.Distance, activity.MovingTime)
 	view.PowerValue, view.PowerUnit, view.HasPower = formatPower(activity.AveragePower)

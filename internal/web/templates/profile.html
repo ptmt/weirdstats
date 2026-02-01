@@ -49,7 +49,7 @@
               <div class="activity-header-main">
                 <div class="activity-badges">
                   <span class="activity-type type-{{.TypeClass}}">{{.TypeLabel}}</span>
-                  {{if .IsHidden}}
+                  {{if .FeedMuted}}
                     <span class="activity-visibility is-hidden" title="Muted for everyone feed">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20C7 20 2.73 16.11 1 12c.64-1.5 1.71-3.06 3.2-4.36"/>
@@ -112,6 +112,14 @@
                     Re-apply + Update Strava
                   </button>
                 </form>
+                <a href="https://www.strava.com/activities/{{.ID}}" class="dropdown-link" target="_blank" rel="noopener">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 3h3v3"/>
+                    <path d="M21 3l-7.5 7.5"/>
+                    <path d="M14 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-9"/>
+                  </svg>
+                  Open in Strava
+                </a>
                 <button type="button">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="18" cy="5" r="3"/>
