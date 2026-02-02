@@ -1239,9 +1239,10 @@ func (s *Server) enqueueSyncJob(ctx context.Context, after time.Time) error {
 		return fmt.Errorf("store not configured")
 	}
 	payload := jobs.SyncSincePayload{
-		UserID:    1,
-		AfterUnix: after.Unix(),
-		PerPage:   100,
+		UserID:     1,
+		AfterUnix:  after.Unix(),
+		PerPage:    100,
+		WindowDays: 1,
 	}
 	cursor := jobs.SyncSinceCursor{Page: 1}
 	payloadJSON, err := json.Marshal(payload)
@@ -1351,6 +1352,17 @@ func jobCursorSummary(job storage.Job) string {
 		}
 		if cursor.Page <= 0 {
 			cursor.Page = 1
+		}
+		windowStart := ""
+		windowEnd := ""
+		if cursor.WindowStartUnix > 0 {
+			windowStart = formatTimestamp(time.Unix(cursor.WindowStartUnix, 0))
+		}
+		if cursor.WindowEndUnix > 0 {
+			windowEnd = formatTimestamp(time.Unix(cursor.WindowEndUnix, 0))
+		}
+		if windowStart != "" || windowEnd != "" {
+			return fmt.Sprintf("window: %s - %s, page %d, enqueued %d", windowStart, windowEnd, cursor.Page, cursor.Enqueued)
 		}
 		return fmt.Sprintf("cursor: page %d, enqueued %d", cursor.Page, cursor.Enqueued)
 	case jobs.JobTypeSyncLatest:

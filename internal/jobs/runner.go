@@ -19,15 +19,18 @@ const (
 )
 
 type SyncSincePayload struct {
-	UserID    int64 `json:"user_id"`
-	AfterUnix int64 `json:"after_unix"`
-	PerPage   int   `json:"per_page"`
+	UserID     int64 `json:"user_id"`
+	AfterUnix  int64 `json:"after_unix"`
+	PerPage    int   `json:"per_page"`
+	WindowDays int   `json:"window_days"`
 }
 
 type SyncSinceCursor struct {
-	Page       int   `json:"page"`
-	Enqueued   int   `json:"enqueued"`
-	BeforeUnix int64 `json:"before_unix"`
+	Page            int   `json:"page"`
+	Enqueued        int   `json:"enqueued"`
+	WindowStartUnix int64 `json:"window_start_unix"`
+	WindowEndUnix   int64 `json:"window_end_unix"`
+	MaxBeforeUnix   int64 `json:"max_before_unix"`
 }
 
 type SyncLatestPayload struct {
@@ -93,53 +96,70 @@ func (r *Runner) handleSyncSince(ctx context.Context, job storage.Job) error {
 		cursor = SyncSinceCursor{Page: 1}
 	}
 
-	if cursor.Page <= 0 {
-		cursor.Page = 1
-	}
 	perPage := payload.PerPage
 	if perPage <= 0 {
 		perPage = 100
 	}
-	if cursor.BeforeUnix <= 0 {
-		cursor.BeforeUnix = time.Now().Unix()
+	if cursor.Page <= 0 {
+		cursor.Page = 1
+	}
+	if cursor.MaxBeforeUnix <= 0 {
+		cursor.MaxBeforeUnix = time.Now().Unix()
+	}
+	if payload.AfterUnix > 0 && payload.AfterUnix >= cursor.MaxBeforeUnix {
+		cursorJSON, _ := json.Marshal(cursor)
+		return r.Store.MarkJobCompleted(ctx, job.ID, string(cursorJSON))
+	}
+	if cursor.WindowStartUnix <= 0 {
+		cursor.WindowStartUnix = payload.AfterUnix
+	}
+	windowDays := payload.WindowDays
+	if windowDays <= 0 {
+		windowDays = 1
+	}
+	windowSeconds := int64(windowDays) * int64((24*time.Hour)/time.Second)
+	if cursor.WindowEndUnix <= 0 {
+		cursor.WindowEndUnix = cursor.WindowStartUnix + windowSeconds
+	}
+	if cursor.WindowEndUnix > cursor.MaxBeforeUnix {
+		cursor.WindowEndUnix = cursor.MaxBeforeUnix
+	}
+	if cursor.WindowStartUnix >= cursor.MaxBeforeUnix {
+		cursorJSON, _ := json.Marshal(cursor)
+		return r.Store.MarkJobCompleted(ctx, job.ID, string(cursorJSON))
 	}
 
 	if r.Ingestor == nil || r.Ingestor.Strava == nil {
 		return r.Store.MarkJobFailed(ctx, job.ID, job.Cursor, "strava client not configured")
 	}
 
-	after := time.Unix(payload.AfterUnix, 0)
-	before := time.Unix(cursor.BeforeUnix, 0)
+	after := time.Unix(cursor.WindowStartUnix, 0)
+	before := time.Unix(cursor.WindowEndUnix, 0)
 	activities, err := r.Ingestor.Strava.ListActivities(ctx, after, before, cursor.Page, perPage)
 	if err != nil {
 		return r.markJobRetry(ctx, job, cursor, err)
 	}
 
-	if len(activities) == 0 {
-		cursorJSON, _ := json.Marshal(cursor)
-		return r.Store.MarkJobCompleted(ctx, job.ID, string(cursorJSON))
-	}
-
-	oldestStart := activities[0].StartDate
 	for _, activity := range activities {
 		if err := r.Store.EnqueueActivity(ctx, activity.ID); err != nil {
 			return r.markJobRetry(ctx, job, cursor, err)
 		}
 		cursor.Enqueued++
-		if activity.StartDate.Before(oldestStart) {
-			oldestStart = activity.StartDate
-		}
 	}
 
-	oldestUnix := oldestStart.Unix()
-	if oldestUnix == cursor.BeforeUnix {
+	if len(activities) >= perPage {
 		cursor.Page++
-	} else {
-		cursor.BeforeUnix = oldestUnix
-		cursor.Page = 1
+		cursorJSON, _ := json.Marshal(cursor)
+		return r.Store.MarkJobQueued(ctx, job.ID, string(cursorJSON), time.Now().Add(2*time.Second))
 	}
 
-	if payload.AfterUnix > 0 && cursor.BeforeUnix <= payload.AfterUnix {
+	cursor.Page = 1
+	cursor.WindowStartUnix = cursor.WindowEndUnix
+	cursor.WindowEndUnix = cursor.WindowStartUnix + windowSeconds
+	if cursor.WindowEndUnix > cursor.MaxBeforeUnix {
+		cursor.WindowEndUnix = cursor.MaxBeforeUnix
+	}
+	if cursor.WindowStartUnix >= cursor.MaxBeforeUnix {
 		cursorJSON, _ := json.Marshal(cursor)
 		return r.Store.MarkJobCompleted(ctx, job.ID, string(cursorJSON))
 	}
