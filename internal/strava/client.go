@@ -22,10 +22,158 @@ type Client struct {
 type APIError struct {
 	StatusCode int
 	Body       string
+	Method     string
+	Path       string
+	RequestID  string
+	RateLimit  RateLimitInfo
 }
 
 func (e *APIError) Error() string {
-	return fmt.Sprintf("strava error %d: %s", e.StatusCode, e.Body)
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("strava error %d", e.StatusCode))
+	if e.Method != "" || e.Path != "" {
+		b.WriteString(" ")
+		if e.Method != "" {
+			b.WriteString(e.Method)
+		}
+		if e.Path != "" {
+			if e.Method != "" {
+				b.WriteString(" ")
+			}
+			b.WriteString(e.Path)
+		}
+	}
+	if trimmed := strings.TrimSpace(e.Body); trimmed != "" {
+		b.WriteString(": ")
+		b.WriteString(trimmed)
+	}
+	if info := e.RateLimit.String(); info != "" {
+		b.WriteString(" (")
+		b.WriteString(info)
+		b.WriteString(")")
+	}
+	if e.RequestID != "" {
+		b.WriteString(" request_id=")
+		b.WriteString(e.RequestID)
+	}
+	return b.String()
+}
+
+type RateLimitInfo struct {
+	LimitShort    int
+	LimitLong     int
+	UsageShort    int
+	UsageLong     int
+	RetryAfter    time.Duration
+	RetryAt       time.Time
+	RetryAfterRaw string
+}
+
+func (r RateLimitInfo) HasData() bool {
+	return r.LimitShort >= 0 || r.LimitLong >= 0 || r.UsageShort >= 0 || r.UsageLong >= 0 ||
+		r.RetryAfter > 0 || !r.RetryAt.IsZero() || r.RetryAfterRaw != ""
+}
+
+func (r RateLimitInfo) String() string {
+	if !r.HasData() {
+		return ""
+	}
+	parts := []string{"rate-limit"}
+	if r.UsageShort >= 0 || r.LimitShort >= 0 {
+		parts = append(parts, fmt.Sprintf("short=%s", formatUsageLimit(r.UsageShort, r.LimitShort)))
+	}
+	if r.UsageLong >= 0 || r.LimitLong >= 0 {
+		parts = append(parts, fmt.Sprintf("long=%s", formatUsageLimit(r.UsageLong, r.LimitLong)))
+	}
+	if r.RetryAfter > 0 {
+		parts = append(parts, fmt.Sprintf("retry-after=%s", r.RetryAfter.Truncate(time.Second)))
+	} else if !r.RetryAt.IsZero() {
+		parts = append(parts, fmt.Sprintf("retry-at=%s", r.RetryAt.UTC().Format(time.RFC3339)))
+	} else if r.RetryAfterRaw != "" {
+		parts = append(parts, fmt.Sprintf("retry-after=%s", r.RetryAfterRaw))
+	}
+	return strings.Join(parts, " ")
+}
+
+func formatUsageLimit(usage, limit int) string {
+	usageText := "?"
+	limitText := "?"
+	if usage >= 0 {
+		usageText = strconv.Itoa(usage)
+	}
+	if limit >= 0 {
+		limitText = strconv.Itoa(limit)
+	}
+	return fmt.Sprintf("%s/%s", usageText, limitText)
+}
+
+func parseRateLimitInfo(headers http.Header) RateLimitInfo {
+	info := RateLimitInfo{
+		LimitShort: -1,
+		LimitLong:  -1,
+		UsageShort: -1,
+		UsageLong:  -1,
+	}
+	if limitHeader := headers.Get("X-RateLimit-Limit"); limitHeader != "" {
+		info.LimitShort, info.LimitLong = parseRateLimitPair(limitHeader)
+	}
+	if usageHeader := headers.Get("X-RateLimit-Usage"); usageHeader != "" {
+		info.UsageShort, info.UsageLong = parseRateLimitPair(usageHeader)
+	}
+	if retryAfter := strings.TrimSpace(headers.Get("Retry-After")); retryAfter != "" {
+		info.RetryAfterRaw = retryAfter
+		if secs, err := strconv.Atoi(retryAfter); err == nil && secs > 0 {
+			info.RetryAfter = time.Duration(secs) * time.Second
+		} else if retryAt, err := http.ParseTime(retryAfter); err == nil {
+			info.RetryAt = retryAt
+		}
+	}
+	return info
+}
+
+func parseRateLimitPair(value string) (int, int) {
+	parts := strings.Split(value, ",")
+	short := -1
+	long := -1
+	if len(parts) > 0 {
+		short = parseRateLimitValue(parts[0])
+	}
+	if len(parts) > 1 {
+		long = parseRateLimitValue(parts[1])
+	}
+	return short, long
+}
+
+func parseRateLimitValue(value string) int {
+	v := strings.TrimSpace(value)
+	if v == "" {
+		return -1
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return -1
+	}
+	return n
+}
+
+func newAPIError(resp *http.Response, req *http.Request, body []byte) *APIError {
+	err := &APIError{
+		StatusCode: resp.StatusCode,
+		Body:       string(body),
+		RateLimit:  parseRateLimitInfo(resp.Header),
+	}
+	if req != nil {
+		err.Method = req.Method
+		if req.URL != nil {
+			err.Path = req.URL.RequestURI()
+		}
+	}
+	if requestID := resp.Header.Get("X-Request-Id"); requestID != "" {
+		err.RequestID = requestID
+	} else if requestID := resp.Header.Get("X-Request-ID"); requestID != "" {
+		err.RequestID = requestID
+	}
+	return err
 }
 
 type Activity struct {
@@ -153,7 +301,7 @@ func (c *Client) UpdateActivity(ctx context.Context, id int64, update UpdateActi
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return Activity{}, &APIError{StatusCode: resp.StatusCode, Body: string(body)}
+		return Activity{}, newAPIError(resp, req, body)
 	}
 
 	var payload struct {
@@ -310,7 +458,7 @@ func (c *Client) getJSON(ctx context.Context, path string, params url.Values, ta
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return &APIError{StatusCode: resp.StatusCode, Body: string(body)}
+		return newAPIError(resp, req, body)
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(target); err != nil {

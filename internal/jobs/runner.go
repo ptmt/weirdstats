@@ -148,8 +148,12 @@ func (r *Runner) handleSyncLatest(ctx context.Context, job storage.Job) error {
 func (r *Runner) markJobRetry(ctx context.Context, job storage.Job, cursor SyncSinceCursor, err error) error {
 	cursorJSON, _ := json.Marshal(cursor)
 	delay := retryDelay(job.Attempts)
-	if strava.IsRateLimited(err) && delay < 5*time.Minute {
-		delay = 5 * time.Minute
+	if strava.IsRateLimited(err) {
+		if retryAfter, ok := strava.RateLimitBackoff(err); ok && retryAfter > 0 {
+			delay = retryAfter
+		} else if delay < 5*time.Minute {
+			delay = 5 * time.Minute
+		}
 	}
 	nextRun := time.Now().Add(delay)
 	return r.Store.MarkJobRetry(ctx, job.ID, string(cursorJSON), err.Error(), nextRun)

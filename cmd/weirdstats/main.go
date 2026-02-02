@@ -186,6 +186,17 @@ func runWorker(ctx context.Context, queueWorker *worker.Worker, idleDelay time.D
 		rateLimitBackoffMax   = 10 * time.Minute
 	)
 
+	nextBackoff := func(current time.Duration) time.Duration {
+		if current <= 0 {
+			return rateLimitBackoffStart
+		}
+		next := current * 2
+		if next > rateLimitBackoffMax {
+			return rateLimitBackoffMax
+		}
+		return next
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -196,19 +207,17 @@ func runWorker(ctx context.Context, queueWorker *worker.Worker, idleDelay time.D
 		processed, err := queueWorker.ProcessNext(ctx)
 		if err != nil {
 			if strava.IsRateLimited(err) {
-				if rateLimitBackoff <= 0 {
-					rateLimitBackoff = rateLimitBackoffStart
-				} else {
-					rateLimitBackoff *= 2
-					if rateLimitBackoff > rateLimitBackoffMax {
-						rateLimitBackoff = rateLimitBackoffMax
-					}
+				fallback := nextBackoff(rateLimitBackoff)
+				rateLimitBackoff = fallback
+				backoff := fallback
+				if retryAfter, ok := strava.RateLimitBackoff(err); ok && retryAfter > 0 {
+					backoff = retryAfter
 				}
-				log.Printf("worker rate limited; backing off for %s", rateLimitBackoff)
+				log.Printf("worker rate limited; backing off for %s; %v", backoff, err)
 				select {
 				case <-ctx.Done():
 					return
-				case <-time.After(rateLimitBackoff):
+				case <-time.After(backoff):
 				}
 				continue
 			}
