@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"strconv"
 	"time"
@@ -224,8 +225,12 @@ CREATE TABLE IF NOT EXISTS hide_rules (
 	updated_at INTEGER NOT NULL
 );
 `
-	_, err := s.db.ExecContext(ctx, schema)
-	return err
+	if _, err := s.db.ExecContext(ctx, schema); err != nil {
+		return err
+	}
+	// Legacy queue is no longer used; clear it to avoid stale backlog.
+	_, _ = s.db.ExecContext(ctx, `DELETE FROM activity_queue`)
+	return nil
 }
 
 func (s *Store) InsertActivity(ctx context.Context, activity Activity, points []gps.Point) (int64, error) {
@@ -339,10 +344,22 @@ VALUES (?, ?, ?, ?, ?, ?)
 }
 
 func (s *Store) EnqueueActivity(ctx context.Context, activityID int64) error {
-	_, err := s.db.ExecContext(ctx, `
-INSERT INTO activity_queue (activity_id, enqueued_at)
-VALUES (?, ?)
-`, activityID, time.Now().Unix())
+	if activityID == 0 {
+		return errors.New("activity id required")
+	}
+	payload, err := json.Marshal(struct {
+		ActivityID int64 `json:"activity_id"`
+	}{ActivityID: activityID})
+	if err != nil {
+		return err
+	}
+	_, err = s.CreateJob(ctx, Job{
+		Type:        "process_activity",
+		Payload:     string(payload),
+		Cursor:      "{}",
+		MaxAttempts: 10,
+		NextRunAt:   time.Now(),
+	})
 	return err
 }
 
@@ -378,8 +395,9 @@ WHERE activity_id = ?
 func (s *Store) CountQueue(ctx context.Context) (int, error) {
 	row := s.db.QueryRowContext(ctx, `
 SELECT COUNT(*)
-FROM activity_queue
-WHERE processed_at IS NULL
+FROM jobs
+WHERE type = 'process_activity'
+	AND status IN ('queued', 'retry', 'running')
 `)
 	var count int
 	if err := row.Scan(&count); err != nil {

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"weirdstats/internal/gps"
+	"weirdstats/internal/jobs"
 	"weirdstats/internal/maps"
 	"weirdstats/internal/processor"
 	"weirdstats/internal/storage"
@@ -54,18 +55,18 @@ func TestWorkerProcessesQueue(t *testing.T) {
 		t.Fatalf("insert activity: %v", err)
 	}
 
-	if err := store.EnqueueActivity(ctx, activityID); err != nil {
+	if err := jobs.EnqueueProcessActivity(ctx, store, activityID); err != nil {
 		t.Fatalf("enqueue activity: %v", err)
 	}
 
-	processor := &processor.StopStatsProcessor{
+	statsProcessor := &processor.StopStatsProcessor{
 		Store:   store,
 		MapAPI:  fakeMapAPI{},
 		Options: gps.StopOptions{SpeedThreshold: 0.5, MinDuration: time.Minute},
 	}
 
-	w := &Worker{Store: store, Processor: processor}
-	processed, err := w.ProcessNext(ctx)
+	runner := &jobs.Runner{Store: store, Processor: statsProcessor}
+	processed, err := runner.ProcessNext(ctx)
 	if err != nil {
 		t.Fatalf("process next: %v", err)
 	}

@@ -639,7 +639,7 @@ func (s *Server) RefreshActivity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	if err := s.store.EnqueueActivity(r.Context(), activityID); err != nil {
+	if err := jobs.EnqueueProcessActivity(r.Context(), s.store, activityID); err != nil {
 		http.Error(w, "failed to enqueue activity", http.StatusInternalServerError)
 		return
 	}
@@ -1327,6 +1327,12 @@ func jobTypeLabel(job storage.Job) string {
 			return fmt.Sprintf("Sync since %s", time.Unix(payload.AfterUnix, 0).Format("Jan 2, 2006"))
 		}
 		return "Sync since"
+	case jobs.JobTypeProcessActivity:
+		var payload jobs.ProcessActivityPayload
+		if err := json.Unmarshal([]byte(job.Payload), &payload); err == nil && payload.ActivityID > 0 {
+			return fmt.Sprintf("Process activity %d", payload.ActivityID)
+		}
+		return "Process activity"
 	default:
 		return job.Type
 	}

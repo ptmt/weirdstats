@@ -81,6 +81,7 @@ func main() {
 	jobRunner := &jobs.Runner{
 		Store:        store,
 		Ingestor:     ingestor,
+		Processor:    pipeline,
 		PollInterval: time.Duration(cfg.WorkerPollIntervalMS) * time.Millisecond,
 		StaleAfter:   10 * time.Minute,
 	}

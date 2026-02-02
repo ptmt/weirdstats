@@ -16,6 +16,7 @@ import (
 const (
 	JobTypeSyncActivitiesSince = "sync_activities_since"
 	JobTypeSyncLatest          = "sync_latest"
+	JobTypeProcessActivity     = "process_activity"
 )
 
 type SyncSincePayload struct {
@@ -41,9 +42,18 @@ type SyncLatestCursor struct {
 	Enqueued int `json:"enqueued"`
 }
 
+type ProcessActivityPayload struct {
+	ActivityID int64 `json:"activity_id"`
+}
+
+type ActivityProcessor interface {
+	Process(ctx context.Context, activityID int64) error
+}
+
 type Runner struct {
 	Store        *storage.Store
 	Ingestor     *ingest.Ingestor
+	Processor    ActivityProcessor
 	PollInterval time.Duration
 	StaleAfter   time.Duration
 }
@@ -74,6 +84,10 @@ func (r *Runner) ProcessNext(ctx context.Context) (bool, error) {
 		}
 	case JobTypeSyncLatest:
 		if err := r.handleSyncLatest(ctx, job); err != nil {
+			return true, err
+		}
+	case JobTypeProcessActivity:
+		if err := r.handleProcessActivity(ctx, job); err != nil {
 			return true, err
 		}
 	default:
@@ -141,7 +155,7 @@ func (r *Runner) handleSyncSince(ctx context.Context, job storage.Job) error {
 	}
 
 	for _, activity := range activities {
-		if err := r.Store.EnqueueActivity(ctx, activity.ID); err != nil {
+		if err := EnqueueProcessActivity(ctx, r.Store, activity.ID); err != nil {
 			return r.markJobRetry(ctx, job, cursor, err)
 		}
 		cursor.Enqueued++
@@ -181,6 +195,23 @@ func (r *Runner) handleSyncLatest(ctx context.Context, job storage.Job) error {
 	return r.Store.MarkJobCompleted(ctx, job.ID, string(cursorJSON))
 }
 
+func (r *Runner) handleProcessActivity(ctx context.Context, job storage.Job) error {
+	payload, err := parseProcessActivityPayload(job.Payload)
+	if err != nil {
+		return r.Store.MarkJobFailed(ctx, job.ID, job.Cursor, fmt.Sprintf("invalid payload: %v", err))
+	}
+	if payload.ActivityID == 0 {
+		return r.Store.MarkJobFailed(ctx, job.ID, job.Cursor, "missing activity id")
+	}
+	if r.Processor == nil {
+		return r.Store.MarkJobFailed(ctx, job.ID, job.Cursor, "processor not configured")
+	}
+	if err := r.Processor.Process(ctx, payload.ActivityID); err != nil {
+		return r.markJobRetry(ctx, job, SyncSinceCursor{}, err)
+	}
+	return r.Store.MarkJobCompleted(ctx, job.ID, job.Cursor)
+}
+
 func (r *Runner) markJobRetry(ctx context.Context, job storage.Job, cursor SyncSinceCursor, err error) error {
 	cursorJSON, _ := json.Marshal(cursor)
 	delay := retryDelay(job.Attempts)
@@ -215,6 +246,17 @@ func parseSyncSinceCursor(raw string) (SyncSinceCursor, error) {
 		return SyncSinceCursor{}, err
 	}
 	return cursor, nil
+}
+
+func parseProcessActivityPayload(raw string) (ProcessActivityPayload, error) {
+	if raw == "" {
+		return ProcessActivityPayload{}, fmt.Errorf("empty payload")
+	}
+	var payload ProcessActivityPayload
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return ProcessActivityPayload{}, err
+	}
+	return payload, nil
 }
 
 func retryDelay(attempt int) time.Duration {

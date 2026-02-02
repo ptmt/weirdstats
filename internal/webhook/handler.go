@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 
+	"weirdstats/internal/jobs"
 	"weirdstats/internal/storage"
 )
 
@@ -88,7 +89,7 @@ func (h *Handler) recordEvent(ctx context.Context, event Event, payload string) 
 	}
 
 	if event.ObjectType == "activity" && (event.AspectType == "create" || event.AspectType == "update") {
-		if err := h.Store.EnqueueActivity(ctx, event.ObjectID); err != nil {
+		if err := jobs.EnqueueProcessActivity(ctx, h.Store, event.ObjectID); err != nil {
 			return err
 		}
 	}

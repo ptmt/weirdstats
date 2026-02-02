@@ -31,13 +31,13 @@
 
     <article class="card">
       <h3>Queue status</h3>
-      <p class="muted">Activities waiting to be processed by the background worker.</p>
+      <p class="muted">Activities waiting to be processed by the background jobs runner.</p>
       <div class="stat-badge">{{.QueueCount}} pending</div>
     </article>
 
     <article class="card">
       <h3>Jobs</h3>
-      <p class="muted">Durable background jobs for Strava sync (survive restarts).</p>
+      <p class="muted">Durable background jobs for activity processing and Strava sync (survive restarts).</p>
       {{if .Jobs}}
         <div class="job-table">
           <div class="job-row job-head">
