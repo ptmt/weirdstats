@@ -25,8 +25,9 @@ type SyncSincePayload struct {
 }
 
 type SyncSinceCursor struct {
-	Page     int `json:"page"`
-	Enqueued int `json:"enqueued"`
+	Page       int   `json:"page"`
+	Enqueued   int   `json:"enqueued"`
+	BeforeUnix int64 `json:"before_unix"`
 }
 
 type SyncLatestPayload struct {
@@ -99,13 +100,17 @@ func (r *Runner) handleSyncSince(ctx context.Context, job storage.Job) error {
 	if perPage <= 0 {
 		perPage = 100
 	}
+	if cursor.BeforeUnix <= 0 {
+		cursor.BeforeUnix = time.Now().Unix()
+	}
 
 	if r.Ingestor == nil || r.Ingestor.Strava == nil {
 		return r.Store.MarkJobFailed(ctx, job.ID, job.Cursor, "strava client not configured")
 	}
 
 	after := time.Unix(payload.AfterUnix, 0)
-	activities, err := r.Ingestor.Strava.ListActivities(ctx, after, time.Time{}, cursor.Page, perPage)
+	before := time.Unix(cursor.BeforeUnix, 0)
+	activities, err := r.Ingestor.Strava.ListActivities(ctx, after, before, cursor.Page, perPage)
 	if err != nil {
 		return r.markJobRetry(ctx, job, cursor, err)
 	}
@@ -115,19 +120,30 @@ func (r *Runner) handleSyncSince(ctx context.Context, job storage.Job) error {
 		return r.Store.MarkJobCompleted(ctx, job.ID, string(cursorJSON))
 	}
 
+	oldestStart := activities[0].StartDate
 	for _, activity := range activities {
 		if err := r.Store.EnqueueActivity(ctx, activity.ID); err != nil {
 			return r.markJobRetry(ctx, job, cursor, err)
 		}
 		cursor.Enqueued++
+		if activity.StartDate.Before(oldestStart) {
+			oldestStart = activity.StartDate
+		}
 	}
 
-	if len(activities) < perPage {
+	oldestUnix := oldestStart.Unix()
+	if oldestUnix == cursor.BeforeUnix {
+		cursor.Page++
+	} else {
+		cursor.BeforeUnix = oldestUnix
+		cursor.Page = 1
+	}
+
+	if payload.AfterUnix > 0 && cursor.BeforeUnix <= payload.AfterUnix {
 		cursorJSON, _ := json.Marshal(cursor)
 		return r.Store.MarkJobCompleted(ctx, job.ID, string(cursorJSON))
 	}
 
-	cursor.Page++
 	cursorJSON, _ := json.Marshal(cursor)
 	return r.Store.MarkJobQueued(ctx, job.ID, string(cursorJSON), time.Now().Add(2*time.Second))
 }
