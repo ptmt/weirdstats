@@ -502,6 +502,11 @@ LIMIT ?
 	return jobs, nil
 }
 
+func (s *Store) DeleteJobs(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM jobs`)
+	return err
+}
+
 func (s *Store) CreateJob(ctx context.Context, job Job) (int64, error) {
 	if job.Type == "" {
 		return 0, errors.New("job type required")

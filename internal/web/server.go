@@ -1032,6 +1032,12 @@ func (s *Server) handleAdminPost(w http.ResponseWriter, r *http.Request) {
 		}
 		msg := fmt.Sprintf("overpass ok: %d features in test bbox", len(pois))
 		http.Redirect(w, r, "/admin/?msg="+url.QueryEscape(msg), http.StatusFound)
+	case "clear-jobs":
+		if err := s.store.DeleteJobs(r.Context()); err != nil {
+			http.Redirect(w, r, "/admin/?msg=jobs+clear+failed", http.StatusFound)
+			return
+		}
+		http.Redirect(w, r, "/admin/?msg=jobs+cleared", http.StatusFound)
 	default:
 		http.Redirect(w, r, "/admin/?msg=unknown+action", http.StatusFound)
 	}

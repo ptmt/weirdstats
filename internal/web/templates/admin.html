@@ -83,6 +83,15 @@
       </form>
       <p class="muted">Uses the default Overpass endpoint unless <code>OVERPASS_URL</code> is set.</p>
     </article>
+
+    <article class="card">
+      <h3>Maintenance</h3>
+      <p class="muted">Remove all background jobs (queued, running, retry, completed). Does not clear the activity queue.</p>
+      <form method="post" action="/admin/">
+        <input type="hidden" name="action" value="clear-jobs" />
+        <button class="btn secondary" type="submit">Clear jobs</button>
+      </form>
+    </article>
   </section>
 
 {{end}}
