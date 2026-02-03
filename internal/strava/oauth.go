@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -70,6 +69,7 @@ func ExchangeAuthorizationCode(ctx context.Context, baseURL, clientID, clientSec
 	form.Set("grant_type", "authorization_code")
 	form.Set("code", code)
 
+	logRequest(http.MethodPost, endpoint)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		return TokenResponse{}, err
@@ -117,15 +117,9 @@ func (s *RefreshTokenSource) GetAccessToken(ctx context.Context) (string, error)
 		return "", fmt.Errorf("failed to get stored token: %w", err)
 	}
 
-	log.Printf("Token check: expires_at=%v, now=%v, valid=%v",
-		token.ExpiresAt, time.Now(), time.Now().Before(token.ExpiresAt.Add(-time.Minute)))
-
 	if token.AccessToken != "" && time.Now().Before(token.ExpiresAt.Add(-time.Minute)) {
-		log.Printf("Using cached access token (expires in %v)", token.ExpiresAt.Sub(time.Now()))
 		return token.AccessToken, nil
 	}
-
-	log.Printf("Token expired or missing, attempting refresh...")
 
 	if token.RefreshToken == "" {
 		return "", fmt.Errorf("missing refresh token")
@@ -173,6 +167,7 @@ func (s *RefreshTokenSource) refresh(ctx context.Context, refreshToken string) (
 	form.Set("grant_type", "refresh_token")
 	form.Set("refresh_token", refreshToken)
 
+	logRequest(http.MethodPost, endpoint)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		return refreshResponse{}, err

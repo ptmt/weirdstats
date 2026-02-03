@@ -271,6 +271,7 @@ func (c *Client) UpdateActivity(ctx context.Context, id int64, update UpdateActi
 		return Activity{}, err
 	}
 
+	logRequest(http.MethodPut, endpoint)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		return Activity{}, err
@@ -430,6 +431,7 @@ func (c *Client) getJSON(ctx context.Context, path string, params url.Values, ta
 		u.RawQuery = params.Encode()
 	}
 
+	logRequest(http.MethodGet, u.String())
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return err

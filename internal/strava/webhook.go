@@ -94,6 +94,7 @@ func (c *WebhookClient) ListSubscriptions(ctx context.Context) ([]Subscription, 
 		return nil, err
 	}
 
+	logRequest(http.MethodGet, endpoint)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
@@ -138,6 +139,7 @@ func (c *WebhookClient) CreateSubscription(ctx context.Context, callbackURL, ver
 	form.Set("callback_url", callbackURL)
 	form.Set("verify_token", verifyToken)
 
+	logRequest(http.MethodPost, endpoint)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
@@ -181,6 +183,7 @@ func (c *WebhookClient) DeleteSubscription(ctx context.Context, id int64) error 
 		return err
 	}
 
+	logRequest(http.MethodDelete, endpoint)
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, endpoint, nil)
 	if err != nil {
 		return err
