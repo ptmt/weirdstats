@@ -1011,6 +1011,16 @@ func (s *Server) handleAdminPost(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		http.Redirect(w, r, "/admin/?msg=sync+queued+last+year", http.StatusFound)
+	case "sync-all":
+		if s.ingestor == nil {
+			http.Redirect(w, r, "/admin/?msg=sync+not+configured", http.StatusFound)
+			return
+		}
+		if err := s.enqueueSyncJobWindow(r.Context(), time.Unix(0, 0), 365); err != nil {
+			http.Redirect(w, r, "/admin/?msg=sync+enqueue+failed", http.StatusFound)
+			return
+		}
+		http.Redirect(w, r, "/admin/?msg=sync+queued+all", http.StatusFound)
 	case "test-overpass":
 		if s.overpass == nil {
 			http.Redirect(w, r, "/admin/?msg=overpass+client+not+configured", http.StatusFound)
@@ -1241,14 +1251,21 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) enqueueSyncJob(ctx context.Context, after time.Time) error {
+	return s.enqueueSyncJobWindow(ctx, after, 1)
+}
+
+func (s *Server) enqueueSyncJobWindow(ctx context.Context, after time.Time, windowDays int) error {
 	if s.store == nil {
 		return fmt.Errorf("store not configured")
+	}
+	if windowDays <= 0 {
+		windowDays = 1
 	}
 	payload := jobs.SyncSincePayload{
 		UserID:     1,
 		AfterUnix:  after.Unix(),
 		PerPage:    100,
-		WindowDays: 1,
+		WindowDays: windowDays,
 	}
 	cursor := jobs.SyncSinceCursor{Page: 1}
 	payloadJSON, err := json.Marshal(payload)
@@ -1323,8 +1340,11 @@ func jobTypeLabel(job storage.Job) string {
 		return "Sync latest"
 	case jobs.JobTypeSyncActivitiesSince:
 		var payload jobs.SyncSincePayload
-		if err := json.Unmarshal([]byte(job.Payload), &payload); err == nil && payload.AfterUnix > 0 {
-			return fmt.Sprintf("Sync since %s", time.Unix(payload.AfterUnix, 0).Format("Jan 2, 2006"))
+		if err := json.Unmarshal([]byte(job.Payload), &payload); err == nil {
+			if payload.AfterUnix > 0 {
+				return fmt.Sprintf("Sync since %s", time.Unix(payload.AfterUnix, 0).Format("Jan 2, 2006"))
+			}
+			return "Sync all"
 		}
 		return "Sync since"
 	case jobs.JobTypeProcessActivity:
