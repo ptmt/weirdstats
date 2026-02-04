@@ -488,12 +488,48 @@ func (s *Store) ListJobs(ctx context.Context, limit int) ([]Job, error) {
 	if limit <= 0 {
 		limit = 20
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	return s.listJobs(ctx, `
 SELECT id, type, status, payload, cursor, attempts, max_attempts, last_error, next_run_at, created_at, updated_at
 FROM jobs
 ORDER BY updated_at DESC, id DESC
 LIMIT ?
 `, limit)
+}
+
+func (s *Store) ListJobsByType(ctx context.Context, jobType string, limit int) ([]Job, error) {
+	if jobType == "" {
+		return nil, errors.New("job type required")
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	return s.listJobs(ctx, `
+SELECT id, type, status, payload, cursor, attempts, max_attempts, last_error, next_run_at, created_at, updated_at
+FROM jobs
+WHERE type = ?
+ORDER BY updated_at DESC, id DESC
+LIMIT ?
+`, jobType, limit)
+}
+
+func (s *Store) ListJobsExcludingType(ctx context.Context, jobType string, limit int) ([]Job, error) {
+	if jobType == "" {
+		return nil, errors.New("job type required")
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	return s.listJobs(ctx, `
+SELECT id, type, status, payload, cursor, attempts, max_attempts, last_error, next_run_at, created_at, updated_at
+FROM jobs
+WHERE type != ?
+ORDER BY updated_at DESC, id DESC
+LIMIT ?
+`, jobType, limit)
+}
+
+func (s *Store) listJobs(ctx context.Context, query string, args ...interface{}) ([]Job, error) {
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

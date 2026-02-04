@@ -138,8 +138,9 @@ type SettingsPageData struct {
 
 type AdminPageData struct {
 	PageData
-	QueueCount int
-	Jobs       []JobView
+	QueueCount   int
+	Jobs         []JobView
+	ActivityJobs []JobView
 }
 
 type ContributionDay struct {
@@ -951,6 +952,7 @@ func (s *Server) Admin(w http.ResponseWriter, r *http.Request) {
 
 	queueCount, _ := s.store.CountQueue(r.Context())
 	jobsView := s.buildJobViews(r.Context())
+	activityJobsView := s.buildActivityJobViews(r.Context())
 
 	data := AdminPageData{
 		PageData: PageData{
@@ -961,8 +963,9 @@ func (s *Server) Admin(w http.ResponseWriter, r *http.Request) {
 			Strava:     s.getStravaInfo(r.Context()),
 			UserCount:  s.userCount(r.Context()),
 		},
-		QueueCount: queueCount,
-		Jobs:       jobsView,
+		QueueCount:   queueCount,
+		Jobs:         jobsView,
+		ActivityJobs: activityJobsView,
 	}
 	if err := s.templates["admin"].ExecuteTemplate(w, "base", data); err != nil {
 		http.Error(w, "template render failed", http.StatusInternalServerError)
@@ -1310,11 +1313,24 @@ func (s *Server) enqueueLatestJob(ctx context.Context) error {
 }
 
 func (s *Server) buildJobViews(ctx context.Context) []JobView {
-	jobsList, err := s.store.ListJobs(ctx, 20)
+	jobsList, err := s.store.ListJobsExcludingType(ctx, jobs.JobTypeProcessActivity, 20)
 	if err != nil {
 		log.Printf("jobs load failed: %v", err)
 		return nil
 	}
+	return buildJobViewsFromList(jobsList)
+}
+
+func (s *Server) buildActivityJobViews(ctx context.Context) []JobView {
+	jobsList, err := s.store.ListJobsByType(ctx, jobs.JobTypeProcessActivity, 20)
+	if err != nil {
+		log.Printf("activity jobs load failed: %v", err)
+		return nil
+	}
+	return buildJobViewsFromList(jobsList)
+}
+
+func buildJobViewsFromList(jobsList []storage.Job) []JobView {
 	var views []JobView
 	for _, job := range jobsList {
 		view := JobView{

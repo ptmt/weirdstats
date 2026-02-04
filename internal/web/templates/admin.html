@@ -41,7 +41,7 @@
 
     <article class="card">
       <h3>Jobs</h3>
-      <p class="muted">Durable background jobs for activity processing and Strava sync (survive restarts).</p>
+      <p class="muted">Background sync jobs (non-activity). Process activity jobs are listed separately.</p>
       {{if .Jobs}}
         <div class="job-table">
           <div class="job-row job-head">
@@ -74,7 +74,40 @@
           {{end}}
         </div>
       {{else}}
-        <p class="muted">No jobs yet.</p>
+        <p class="muted">No sync jobs yet.</p>
+      {{end}}
+    </article>
+
+    <article class="card">
+      <h3>Process activity jobs</h3>
+      <p class="muted">Last 20 activity processing jobs, newest first.</p>
+      {{if .ActivityJobs}}
+        <div class="job-table">
+          <div class="job-row job-head">
+            <span>Job</span>
+            <span>Status</span>
+            <span>Attempts</span>
+            <span>Next run</span>
+            <span>Updated</span>
+          </div>
+          {{range .ActivityJobs}}
+            <div class="job-row">
+              <span class="job-type">#{{.ID}} · {{.TypeLabel}}</span>
+              <span class="stat-tag status-tag {{.StatusClass}}">{{.Status}}</span>
+              <span>{{.Attempts}} / {{.MaxAttempts}}</span>
+              <span>{{.NextRunAt}}</span>
+              <span>{{.UpdatedAt}}</span>
+            </div>
+            {{if .LastError}}
+              <div class="job-row job-error">
+                <span>Error</span>
+                <span class="job-error-text" title="{{.LastError}}">{{.LastError}}</span>
+              </div>
+            {{end}}
+          {{end}}
+        </div>
+      {{else}}
+        <p class="muted">No activity jobs yet.</p>
       {{end}}
     </article>
 
