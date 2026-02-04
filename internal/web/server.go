@@ -1283,7 +1283,7 @@ func (s *Server) enqueueSyncJobWindow(ctx context.Context, after time.Time, wind
 		Type:        jobs.JobTypeSyncActivitiesSince,
 		Payload:     string(payloadJSON),
 		Cursor:      string(cursorJSON),
-		MaxAttempts: 10,
+		MaxAttempts: 1000,
 		NextRunAt:   time.Now(),
 	})
 	return err
@@ -1306,7 +1306,7 @@ func (s *Server) enqueueLatestJob(ctx context.Context) error {
 		Type:        jobs.JobTypeSyncLatest,
 		Payload:     string(payloadJSON),
 		Cursor:      string(cursorJSON),
-		MaxAttempts: 5,
+		MaxAttempts: 1000,
 		NextRunAt:   time.Now(),
 	})
 	return err
