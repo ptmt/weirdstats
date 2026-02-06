@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -30,6 +31,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
+	logStartupConfig(cfg)
 
 	store, err := storage.Open(cfg.DatabasePath)
 	if err != nil {
@@ -259,6 +261,42 @@ func runJobRunner(ctx context.Context, runner *jobs.Runner) {
 				return
 			case <-time.After(idleDelay):
 			}
+		}
+	}
+}
+
+func logStartupConfig(cfg config.Config) {
+	hasClientID := cfg.StravaClientID != ""
+	hasClientSecret := cfg.StravaClientSecret != ""
+	hasRefreshToken := cfg.StravaRefreshToken != ""
+	hasAccessToken := cfg.StravaAccessToken != ""
+	hasCallbackURL := cfg.StravaWebhookCallbackURL != ""
+	hasVerifyToken := cfg.StravaVerifyToken != ""
+	hasWebhookSecret := cfg.StravaWebhookSecret != ""
+
+	log.Printf("strava env: client_id=%t client_secret=%t refresh_token=%t access_token=%t",
+		hasClientID, hasClientSecret, hasRefreshToken, hasAccessToken)
+	log.Printf("webhook env: auto_register=%t callback_url=%t verify_token=%t client_credentials=%t signing_secret=%t",
+		cfg.StravaWebhookAutoRegister, hasCallbackURL, hasVerifyToken, hasClientID && hasClientSecret, hasWebhookSecret)
+
+	if cfg.StravaWebhookAutoRegister {
+		var missing []string
+		if !hasCallbackURL {
+			missing = append(missing, "STRAVA_WEBHOOK_CALLBACK_URL")
+		}
+		if !hasVerifyToken {
+			missing = append(missing, "STRAVA_VERIFY_TOKEN")
+		}
+		if !hasClientID {
+			missing = append(missing, "STRAVA_CLIENT_ID")
+		}
+		if !hasClientSecret {
+			missing = append(missing, "STRAVA_CLIENT_SECRET")
+		}
+		if len(missing) == 0 {
+			log.Printf("webhook auto-register ready")
+		} else {
+			log.Printf("webhook auto-register missing envs: %s", strings.Join(missing, ", "))
 		}
 	}
 }

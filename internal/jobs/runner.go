@@ -70,7 +70,7 @@ func (r *Runner) ProcessNext(ctx context.Context) (bool, error) {
 		return false, err
 	}
 
-	if job.MaxAttempts > 0 && job.Attempts > job.MaxAttempts {
+	if job.MaxAttempts > 0 && job.Attempts >= job.MaxAttempts {
 		if err := r.Store.MarkJobFailed(ctx, job.ID, job.Cursor, "max attempts exceeded"); err != nil {
 			return true, err
 		}
@@ -214,7 +214,8 @@ func (r *Runner) handleProcessActivity(ctx context.Context, job storage.Job) err
 
 func (r *Runner) markJobRetry(ctx context.Context, job storage.Job, cursor SyncSinceCursor, err error) error {
 	cursorJSON, _ := json.Marshal(cursor)
-	delay := retryDelay(job.Attempts)
+	attempts := job.Attempts + 1
+	delay := retryDelay(attempts)
 	if strava.IsRateLimited(err) {
 		if retryAfter, ok := strava.RateLimitBackoff(err); ok && retryAfter > 0 {
 			delay = retryAfter

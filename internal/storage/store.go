@@ -634,14 +634,13 @@ LIMIT 1
 	job.CreatedAt = time.Unix(createdAt, 0)
 	job.UpdatedAt = time.Unix(updatedAt, 0)
 
-	job.Attempts++
 	job.Status = "running"
 	job.UpdatedAt = now
 	if _, err = tx.ExecContext(ctx, `
 UPDATE jobs
-SET status = ?, attempts = ?, updated_at = ?
+SET status = ?, updated_at = ?
 WHERE id = ?
-`, job.Status, job.Attempts, job.UpdatedAt.Unix(), job.ID); err != nil {
+`, job.Status, job.UpdatedAt.Unix(), job.ID); err != nil {
 		_ = tx.Rollback()
 		return Job{}, err
 	}
@@ -678,7 +677,8 @@ SET status = 'retry',
 	cursor = ?,
 	last_error = ?,
 	next_run_at = ?,
-	updated_at = ?
+	updated_at = ?,
+	attempts = attempts + 1
 WHERE id = ?
 `, cursor, lastError, nextRunAt.Unix(), time.Now().Unix(), jobID)
 	return err
