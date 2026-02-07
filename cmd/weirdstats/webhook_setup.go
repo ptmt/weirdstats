@@ -16,7 +16,7 @@ func ensureWebhookSubscription(ctx context.Context, cfg config.Config) {
 		return
 	}
 	if cfg.StravaWebhookCallbackURL == "" {
-		log.Printf("webhook auto-register skipped: STRAVA_WEBHOOK_CALLBACK_URL not set")
+		log.Printf("webhook auto-register skipped: BASE_URL not set")
 		return
 	}
 	if cfg.StravaVerifyToken == "" {

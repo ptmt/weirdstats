@@ -270,19 +270,19 @@ func logStartupConfig(cfg config.Config) {
 	hasClientSecret := cfg.StravaClientSecret != ""
 	hasRefreshToken := cfg.StravaRefreshToken != ""
 	hasAccessToken := cfg.StravaAccessToken != ""
-	hasCallbackURL := cfg.StravaWebhookCallbackURL != ""
+	hasBaseURL := cfg.BaseURL != ""
 	hasVerifyToken := cfg.StravaVerifyToken != ""
 	hasWebhookSecret := cfg.StravaWebhookSecret != ""
 
 	log.Printf("strava env: client_id=%t client_secret=%t refresh_token=%t access_token=%t",
 		hasClientID, hasClientSecret, hasRefreshToken, hasAccessToken)
-	log.Printf("webhook env: auto_register=%t callback_url=%t verify_token=%t client_credentials=%t signing_secret=%t",
-		cfg.StravaWebhookAutoRegister, hasCallbackURL, hasVerifyToken, hasClientID && hasClientSecret, hasWebhookSecret)
+	log.Printf("webhook env: auto_register=%t base_url=%t verify_token=%t client_credentials=%t signing_secret=%t",
+		cfg.StravaWebhookAutoRegister, hasBaseURL, hasVerifyToken, hasClientID && hasClientSecret, hasWebhookSecret)
 
 	if cfg.StravaWebhookAutoRegister {
 		var missing []string
-		if !hasCallbackURL {
-			missing = append(missing, "STRAVA_WEBHOOK_CALLBACK_URL")
+		if !hasBaseURL {
+			missing = append(missing, "BASE_URL")
 		}
 		if !hasVerifyToken {
 			missing = append(missing, "STRAVA_VERIFY_TOKEN")

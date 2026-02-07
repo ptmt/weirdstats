@@ -10,6 +10,7 @@ import (
 )
 
 type Config struct {
+	BaseURL                   string
 	DatabasePath              string
 	ServerAddr                string
 	StravaAccessToken         string
@@ -51,16 +52,19 @@ func Load(path string) (Config, error) {
 
 	cfg.DatabasePath = getenv("DATABASE_PATH", "weirdstats.db")
 	cfg.ServerAddr = getenv("SERVER_ADDR", cfg.ServerAddr)
+	cfg.BaseURL = strings.TrimRight(os.Getenv("BASE_URL"), "/")
 	cfg.StravaAccessToken = os.Getenv("STRAVA_ACCESS_TOKEN")
 	cfg.StravaRefreshToken = os.Getenv("STRAVA_REFRESH_TOKEN")
 	cfg.StravaClientID = os.Getenv("STRAVA_CLIENT_ID")
 	cfg.StravaClientSecret = os.Getenv("STRAVA_CLIENT_SECRET")
 	cfg.StravaBaseURL = getenv("STRAVA_BASE_URL", cfg.StravaBaseURL)
 	cfg.StravaAuthBaseURL = getenv("STRAVA_AUTH_BASE_URL", cfg.StravaAuthBaseURL)
-	cfg.StravaRedirectURL = os.Getenv("STRAVA_REDIRECT_URL")
 	cfg.StravaVerifyToken = os.Getenv("STRAVA_VERIFY_TOKEN")
 	cfg.StravaWebhookSecret = os.Getenv("STRAVA_WEBHOOK_SECRET")
-	cfg.StravaWebhookCallbackURL = os.Getenv("STRAVA_WEBHOOK_CALLBACK_URL")
+	if cfg.BaseURL != "" {
+		cfg.StravaRedirectURL = joinURL(cfg.BaseURL, "/connect/strava/callback")
+		cfg.StravaWebhookCallbackURL = joinURL(cfg.BaseURL, "/webhook")
+	}
 	cfg.MapsAPIKey = os.Getenv("MAPS_API_KEY")
 	cfg.OverpassURL = os.Getenv("OVERPASS_URL")
 	if v := os.Getenv("OVERPASS_URLS"); v != "" {
@@ -179,4 +183,15 @@ func splitAndTrim(value string) []string {
 		}
 	}
 	return out
+}
+
+func joinURL(base, path string) string {
+	if base == "" {
+		return ""
+	}
+	base = strings.TrimRight(base, "/")
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	return base + path
 }
