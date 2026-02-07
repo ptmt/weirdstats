@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -104,11 +106,70 @@ type ActivityTime struct {
 }
 
 func Open(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path)
+	dsn, err := applySQLiteDefaults(path)
 	if err != nil {
 		return nil, err
 	}
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	return &Store{db: db}, nil
+}
+
+func applySQLiteDefaults(path string) (string, error) {
+	if path == "" {
+		return path, nil
+	}
+	base, query, _ := strings.Cut(path, "?")
+	values := url.Values{}
+	if query != "" {
+		parsed, err := url.ParseQuery(query)
+		if err != nil {
+			return "", err
+		}
+		values = parsed
+	}
+
+	if !hasPragma(values, "busy_timeout") {
+		values.Add("_pragma", "busy_timeout(5000)")
+	}
+	if !isMemoryDSN(base, values) && !hasPragma(values, "journal_mode") {
+		values.Add("_pragma", "journal_mode(WAL)")
+	}
+
+	if len(values) == 0 {
+		return base, nil
+	}
+	return base + "?" + values.Encode(), nil
+}
+
+func hasPragma(values url.Values, name string) bool {
+	target := strings.ToLower(name)
+	for _, value := range values["_pragma"] {
+		normalized := strings.ToLower(strings.TrimSpace(value))
+		if strings.HasPrefix(normalized, target) {
+			return true
+		}
+	}
+	return false
+}
+
+func isMemoryDSN(base string, values url.Values) bool {
+	if base == ":memory:" {
+		return true
+	}
+	if strings.HasPrefix(base, "file:") && strings.Contains(strings.ToLower(base), ":memory:") {
+		return true
+	}
+	for _, mode := range values["mode"] {
+		if strings.EqualFold(strings.TrimSpace(mode), "memory") {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Store) Close() error {
