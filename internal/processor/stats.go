@@ -18,6 +18,10 @@ type StopStatsProcessor struct {
 }
 
 func (p *StopStatsProcessor) Process(ctx context.Context, activityID int64) error {
+	activity, err := p.Store.GetActivity(ctx, activityID)
+	if err != nil {
+		return err
+	}
 	points, err := p.Store.LoadActivityPoints(ctx, activityID)
 	if err != nil {
 		return err
@@ -26,6 +30,12 @@ func (p *StopStatsProcessor) Process(ctx context.Context, activityID int64) erro
 	stops := gps.DetectStops(points, p.Options)
 	updatedAt := time.Now()
 	stats := stats.StopStats{StopCount: len(stops), UpdatedAt: updatedAt}
+	effortScore, effortVersion, err := computeEffort(ctx, p.Store, activity)
+	if err != nil {
+		return err
+	}
+	stats.EffortScore = effortScore
+	stats.EffortVersion = effortVersion
 	activityStartTime := time.Time{}
 	if len(points) > 0 {
 		activityStartTime = points[0].Time

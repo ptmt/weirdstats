@@ -61,18 +61,19 @@ func (i *Ingestor) fetchAndUpsert(ctx context.Context, activityID int64) error {
 	}
 
 	_, err = i.Store.UpsertActivity(ctx, storage.Activity{
-		ID:           activity.ID,
-		UserID:       1,
-		Type:         activity.Type,
-		Name:         activity.Name,
-		StartTime:    activity.StartDate,
-		Description:  activity.Description,
-		Distance:     activity.Distance,
-		MovingTime:   activity.MovingTime,
-		AveragePower: activity.AveragePower,
-		Visibility:   activity.Visibility,
-		IsPrivate:    activity.Private,
-		HideFromHome: activity.HideFromHome,
+		ID:               activity.ID,
+		UserID:           1,
+		Type:             activity.Type,
+		Name:             activity.Name,
+		StartTime:        activity.StartDate,
+		Description:      activity.Description,
+		Distance:         activity.Distance,
+		MovingTime:       activity.MovingTime,
+		AveragePower:     activity.AveragePower,
+		AverageHeartRate: activity.AverageHeartRate,
+		Visibility:       activity.Visibility,
+		IsPrivate:        activity.Private,
+		HideFromHome:     activity.HideFromHome,
 	}, points)
 	return err
 }

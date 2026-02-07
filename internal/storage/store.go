@@ -21,20 +21,21 @@ type Store struct {
 }
 
 type Activity struct {
-	ID           int64
-	UserID       int64
-	Type         string
-	Name         string
-	StartTime    time.Time
-	Description  string
-	Distance     float64
-	MovingTime   int
-	AveragePower float64
-	Visibility   string
-	IsPrivate    bool
-	HideFromHome bool
-	HiddenByRule bool
-	UpdatedAt    time.Time
+	ID               int64
+	UserID           int64
+	Type             string
+	Name             string
+	StartTime        time.Time
+	Description      string
+	Distance         float64
+	MovingTime       int
+	AveragePower     float64
+	AverageHeartRate float64
+	Visibility       string
+	IsPrivate        bool
+	HideFromHome     bool
+	HiddenByRule     bool
+	UpdatedAt        time.Time
 }
 
 type WebhookEvent struct {
@@ -184,10 +185,13 @@ func (s *Store) InitSchema(ctx context.Context) error {
 		`ALTER TABLE activities ADD COLUMN distance REAL NOT NULL DEFAULT 0`,
 		`ALTER TABLE activities ADD COLUMN moving_time INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE activities ADD COLUMN average_power REAL NOT NULL DEFAULT 0`,
+		`ALTER TABLE activities ADD COLUMN average_heartrate REAL NOT NULL DEFAULT 0`,
 		`ALTER TABLE activities ADD COLUMN visibility TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE activities ADD COLUMN is_private INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE activities ADD COLUMN hide_from_home INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE activities ADD COLUMN hidden_by_rule INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE activity_stats ADD COLUMN effort_score REAL NOT NULL DEFAULT 0`,
+		`ALTER TABLE activity_stats ADD COLUMN effort_version INTEGER NOT NULL DEFAULT 0`,
 	}
 	for _, m := range migrations {
 		_, _ = s.db.ExecContext(ctx, m) // ignore errors (column already exists)
@@ -204,6 +208,7 @@ CREATE TABLE IF NOT EXISTS activities (
 	distance REAL NOT NULL DEFAULT 0,
 	moving_time INTEGER NOT NULL DEFAULT 0,
 	average_power REAL NOT NULL DEFAULT 0,
+	average_heartrate REAL NOT NULL DEFAULT 0,
 	visibility TEXT NOT NULL DEFAULT '',
 	is_private INTEGER NOT NULL DEFAULT 0,
 	hide_from_home INTEGER NOT NULL DEFAULT 0,
@@ -224,6 +229,8 @@ CREATE TABLE IF NOT EXISTS activity_stats (
 	stop_count INTEGER NOT NULL,
 	stop_total_seconds INTEGER NOT NULL,
 	traffic_light_stop_count INTEGER NOT NULL,
+	effort_score REAL NOT NULL DEFAULT 0,
+	effort_version INTEGER NOT NULL DEFAULT 0,
 	updated_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS activity_stops (
@@ -334,8 +341,8 @@ func (s *Store) upsertActivityWithPoints(ctx context.Context, activity Activity,
 	var res sql.Result
 	if allowUpsert && activity.ID != 0 {
 		res, err = tx.ExecContext(ctx, `
-INSERT INTO activities (id, user_id, type, name, start_time, description, distance, moving_time, average_power, visibility, is_private, hide_from_home, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO activities (id, user_id, type, name, start_time, description, distance, moving_time, average_power, average_heartrate, visibility, is_private, hide_from_home, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
 	user_id = excluded.user_id,
 	type = excluded.type,
@@ -345,21 +352,22 @@ ON CONFLICT(id) DO UPDATE SET
 	distance = excluded.distance,
 	moving_time = excluded.moving_time,
 	average_power = excluded.average_power,
+	average_heartrate = excluded.average_heartrate,
 	visibility = excluded.visibility,
 	is_private = excluded.is_private,
 	hide_from_home = excluded.hide_from_home,
 	updated_at = excluded.updated_at
-`, activity.ID, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, activity.AveragePower, activity.Visibility, boolToInt(activity.IsPrivate), boolToInt(activity.HideFromHome), time.Now().Unix())
+`, activity.ID, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, activity.AveragePower, activity.AverageHeartRate, activity.Visibility, boolToInt(activity.IsPrivate), boolToInt(activity.HideFromHome), time.Now().Unix())
 	} else if activity.ID != 0 {
 		res, err = tx.ExecContext(ctx, `
-INSERT INTO activities (id, user_id, type, name, start_time, description, distance, moving_time, average_power, visibility, is_private, hide_from_home, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, activity.ID, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, activity.AveragePower, activity.Visibility, boolToInt(activity.IsPrivate), boolToInt(activity.HideFromHome), time.Now().Unix())
+INSERT INTO activities (id, user_id, type, name, start_time, description, distance, moving_time, average_power, average_heartrate, visibility, is_private, hide_from_home, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, activity.ID, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, activity.AveragePower, activity.AverageHeartRate, activity.Visibility, boolToInt(activity.IsPrivate), boolToInt(activity.HideFromHome), time.Now().Unix())
 	} else {
 		res, err = tx.ExecContext(ctx, `
-INSERT INTO activities (user_id, type, name, start_time, description, distance, moving_time, average_power, visibility, is_private, hide_from_home, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, activity.AveragePower, activity.Visibility, boolToInt(activity.IsPrivate), boolToInt(activity.HideFromHome), time.Now().Unix())
+INSERT INTO activities (user_id, type, name, start_time, description, distance, moving_time, average_power, average_heartrate, visibility, is_private, hide_from_home, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, activity.AveragePower, activity.AverageHeartRate, activity.Visibility, boolToInt(activity.IsPrivate), boolToInt(activity.HideFromHome), time.Now().Unix())
 	}
 	if err != nil {
 		return 0, err
@@ -510,6 +518,42 @@ ORDER BY start_time
 		return nil, err
 	}
 	return activities, nil
+}
+
+func (s *Store) ListRecentAverageHeartrates(ctx context.Context, userID int64, before time.Time, limit int) ([]float64, error) {
+	if userID == 0 {
+		userID = 1
+	}
+	if limit <= 0 {
+		return nil, nil
+	}
+	if before.IsZero() {
+		before = time.Now()
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT average_heartrate
+FROM activities
+WHERE user_id = ? AND average_heartrate > 0 AND start_time < ?
+ORDER BY start_time DESC
+LIMIT ?
+`, userID, before.Unix(), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var values []float64
+	for rows.Next() {
+		var hr float64
+		if err := rows.Scan(&hr); err != nil {
+			return nil, err
+		}
+		values = append(values, hr)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return values, nil
 }
 
 func (s *Store) ListActivityYears(ctx context.Context, userID int64) ([]int, error) {
@@ -1171,6 +1215,7 @@ SELECT a.id,
 	a.distance,
 	a.moving_time,
 	a.average_power,
+	a.average_heartrate,
 	a.visibility,
 	a.is_private,
 	a.hide_from_home,
@@ -1209,6 +1254,7 @@ LIMIT ?
 			&item.Distance,
 			&item.MovingTime,
 			&item.AveragePower,
+			&item.AverageHeartRate,
 			&item.Visibility,
 			&isPrivate,
 			&hideFromHome,
@@ -1243,26 +1289,28 @@ func (s *Store) UpsertActivityStats(ctx context.Context, activityID int64, stats
 		updatedAt = stats.UpdatedAt
 	}
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO activity_stats (activity_id, stop_count, stop_total_seconds, traffic_light_stop_count, updated_at)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO activity_stats (activity_id, stop_count, stop_total_seconds, traffic_light_stop_count, effort_score, effort_version, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(activity_id) DO UPDATE SET
 	stop_count = excluded.stop_count,
 	stop_total_seconds = excluded.stop_total_seconds,
 	traffic_light_stop_count = excluded.traffic_light_stop_count,
+	effort_score = excluded.effort_score,
+	effort_version = excluded.effort_version,
 	updated_at = excluded.updated_at
-`, activityID, stats.StopCount, stats.StopTotalSeconds, stats.TrafficLightStopCount, updatedAt.Unix())
+`, activityID, stats.StopCount, stats.StopTotalSeconds, stats.TrafficLightStopCount, stats.EffortScore, stats.EffortVersion, updatedAt.Unix())
 	return err
 }
 
 func (s *Store) GetActivityStats(ctx context.Context, activityID int64) (stats.StopStats, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT stop_count, stop_total_seconds, traffic_light_stop_count, updated_at
+SELECT stop_count, stop_total_seconds, traffic_light_stop_count, effort_score, effort_version, updated_at
 FROM activity_stats
 WHERE activity_id = ?
 `, activityID)
 	var result stats.StopStats
 	var updatedAt int64
-	if err := row.Scan(&result.StopCount, &result.StopTotalSeconds, &result.TrafficLightStopCount, &updatedAt); err != nil {
+	if err := row.Scan(&result.StopCount, &result.StopTotalSeconds, &result.TrafficLightStopCount, &result.EffortScore, &result.EffortVersion, &updatedAt); err != nil {
 		return stats.StopStats{}, err
 	}
 	result.UpdatedAt = time.Unix(updatedAt, 0)
@@ -1271,7 +1319,7 @@ WHERE activity_id = ?
 
 func (s *Store) GetActivity(ctx context.Context, activityID int64) (Activity, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT id, user_id, type, name, start_time, description, distance, moving_time, average_power, visibility, is_private, hide_from_home, hidden_by_rule, updated_at
+SELECT id, user_id, type, name, start_time, description, distance, moving_time, average_power, average_heartrate, visibility, is_private, hide_from_home, hidden_by_rule, updated_at
 FROM activities
 WHERE id = ?
 `, activityID)
@@ -1291,6 +1339,7 @@ WHERE id = ?
 		&activity.Distance,
 		&activity.MovingTime,
 		&activity.AveragePower,
+		&activity.AverageHeartRate,
 		&activity.Visibility,
 		&isPrivate,
 		&hideFromHome,
