@@ -144,13 +144,13 @@ type AdminPageData struct {
 }
 
 type ContributionDay struct {
-	Date       string
-	Label      string
-	Tooltip    string
-	Hours      float64
-	HoursLabel string
-	Level      int
-	InRange    bool
+	Date        string
+	Label       string
+	Tooltip     string
+	Effort      float64
+	EffortLabel string
+	Level       int
+	InRange     bool
 }
 
 type ContributionMonth struct {
@@ -159,15 +159,15 @@ type ContributionMonth struct {
 }
 
 type ContributionData struct {
-	Days       []ContributionDay
-	Months     []ContributionMonth
-	Weeks      int
-	Year       int
-	Levels     int
-	StartLabel string
-	EndLabel   string
-	MaxHours   float64
-	TotalHours float64
+	Days        []ContributionDay
+	Months      []ContributionMonth
+	Weeks       int
+	Year        int
+	Levels      int
+	StartLabel  string
+	EndLabel    string
+	MaxEffort   float64
+	TotalEffort float64
 }
 
 type JobView struct {
@@ -1563,23 +1563,32 @@ func (s *Server) buildContributionDataForYear(ctx context.Context, year int, now
 		log.Printf("contrib load failed: %v", err)
 	}
 
-	hoursByDay := make(map[string]float64)
+	effortByDay := make(map[string]float64)
 	for _, activity := range activities {
 		if activity.MovingTime <= 0 {
 			continue
 		}
 		dayKey := activity.StartTime.In(loc).Format("2006-01-02")
-		hoursByDay[dayKey] += float64(activity.MovingTime) / 3600
+		effort := 0.0
+		if activity.EffortVersion > 0 && activity.EffortScore > 0 {
+			effort = activity.EffortScore / 60.0
+		} else {
+			effort = float64(activity.MovingTime) / 3600
+		}
+		if effort <= 0 {
+			continue
+		}
+		effortByDay[dayKey] += effort
 	}
 
-	maxHours := 0.0
-	totalHours := 0.0
+	maxEffort := 0.0
+	totalEffort := 0.0
 	for day := start; !day.After(rangeEnd); day = day.AddDate(0, 0, 1) {
-		hours := hoursByDay[day.Format("2006-01-02")]
-		if hours > maxHours {
-			maxHours = hours
+		effort := effortByDay[day.Format("2006-01-02")]
+		if effort > maxEffort {
+			maxEffort = effort
 		}
-		totalHours += hours
+		totalEffort += effort
 	}
 
 	var days []ContributionDay
@@ -1605,26 +1614,26 @@ func (s *Server) buildContributionDataForYear(ctx context.Context, year int, now
 			inYear := !day.Before(start) && !day.After(end)
 			inRange := !day.Before(start) && !day.After(rangeEnd)
 			dateKey := day.Format("2006-01-02")
-			hours := 0.0
+			effort := 0.0
 			if inRange {
-				hours = hoursByDay[dateKey]
+				effort = effortByDay[dateKey]
 			}
 			level := 0
 			if inRange {
-				level = contributionLevel(hours)
+				level = contributionLevel(effort)
 			}
-			hoursLabel := ""
+			effortLabel := ""
 			if inRange {
-				hoursLabel = formatHours(hours)
+				effortLabel = formatEffort(effort)
 			}
 			days = append(days, ContributionDay{
-				Date:       dateKey,
-				Label:      day.Format("Jan 2, 2006"),
-				Tooltip:    contributionTooltip(day, inRange, inYear, hoursLabel, year),
-				Hours:      hours,
-				HoursLabel: hoursLabel,
-				Level:      level,
-				InRange:    inRange,
+				Date:        dateKey,
+				Label:       day.Format("Jan 2, 2006"),
+				Tooltip:     contributionTooltip(day, inRange, inYear, effortLabel, year),
+				Effort:      effort,
+				EffortLabel: effortLabel,
+				Level:       level,
+				InRange:     inRange,
 			})
 		}
 	}
@@ -1635,26 +1644,26 @@ func (s *Server) buildContributionDataForYear(ctx context.Context, year int, now
 	}
 
 	return ContributionData{
-		Days:       days,
-		Months:     months,
-		Weeks:      weeks,
-		Year:       year,
-		Levels:     contributionMaxLevel,
-		StartLabel: start.Format("Jan 2, 2006"),
-		EndLabel:   end.Format("Jan 2, 2006"),
-		MaxHours:   maxHours,
-		TotalHours: totalHours,
+		Days:        days,
+		Months:      months,
+		Weeks:       weeks,
+		Year:        year,
+		Levels:      contributionMaxLevel,
+		StartLabel:  start.Format("Jan 2, 2006"),
+		EndLabel:    end.Format("Jan 2, 2006"),
+		MaxEffort:   maxEffort,
+		TotalEffort: totalEffort,
 	}
 }
 
-func contributionTooltip(day time.Time, inRange, inYear bool, hoursLabel string, year int) string {
+func contributionTooltip(day time.Time, inRange, inYear bool, effortLabel string, year int) string {
 	label := day.Format("Mon, Jan 2, 2006")
 	switch {
 	case inRange:
-		if hoursLabel == "" {
+		if effortLabel == "" {
 			return label
 		}
-		return fmt.Sprintf("%s · %s", label, hoursLabel)
+		return fmt.Sprintf("%s · %s", label, effortLabel)
 	case inYear:
 		return fmt.Sprintf("%s · Future day", label)
 	default:
@@ -1718,42 +1727,42 @@ func formatPower(watts float64) (string, string, bool) {
 	return fmt.Sprintf("%.0f", math.Round(watts)), "W", true
 }
 
-func formatHours(hours float64) string {
-	if hours <= 0 {
-		return "No activity"
+func formatEffort(effort float64) string {
+	if effort <= 0 {
+		return "No effort"
 	}
-	if hours < 10 {
-		return fmt.Sprintf("%.1f h", hours)
+	if effort < 10 {
+		return fmt.Sprintf("Effort %.1f h", effort)
 	}
-	return fmt.Sprintf("%.0f h", hours)
+	return fmt.Sprintf("Effort %.0f h", effort)
 }
 
 const contributionMaxLevel = 11
 
-func contributionLevel(hours float64) int {
-	if hours <= 0 {
+func contributionLevel(effort float64) int {
+	if effort <= 0 {
 		return 0
 	}
 	switch {
-	case hours < 1:
+	case effort < 1:
 		return 1
-	case hours < 2:
+	case effort < 2:
 		return 2
-	case hours < 3:
+	case effort < 3:
 		return 3
-	case hours < 4:
+	case effort < 4:
 		return 4
-	case hours < 5:
+	case effort < 5:
 		return 5
-	case hours < 6:
+	case effort < 6:
 		return 6
-	case hours < 7:
+	case effort < 7:
 		return 7
-	case hours < 8:
+	case effort < 8:
 		return 8
-	case hours < 9:
+	case effort < 9:
 		return 9
-	case hours < 10:
+	case effort < 10:
 		return 10
 	default:
 		return 11

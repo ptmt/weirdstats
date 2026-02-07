@@ -102,8 +102,10 @@ type ActivityStop struct {
 }
 
 type ActivityTime struct {
-	StartTime  time.Time
-	MovingTime int
+	StartTime     time.Time
+	MovingTime    int
+	EffortScore   float64
+	EffortVersion int
 }
 
 func Open(path string) (*Store, error) {
@@ -492,12 +494,16 @@ func (s *Store) ListActivityTimes(ctx context.Context, userID int64, start, end 
 		userID = 1
 	}
 	rows, err := s.db.QueryContext(ctx, `
-SELECT start_time, moving_time
-FROM activities
-WHERE user_id = ?
-	AND start_time >= ?
-	AND start_time < ?
-ORDER BY start_time
+SELECT a.start_time,
+	a.moving_time,
+	COALESCE(s.effort_score, 0),
+	COALESCE(s.effort_version, 0)
+FROM activities a
+LEFT JOIN activity_stats s ON s.activity_id = a.id
+WHERE a.user_id = ?
+	AND a.start_time >= ?
+	AND a.start_time < ?
+ORDER BY a.start_time
 `, userID, start.Unix(), end.Unix())
 	if err != nil {
 		return nil, err
@@ -508,7 +514,7 @@ ORDER BY start_time
 	for rows.Next() {
 		var item ActivityTime
 		var startTime int64
-		if err := rows.Scan(&startTime, &item.MovingTime); err != nil {
+		if err := rows.Scan(&startTime, &item.MovingTime, &item.EffortScore, &item.EffortVersion); err != nil {
 			return nil, err
 		}
 		item.StartTime = time.Unix(startTime, 0)
