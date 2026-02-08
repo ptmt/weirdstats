@@ -48,24 +48,15 @@
           <div class="activity-header">
               <div class="activity-header-main">
                 <div class="activity-badges">
-                  <span class="activity-type type-{{.TypeClass}}">{{.TypeLabel}}</span>
+                  <span class="activity-type">{{.TypeLabel}}</span>
                   {{if .FeedMuted}}
-                    <span class="activity-visibility is-hidden" title="Muted for everyone feed">
+                    <span class="activity-visibility is-hidden" title="Muted for everyone feed" aria-label="Muted for everyone feed">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20C7 20 2.73 16.11 1 12c.64-1.5 1.71-3.06 3.2-4.36"/>
                         <path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c5 0 9.27 3.89 11 8a12.7 12.7 0 0 1-2.04 3.38"/>
                         <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/>
                         <line x1="1" y1="1" x2="23" y2="23"/>
                       </svg>
-                      Muted
-                    </span>
-                  {{else}}
-                    <span class="activity-visibility is-visible" title="Visible in everyone feed">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/>
-                        <circle cx="12" cy="12" r="3"/>
-                      </svg>
-                      Visible
                     </span>
                   {{end}}
                 </div>
