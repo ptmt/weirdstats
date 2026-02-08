@@ -1179,6 +1179,20 @@ a {
   line-height: 1.4;
 }
 
+.activity-photo {
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 4px 0;
+}
+
+.activity-photo img {
+  width: 100%;
+  height: auto;
+  max-height: 200px;
+  object-fit: cover;
+  display: block;
+}
+
 .activity-metrics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

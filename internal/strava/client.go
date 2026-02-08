@@ -189,6 +189,7 @@ type Activity struct {
 	Visibility       string
 	Private          bool
 	HideFromHome     bool
+	PhotoURL         string
 }
 
 type ActivitySummary struct {
@@ -223,6 +224,11 @@ func (c *Client) GetActivity(ctx context.Context, id int64) (Activity, error) {
 		Visibility       string   `json:"visibility"`
 		Private          bool     `json:"private"`
 		HideFromHome     bool     `json:"hide_from_home"`
+		Photos           *struct {
+			Primary *struct {
+				URLs map[string]string `json:"urls"`
+			} `json:"primary"`
+		} `json:"photos"`
 	}
 
 	if err := c.getJSON(ctx, fmt.Sprintf("/activities/%d", id), nil, &payload); err != nil {
@@ -239,6 +245,22 @@ func (c *Client) GetActivity(ctx context.Context, id int64) (Activity, error) {
 		avgHR = *payload.AverageHeartrate
 	}
 
+	var photoURL string
+	if payload.Photos != nil && payload.Photos.Primary != nil {
+		for _, size := range []string{"600", "400", "200", "100"} {
+			if url, ok := payload.Photos.Primary.URLs[size]; ok {
+				photoURL = url
+				break
+			}
+		}
+		if photoURL == "" {
+			for _, url := range payload.Photos.Primary.URLs {
+				photoURL = url
+				break
+			}
+		}
+	}
+
 	return Activity{
 		ID:               payload.ID,
 		Name:             payload.Name,
@@ -252,6 +274,7 @@ func (c *Client) GetActivity(ctx context.Context, id int64) (Activity, error) {
 		Visibility:       payload.Visibility,
 		Private:          payload.Private,
 		HideFromHome:     payload.HideFromHome,
+		PhotoURL:         photoURL,
 	}, nil
 }
 

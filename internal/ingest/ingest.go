@@ -74,6 +74,7 @@ func (i *Ingestor) fetchAndUpsert(ctx context.Context, activityID int64) error {
 		Visibility:       activity.Visibility,
 		IsPrivate:        activity.Private,
 		HideFromHome:     activity.HideFromHome,
+		PhotoURL:         activity.PhotoURL,
 	}, points)
 	return err
 }

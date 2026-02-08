@@ -74,6 +74,7 @@ type ActivityView struct {
 	FetchedAt      string
 	IsHidden       bool
 	FeedMuted      bool
+	PhotoURL       string
 }
 
 type StopView struct {
@@ -417,6 +418,7 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 			StopCount:   activity.StopCount,
 			StopTotal:   formatDuration(activity.StopTotalSeconds),
 			LightStops:  activity.TrafficLightStopCount,
+			PhotoURL:    activity.PhotoURL,
 		}
 		enrichActivityView(&view, activity.Activity)
 		views = append(views, view)

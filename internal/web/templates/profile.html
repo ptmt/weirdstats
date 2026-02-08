@@ -133,6 +133,11 @@
             </div>
           </div>
           {{if .Description}}<div class="muted activity-description">{{.Description}}</div>{{end}}
+          {{if .PhotoURL}}
+          <div class="activity-photo">
+            <img src="{{.PhotoURL}}" alt="Activity photo" loading="lazy">
+          </div>
+          {{end}}
           <div class="activity-metrics">
             <div class="metric">
               <div class="metric-label">Distance</div>
