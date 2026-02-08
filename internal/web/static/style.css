@@ -780,7 +780,7 @@ a {
 
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 20px;
 }
 
@@ -1095,7 +1095,9 @@ a {
 /* Activity cards (profile) */
 .activity-card {
   display: grid;
-  gap: 14px;
+  gap: 10px;
+  padding: 20px;
+  min-width: 0;
   position: relative;
   transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
 }
@@ -1125,7 +1127,7 @@ a {
 
 .activity-header-main {
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
 .activity-badges {
@@ -1162,8 +1164,8 @@ a {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
+  gap: 6px;
+  font-size: 11px;
   letter-spacing: 0.02em;
   color: var(--ink-muted);
 }
@@ -1173,50 +1175,62 @@ a {
 }
 
 .activity-description {
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .activity-metrics {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 14px;
-  padding: 14px 16px;
-  border-radius: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
   background: rgba(0, 0, 0, 0.15);
   border: 1px solid var(--border);
+  min-width: 0;
 }
 
 .metric {
   display: grid;
-  gap: 6px;
+  gap: 3px;
+  min-width: 0;
 }
 
 .metric-label {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
   color: var(--ink-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .metric-value {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 4px;
   font-variant-numeric: tabular-nums;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .metric-number {
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 700;
+  line-height: 1.05;
   color: var(--ink);
+  white-space: nowrap;
 }
 
 .metric-unit {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--ink-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .metric.is-muted .metric-number,
@@ -1228,7 +1242,12 @@ a {
 .activity-substats {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
+}
+
+.activity-substats .stat-tag {
+  padding: 5px 10px;
+  font-size: 12px;
 }
 
 .activity-header {
@@ -2008,6 +2027,24 @@ input::placeholder {
 
   .cta-row {
     justify-content: center;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .activity-card {
+    padding: 16px;
+    gap: 8px;
+  }
+
+  .activity-metrics {
+    gap: 6px;
+    padding: 8px 10px;
+  }
+
+  .metric-number {
+    font-size: 16px;
   }
 }
 
