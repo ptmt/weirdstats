@@ -61,84 +61,44 @@
     <article class="card settings-section">
       <div class="section-head rule-editor-head">
         <div>
-          <h3 class="rule-editor-title">Rule editor</h3>
-          <p class="muted">Everything saves as JSON.</p>
+          <h3 class="rule-editor-title">Rule spec and JSON input</h3>
+          <p class="muted">Copy the spec into an LLM, ask for a rule, then paste the JSON here.</p>
         </div>
       </div>
-      <div class="rule-templates">
-        <div class="rule-templates-header">
-          <h4>Template starters</h4>
-          <span class="muted">Apply one, then tweak it.</span>
-        </div>
-        <div class="template-grid" id="rule-templates"></div>
-      </div>
-      <form method="post" action="/activities/settings" class="rule-builder" id="rule-builder-form">
+      <form method="post" action="/activities/settings" class="rule-builder" id="rule-json-form">
         <input type="hidden" name="action" value="add-rule" />
-        <input type="hidden" name="condition" id="rule-condition" />
+        <input type="hidden" name="name" id="rule-name" value="Custom JSON rule" />
         <div class="builder-stack">
           <div class="builder-section">
-            <h4>Basics</h4>
-            <div class="builder-header">
-              <label>
-                <input name="name" placeholder="Hide short late-night rides" />
-              </label>
-              <label class="toggle">
-                <input type="checkbox" name="enabled" checked />
-                Enabled
-              </label>
-            </div>
-          </div>
-
-          <div class="builder-section">
-            <h4>Conditions</h4>
-            <div class="builder-row">
-              <label>
-                <div class="muted">Match</div>
-                <select id="rule-match">
-                  <option value="all">All conditions (AND)</option>
-                  <option value="any">Any condition (OR)</option>
-                </select>
-              </label>
-              <label>
-                <div class="muted">Allow 1 in N</div>
-                <input type="number" id="rule-allow-one-in" min="2" step="1" placeholder="e.g. 10" />
-                <div class="field-help">Leave blank to always hide when matched.</div>
-              </label>
-            </div>
-
-            <div class="conditions" id="rule-conditions"></div>
             <div class="builder-actions">
-              <button type="button" class="btn secondary small" id="rule-add-condition">Add condition</button>
+              <h4>Spec for LLM</h4>
+              <button type="button" class="btn secondary small" id="rule-spec-copy">Copy spec</button>
+            </div>
+            <textarea id="rule-spec" class="rule-spec-area" readonly spellcheck="false">Loading spec...</textarea>
+            <div class="field-help">Templates are included in this spec.</div>
+          </div>
+
+          <div class="builder-section">
+            <h4>Rule JSON input</h4>
+            <textarea name="condition" id="rule-json-input" class="rule-json-input" spellcheck="false" placeholder='{"match":"all","conditions":[{"metric":"distance_m","op":"lt","values":[5000]}],"action":{"type":"hide"}}'></textarea>
+            <div class="rule-error" id="rule-json-error"></div>
+            <div class="builder-preview">
+              <div class="muted">Normalized JSON preview</div>
+              <pre id="rule-json-preview">{}</pre>
             </div>
           </div>
 
           <div class="builder-section">
-            <h4>Preview</h4>
-            <div class="builder-preview">
-              <div class="muted">Rule JSON preview</div>
-              <pre id="rule-preview">{}</pre>
-              <div class="rule-error" id="rule-error"></div>
-            </div>
+            <label class="toggle">
+              <input type="checkbox" name="enabled" checked />
+              Enabled
+            </label>
           </div>
 
           <button class="btn small" type="submit" id="rule-submit">Add rule</button>
         </div>
-
-        <details class="rule-reference">
-          <summary>Reference</summary>
-          <div class="builder-reference">
-            <div class="reference-block">
-              <div class="reference-title">Metrics</div>
-              <div class="reference-list" id="rule-metrics-ref"></div>
-            </div>
-            <div class="reference-block">
-              <div class="reference-title">Operators</div>
-              <div class="reference-list" id="rule-operators-ref"></div>
-            </div>
-          </div>
-        </details>
         <noscript>
-          <p class="muted">JavaScript is required to build rules. Enable it to continue.</p>
+          <p class="muted">Paste valid JSON into Rule JSON input, then submit.</p>
         </noscript>
       </form>
     </article>
@@ -169,7 +129,6 @@
     </article>
   </section>
 
-  <datalist id="rule-metric-options"></datalist>
   <script type="application/json" id="rules-metadata">{{.RulesMetaJSON}}</script>
   <script>
     (function() {
@@ -179,33 +138,21 @@
       try {
         meta = JSON.parse(metaEl.textContent);
       } catch (err) {
-        return;
+        meta = { metrics: [], operators: {} };
       }
-      const metrics = meta.metrics || [];
-      const operatorsByType = meta.operators || {};
-      const metricsById = new Map(metrics.map(metric => [metric.id, metric]));
+      const metrics = Array.isArray(meta.metrics) ? meta.metrics : [];
+      const operatorsByType = meta && meta.operators && typeof meta.operators === 'object' ? meta.operators : {};
+      const metricsByID = new Map(metrics.map(metric => [metric.id, metric]));
 
-      const conditionsEl = document.getElementById('rule-conditions');
-      const addBtn = document.getElementById('rule-add-condition');
-      const matchEl = document.getElementById('rule-match');
-      const allowEl = document.getElementById('rule-allow-one-in');
-      const previewEl = document.getElementById('rule-preview');
-      const errorEl = document.getElementById('rule-error');
+      const formEl = document.getElementById('rule-json-form');
+      if (!formEl) return;
+      const specEl = document.getElementById('rule-spec');
+      const copySpecBtn = document.getElementById('rule-spec-copy');
+      const jsonInputEl = document.getElementById('rule-json-input');
+      const errorEl = document.getElementById('rule-json-error');
+      const previewEl = document.getElementById('rule-json-preview');
       const submitBtn = document.getElementById('rule-submit');
-      const conditionInput = document.getElementById('rule-condition');
-      const metricList = document.getElementById('rule-metric-options');
-      const formEl = document.getElementById('rule-builder-form');
-      const nameInput = formEl ? formEl.querySelector('input[name="name"]') : null;
-      const enabledInput = formEl ? formEl.querySelector('input[name="enabled"]') : null;
-      const templatesEl = document.getElementById('rule-templates');
-      let isApplyingTemplate = false;
-
-      metrics.forEach(metric => {
-        const option = document.createElement('option');
-        option.value = metric.id;
-        option.label = metric.label + (metric.unit ? ` (${metric.unit})` : '');
-        metricList.appendChild(option);
-      });
+      const nameEl = document.getElementById('rule-name');
 
       const templates = [
         {
@@ -264,371 +211,295 @@
         }
       ];
 
-      function operatorSpec(valueType, opId) {
-        const list = operatorsByType[valueType] || [];
-        return list.find(op => op.id === opId);
-      }
-
-      function buildValueInput(type, unit, listId) {
-        const input = document.createElement('input');
-        if (type === 'number') {
-          input.type = 'number';
-          input.step = 'any';
-        }
-        if (listId) {
-          input.setAttribute('list', listId);
-        }
-        input.placeholder = unit ? `Value in ${unit}` : 'Value';
-        return input;
-      }
-
-      function createConditionRow() {
-        const row = document.createElement('div');
-        row.className = 'condition-row';
-
-        const metricField = document.createElement('label');
-        metricField.className = 'field';
-        metricField.innerHTML = '<div class="muted">Metric</div>';
-        const metricInput = document.createElement('input');
-        metricInput.setAttribute('list', 'rule-metric-options');
-        metricInput.placeholder = 'distance_m';
-        const metricHelp = document.createElement('div');
-        metricHelp.className = 'field-help';
-        metricField.appendChild(metricInput);
-        metricField.appendChild(metricHelp);
-
-        const opField = document.createElement('label');
-        opField.className = 'field';
-        opField.innerHTML = '<div class="muted">Operator</div>';
-        const opSelect = document.createElement('select');
-        opField.appendChild(opSelect);
-
-        const valueField = document.createElement('label');
-        valueField.className = 'field condition-values';
-        valueField.innerHTML = '<div class="muted">Value</div>';
-        const valueWrap = document.createElement('div');
-        valueWrap.className = 'value-wrap';
-        valueField.appendChild(valueWrap);
-
-        const removeBtn = document.createElement('button');
-        removeBtn.type = 'button';
-        removeBtn.className = 'btn secondary small';
-        removeBtn.textContent = 'Remove';
-
-        row.appendChild(metricField);
-        row.appendChild(opField);
-        row.appendChild(valueField);
-        row.appendChild(removeBtn);
-
-        function updateOperators() {
-          const metricId = metricInput.value.trim();
-          const metric = metricsById.get(metricId);
-          metricHelp.textContent = metric ? `${metric.label}${metric.unit ? ` (${metric.unit})` : ''}` : '';
-          opSelect.innerHTML = '';
-          if (!metric) {
-            return;
+      function findOperator(valueType, opID) {
+        const list = Array.isArray(operatorsByType[valueType]) ? operatorsByType[valueType] : [];
+        for (let i = 0; i < list.length; i += 1) {
+          if (list[i].id === opID) {
+            return list[i];
           }
-          const options = operatorsByType[metric.type] || [];
-          options.forEach(op => {
-            const option = document.createElement('option');
-            option.value = op.id;
-            option.textContent = op.label;
-            opSelect.appendChild(option);
+        }
+        return null;
+      }
+
+      function operatorValueHint(operator) {
+        if (!operator) return "one or more values";
+        if (operator.value_mode === "single") {
+          return "exactly 1 value";
+        }
+        if (operator.value_mode === "range") {
+          return "exactly 2 values";
+        }
+        if (operator.value_mode === "list") {
+          return "one or more values";
+        }
+        if (operator.value_count === 1) {
+          return "exactly 1 value";
+        }
+        if (operator.value_count === 2) {
+          return "exactly 2 values";
+        }
+        return "one or more values";
+      }
+
+      function buildSpecText() {
+        const lines = [];
+        lines.push("Return one valid JSON object for a weirdstats hide rule.");
+        lines.push("Return JSON only. No markdown fences, no extra text.");
+        lines.push("");
+        lines.push("Rule object shape:");
+        lines.push("{");
+        lines.push('  "match": "all" | "any",');
+        lines.push('  "conditions": [');
+        lines.push('    { "metric": "metric_id", "op": "operator_id", "values": [value1, value2] }');
+        lines.push("  ],");
+        lines.push('  "action": { "type": "hide", "allow": { "one_in": 10 } }');
+        lines.push("}");
+        lines.push("");
+        lines.push("Validation rules:");
+        lines.push("- conditions must include at least one item.");
+        lines.push('- action.type must be "hide".');
+        lines.push("- allow.one_in is optional and must be an integer >= 2 when present.");
+        lines.push("");
+        lines.push("Operators by metric type:");
+        Object.keys(operatorsByType).sort().forEach(function(valueType) {
+          const operators = Array.isArray(operatorsByType[valueType]) ? operatorsByType[valueType] : [];
+          const details = operators.map(function(op) {
+            return op.id + " (" + operatorValueHint(op) + ")";
           });
-        }
-
-        function updateValues() {
-          const metricId = metricInput.value.trim();
-          const metric = metricsById.get(metricId);
-          valueWrap.innerHTML = '';
-          if (!metric) {
-            return;
-          }
-          const op = opSelect.value;
-          const spec = operatorSpec(metric.type, op);
-          if (!spec) {
-            return;
-          }
-          const listId = `value-options-${Math.random().toString(36).slice(2)}`;
-          if (metric.type === 'enum' && metric.enum && metric.enum.length > 0) {
-            const dataList = document.createElement('datalist');
-            dataList.id = listId;
-            metric.enum.forEach(value => {
-              const option = document.createElement('option');
-              option.value = value;
-              dataList.appendChild(option);
-            });
-            valueWrap.appendChild(dataList);
-          }
-          if (spec.value_mode === 'range') {
-            const first = buildValueInput(metric.type, metric.unit, listId);
-            const second = buildValueInput(metric.type, metric.unit, listId);
-            first.placeholder = 'Min';
-            second.placeholder = 'Max';
-            valueWrap.appendChild(first);
-            valueWrap.appendChild(second);
-          } else {
-            const input = buildValueInput(metric.type, metric.unit, listId);
-            if (spec.value_mode === 'list') {
-              input.placeholder = 'Comma-separated values';
-            }
-            valueWrap.appendChild(input);
-          }
-        }
-
-        metricInput.addEventListener('change', () => {
-          updateOperators();
-          updateValues();
-          updatePreview();
+          lines.push("- " + valueType + ": " + details.join(", "));
         });
-        opSelect.addEventListener('change', () => {
-          updateValues();
-          updatePreview();
-        });
-        valueWrap.addEventListener('input', updatePreview);
-        removeBtn.addEventListener('click', () => {
-          row.remove();
-          if (!conditionsEl.children.length) {
-            conditionsEl.appendChild(createConditionRow());
+        lines.push("");
+        lines.push("Available metrics:");
+        metrics.forEach(function(metric) {
+          const unitText = metric.unit ? ", unit " + metric.unit : "";
+          const label = metric.label || metric.id;
+          let line = "- " + metric.id + " (" + metric.type + unitText + "): " + label;
+          if (metric.description) {
+            line += ". " + metric.description;
           }
-          updatePreview();
+          if (metric.example) {
+            line += " Example: " + metric.example + ".";
+          }
+          if (metric.type === "enum" && Array.isArray(metric.enum) && metric.enum.length) {
+            line += " Allowed values: " + metric.enum.join(", ") + ".";
+          }
+          lines.push(line);
         });
-
-        updateOperators();
-        updateValues();
-        return row;
+        lines.push("");
+        lines.push("Templates:");
+        templates.forEach(function(template, index) {
+          lines.push((index + 1) + ". " + template.name + ": " + template.description);
+          lines.push("  " + JSON.stringify(template.rule, null, 2).split("\n").join("\n  "));
+        });
+        lines.push("");
+        lines.push("Generate a new rule JSON that follows this spec.");
+        return lines.join("\n");
       }
 
-      function parseCondition(row) {
-        const metricInput = row.querySelector('input[list="rule-metric-options"]');
-        const opSelect = row.querySelector('select');
-        const valueInputs = row.querySelectorAll('.value-wrap input');
-        const metricId = metricInput ? metricInput.value.trim() : '';
-        if (!metricId) {
-          return { error: 'Metric is required.' };
-        }
-        const metric = metricsById.get(metricId);
-        if (!metric) {
-          return { error: `Unknown metric: ${metricId}` };
-        }
-        const op = opSelect ? opSelect.value : '';
-        const spec = operatorSpec(metric.type, op);
-        if (!spec) {
-          return { error: 'Operator is required.' };
-        }
-        const values = [];
-        if (spec.value_mode === 'range') {
-          if (valueInputs.length < 2) {
-            return { error: 'Two values required for range.' };
+      function normalizeRule(rawRule) {
+        const safeRule = rawRule && typeof rawRule === "object" && !Array.isArray(rawRule) ? rawRule : {};
+        const safeAction = safeRule.action && typeof safeRule.action === "object" ? safeRule.action : {};
+        const safeAllow = safeAction.allow && typeof safeAction.allow === "object" ? safeAction.allow : null;
+        const normalized = {
+          match: typeof safeRule.match === "string" && safeRule.match ? safeRule.match : "all",
+          conditions: Array.isArray(safeRule.conditions) ? safeRule.conditions.map(function(condition) {
+            const safeCondition = condition && typeof condition === "object" && !Array.isArray(condition) ? condition : {};
+            return {
+              metric: typeof safeCondition.metric === "string" ? safeCondition.metric : "",
+              op: typeof safeCondition.op === "string" ? safeCondition.op : "",
+              values: Array.isArray(safeCondition.values) ? safeCondition.values : []
+            };
+          }) : [],
+          action: {
+            type: typeof safeAction.type === "string" && safeAction.type ? safeAction.type : "hide"
           }
-          valueInputs.forEach(input => {
-            const val = input.value.trim();
-            if (val !== '') values.push(val);
-          });
-          if (values.length !== 2) {
-            return { error: 'Two values required for range.' };
-          }
-        } else {
-          const val = valueInputs[0] ? valueInputs[0].value.trim() : '';
-          if (!val) {
-            return { error: 'Value is required.' };
-          }
-          if (spec.value_mode === 'list') {
-            val.split(',').forEach(part => {
-              const trimmed = part.trim();
-              if (trimmed) values.push(trimmed);
-            });
-            if (!values.length) {
-              return { error: 'At least one value is required.' };
-            }
-          } else {
-            values.push(val);
-          }
-        }
-        const typedValues = values.map(value => {
-          if (metric.type === 'number') {
-            const num = Number(value);
-            return Number.isFinite(num) ? num : value;
-          }
-          return value;
-        });
-        if (metric.type === 'number') {
-          for (const value of typedValues) {
-            if (typeof value !== 'number' || !Number.isFinite(value)) {
-              return { error: 'Numeric value required.' };
-            }
-          }
-        }
-        return { condition: { metric: metricId, op: op, values: typedValues } };
-      }
-
-      function buildRule() {
-        const conditions = [];
-        const errors = [];
-        conditionsEl.querySelectorAll('.condition-row').forEach(row => {
-          const result = parseCondition(row);
-          if (result.error) {
-            errors.push(result.error);
-          } else {
-            conditions.push(result.condition);
-          }
-        });
-        if (!conditions.length) {
-          errors.push('Add at least one condition.');
-        }
-        const rule = {
-          match: matchEl ? matchEl.value : 'all',
-          conditions: conditions,
-          action: { type: 'hide' }
         };
-        const oneInValue = allowEl ? parseInt(allowEl.value, 10) : 0;
-        if (Number.isFinite(oneInValue) && oneInValue >= 2) {
-          rule.action.allow = { one_in: oneInValue };
+        if (safeAllow && safeAllow.one_in !== undefined && safeAllow.one_in !== null && safeAllow.one_in !== "") {
+          const oneIn = Number(safeAllow.one_in);
+          normalized.action.allow = { one_in: Number.isInteger(oneIn) ? oneIn : safeAllow.one_in };
         }
-        return { rule, errors };
+        return normalized;
       }
 
-      function updatePreview() {
-        if (isApplyingTemplate) {
-          return;
+      function validateRule(rule) {
+        if (!rule || typeof rule !== "object" || Array.isArray(rule)) {
+          return "Rule must be a JSON object.";
         }
-        const { rule, errors } = buildRule();
-        if (errors.length) {
-          errorEl.textContent = errors[0];
-          previewEl.textContent = '{}';
-          conditionInput.value = '';
-          if (submitBtn) submitBtn.disabled = true;
-          return;
+        if (rule.match !== "all" && rule.match !== "any") {
+          return 'match must be "all" or "any".';
         }
-        errorEl.textContent = '';
-        previewEl.textContent = JSON.stringify(rule, null, 2);
-        conditionInput.value = JSON.stringify(rule);
-        if (submitBtn) submitBtn.disabled = false;
-      }
-
-      function setConditions(conditions) {
-        conditionsEl.innerHTML = '';
-        (conditions || []).forEach(condition => {
-          const row = createConditionRow();
-          conditionsEl.appendChild(row);
-          const metricInput = row.querySelector('input[list="rule-metric-options"]');
-          const opSelect = row.querySelector('select');
-          if (metricInput) {
-            metricInput.value = condition.metric || '';
-            metricInput.dispatchEvent(new Event('change'));
+        if (!Array.isArray(rule.conditions) || rule.conditions.length === 0) {
+          return "At least one condition is required.";
+        }
+        if (!rule.action || typeof rule.action !== "object") {
+          return "action must be an object.";
+        }
+        if (rule.action.type && rule.action.type !== "hide") {
+          return 'action.type must be "hide".';
+        }
+        if (rule.action.allow && rule.action.allow.one_in !== undefined) {
+          const oneIn = Number(rule.action.allow.one_in);
+          if (!Number.isInteger(oneIn) || oneIn < 2) {
+            return "action.allow.one_in must be an integer >= 2.";
           }
-          if (opSelect && condition.op) {
-            opSelect.value = condition.op;
-            opSelect.dispatchEvent(new Event('change'));
+          rule.action.allow.one_in = oneIn;
+        }
+        for (let i = 0; i < rule.conditions.length; i += 1) {
+          const condition = rule.conditions[i];
+          if (!condition || typeof condition !== "object" || Array.isArray(condition)) {
+            return "Condition " + (i + 1) + " must be an object.";
           }
-          const valueInputs = row.querySelectorAll('.value-wrap input');
-          const values = Array.isArray(condition.values) ? condition.values : [];
-          if (valueInputs.length === 1 && values.length > 1) {
-            valueInputs[0].value = values.join(', ');
-          } else {
-            values.forEach((value, idx) => {
-              if (valueInputs[idx]) {
-                valueInputs[idx].value = value;
+          if (!condition.metric) {
+            return "Condition " + (i + 1) + ": metric is required.";
+          }
+          if (!condition.op) {
+            return "Condition " + (i + 1) + ": op is required.";
+          }
+          if (!Array.isArray(condition.values)) {
+            return "Condition " + (i + 1) + ": values must be an array.";
+          }
+          if (metricsByID.size === 0) {
+            if (condition.values.length === 0) {
+              return "Condition " + (i + 1) + ": values cannot be empty.";
+            }
+            continue;
+          }
+          const metric = metricsByID.get(condition.metric);
+          if (!metric) {
+            return "Condition " + (i + 1) + ": unknown metric " + condition.metric + ".";
+          }
+          const operator = findOperator(metric.type, condition.op);
+          if (!operator) {
+            return "Condition " + (i + 1) + ": invalid operator " + condition.op + " for metric type " + metric.type + ".";
+          }
+          if (operator.value_count === 1 && condition.values.length !== 1) {
+            return "Condition " + (i + 1) + ": operator " + condition.op + " expects exactly 1 value.";
+          }
+          if (operator.value_count === 2 && condition.values.length !== 2) {
+            return "Condition " + (i + 1) + ": operator " + condition.op + " expects exactly 2 values.";
+          }
+          if (operator.value_count === -1 && condition.values.length < 1) {
+            return "Condition " + (i + 1) + ": operator " + condition.op + " expects one or more values.";
+          }
+          for (let j = 0; j < condition.values.length; j += 1) {
+            const value = condition.values[j];
+            if (metric.type === "number") {
+              if (typeof value !== "number" || !Number.isFinite(value)) {
+                return "Condition " + (i + 1) + ": numeric metric " + metric.id + " requires numeric values.";
               }
-            });
+            } else if (metric.type === "enum") {
+              if (typeof value !== "string") {
+                return "Condition " + (i + 1) + ": enum metric " + metric.id + " requires string values.";
+              }
+            }
           }
-        });
-        if (!conditionsEl.children.length) {
-          conditionsEl.appendChild(createConditionRow());
         }
+        return "";
       }
 
-      function applyTemplate(template) {
-        if (!template || !template.rule) return;
-        isApplyingTemplate = true;
-        if (nameInput) nameInput.value = template.name || '';
-        if (enabledInput) enabledInput.checked = template.enabled !== false;
-        if (matchEl) matchEl.value = template.rule.match || 'all';
-        const allow = template.rule.action && template.rule.action.allow;
-        if (allowEl) allowEl.value = allow && allow.one_in ? allow.one_in : '';
-        setConditions(template.rule.conditions || []);
-        isApplyingTemplate = false;
-        updatePreview();
-        if (formEl) {
-          formEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      function deriveRuleName(rule) {
+        if (!rule || !Array.isArray(rule.conditions) || rule.conditions.length === 0) {
+          return "Custom JSON rule";
         }
+        const first = rule.conditions[0];
+        const metric = metricsByID.get(first.metric);
+        const metricLabel = metric ? metric.label : first.metric;
+        const operator = metric ? findOperator(metric.type, first.op) : null;
+        const operatorLabel = operator ? operator.label : first.op;
+        const prefix = rule.match === "any" ? "Hide when any" : "Hide when";
+        const name = [prefix, metricLabel, operatorLabel].filter(Boolean).join(" ");
+        return name ? name.slice(0, 120) : "Custom JSON rule";
       }
 
-      function renderTemplates() {
-        if (!templatesEl) return;
-        templatesEl.innerHTML = '';
-        templates.forEach(template => {
-          const card = document.createElement('div');
-          card.className = 'template-card';
-          const title = document.createElement('div');
-          title.className = 'template-title';
-          title.textContent = template.name;
-          const desc = document.createElement('div');
-          desc.className = 'muted';
-          desc.textContent = template.description;
-          card.appendChild(title);
-          card.appendChild(desc);
-          if (template.tags && template.tags.length) {
-            const tags = document.createElement('div');
-            tags.className = 'template-tags';
-            template.tags.forEach(tag => {
-              const pill = document.createElement('span');
-              pill.className = 'template-tag';
-              pill.textContent = tag;
-              tags.appendChild(pill);
-            });
-            card.appendChild(tags);
-          }
-          const actions = document.createElement('div');
-          actions.className = 'template-actions';
-          const useBtn = document.createElement('button');
-          useBtn.type = 'button';
-          useBtn.className = 'btn secondary small';
-          useBtn.textContent = 'Use template';
-          useBtn.addEventListener('click', () => applyTemplate(template));
-          actions.appendChild(useBtn);
-          card.appendChild(actions);
-          templatesEl.appendChild(card);
-        });
+      function renderValidation() {
+        if (!jsonInputEl) {
+          return { ok: false, rule: null };
+        }
+        const raw = jsonInputEl.value.trim();
+        if (!raw) {
+          if (errorEl) errorEl.textContent = "Paste rule JSON to validate.";
+          if (previewEl) previewEl.textContent = "{}";
+          if (nameEl) nameEl.value = "Custom JSON rule";
+          if (submitBtn) submitBtn.disabled = true;
+          return { ok: false, rule: null };
+        }
+        let parsed;
+        try {
+          parsed = JSON.parse(raw);
+        } catch (err) {
+          if (errorEl) errorEl.textContent = "Invalid JSON: " + err.message;
+          if (previewEl) previewEl.textContent = "{}";
+          if (submitBtn) submitBtn.disabled = true;
+          return { ok: false, rule: null };
+        }
+        const normalized = normalizeRule(parsed);
+        const validationError = validateRule(normalized);
+        if (validationError) {
+          if (errorEl) errorEl.textContent = validationError;
+          if (previewEl) previewEl.textContent = "{}";
+          if (submitBtn) submitBtn.disabled = true;
+          return { ok: false, rule: null };
+        }
+        if (errorEl) errorEl.textContent = "";
+        if (previewEl) previewEl.textContent = JSON.stringify(normalized, null, 2);
+        if (nameEl) nameEl.value = deriveRuleName(normalized);
+        if (submitBtn) submitBtn.disabled = false;
+        return { ok: true, rule: normalized };
       }
 
-      function renderReference() {
-        const metricsRef = document.getElementById('rule-metrics-ref');
-        if (metricsRef) {
-          metricsRef.innerHTML = '';
-          metrics.forEach(metric => {
-            const item = document.createElement('div');
-            item.className = 'reference-item';
-            item.innerHTML = `<div class="reference-item-title">${metric.label}<span class="pill muted">${metric.id}</span></div>` +
-              `<div class="muted">${metric.description}${metric.unit ? ` - unit ${metric.unit}` : ''}${metric.example ? ` - e.g. ${metric.example}` : ''}</div>`;
-            metricsRef.appendChild(item);
+      let copyResetTimer = null;
+      function setCopyButtonLabel(label) {
+        if (!copySpecBtn) return;
+        copySpecBtn.textContent = label;
+        if (copyResetTimer) {
+          window.clearTimeout(copyResetTimer);
+        }
+        copyResetTimer = window.setTimeout(function() {
+          copySpecBtn.textContent = "Copy spec";
+        }, 1500);
+      }
+
+      function copySpecText() {
+        if (!specEl) return;
+        const text = specEl.value || "";
+        if (!text) return;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(function() {
+            setCopyButtonLabel("Copied");
+          }).catch(function() {
+            specEl.focus();
+            specEl.select();
+            const copied = document.execCommand("copy");
+            setCopyButtonLabel(copied ? "Copied" : "Copy failed");
           });
+          return;
         }
-        const opsRef = document.getElementById('rule-operators-ref');
-        if (opsRef) {
-          opsRef.innerHTML = '';
-          Object.keys(operatorsByType).forEach(type => {
-            const block = document.createElement('div');
-            block.className = 'reference-item';
-            const ops = operatorsByType[type] || [];
-            const label = ops.map(op => op.label).join(', ');
-            block.innerHTML = `<div class="reference-item-title">${type}</div><div class="muted">${label}</div>`;
-            opsRef.appendChild(block);
-          });
-        }
+        specEl.focus();
+        specEl.select();
+        const copied = document.execCommand("copy");
+        setCopyButtonLabel(copied ? "Copied" : "Copy failed");
       }
 
-      addBtn.addEventListener('click', () => {
-        conditionsEl.appendChild(createConditionRow());
-        updatePreview();
+      if (specEl) {
+        specEl.value = buildSpecText();
+      }
+      if (copySpecBtn) {
+        copySpecBtn.addEventListener("click", copySpecText);
+      }
+      if (jsonInputEl) {
+        jsonInputEl.addEventListener("input", renderValidation);
+      }
+      formEl.addEventListener("submit", function(event) {
+        const result = renderValidation();
+        if (!result.ok) {
+          event.preventDefault();
+          return;
+        }
+        if (jsonInputEl) {
+          jsonInputEl.value = JSON.stringify(result.rule);
+        }
       });
-      matchEl.addEventListener('change', updatePreview);
-      allowEl.addEventListener('input', updatePreview);
-
-      conditionsEl.appendChild(createConditionRow());
-      renderTemplates();
-      renderReference();
-      updatePreview();
+      renderValidation();
     })();
   </script>
 {{end}}
