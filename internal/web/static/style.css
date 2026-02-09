@@ -1194,19 +1194,19 @@ a {
 }
 
 .activity-metrics {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 12px;
+  display: flex;
+  gap: 12px;
+  padding: 6px 10px;
+  border-radius: 8px;
   background: rgba(0, 0, 0, 0.15);
   border: 1px solid var(--border);
   min-width: 0;
 }
 
 .metric {
-  display: grid;
-  gap: 3px;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
   min-width: 0;
 }
 
@@ -1217,34 +1217,30 @@ a {
   letter-spacing: 0.08em;
   color: var(--ink-muted);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .metric-value {
   display: flex;
   align-items: baseline;
-  gap: 4px;
+  gap: 2px;
   font-variant-numeric: tabular-nums;
   min-width: 0;
   overflow: hidden;
 }
 
 .metric-number {
-  font-size: 18px;
+  font-size: 13px;
   font-weight: 700;
-  line-height: 1.05;
+  line-height: 1;
   color: var(--ink);
   white-space: nowrap;
 }
 
 .metric-unit {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   color: var(--ink-muted);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .metric.is-muted .metric-number,
@@ -2053,12 +2049,13 @@ input::placeholder {
   }
 
   .activity-metrics {
-    gap: 6px;
-    padding: 8px 10px;
+    gap: 8px;
+    padding: 5px 8px;
+    flex-wrap: wrap;
   }
 
   .metric-number {
-    font-size: 16px;
+    font-size: 12px;
   }
 }
 

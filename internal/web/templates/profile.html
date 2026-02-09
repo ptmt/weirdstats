@@ -138,6 +138,10 @@
             <img src="{{.PhotoURL}}" alt="Activity photo" loading="lazy">
           </div>
           {{end}}
+          <div class="activity-substats">
+            {{if .StopCount}}<span class="stat-tag secondary">{{.StopCount}} stops ({{.StopTotal}})</span>{{end}}
+            {{if .LightStops}}<span class="stat-tag secondary">{{.LightStops}} at lights</span>{{end}}
+          </div>
           <div class="activity-metrics">
             <div class="metric">
               <div class="metric-label">Distance</div>
@@ -160,10 +164,6 @@
                 {{if .PowerUnit}}<span class="metric-unit">{{.PowerUnit}}</span>{{end}}
               </div>
             </div>
-          </div>
-          <div class="activity-substats">
-            {{if .StopCount}}<span class="stat-tag secondary">{{.StopCount}} stops ({{.StopTotal}})</span>{{end}}
-            {{if .LightStops}}<span class="stat-tag secondary">{{.LightStops}} at lights</span>{{end}}
           </div>
         </article>
       {{end}}
