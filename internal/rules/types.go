@@ -59,8 +59,13 @@ type Condition struct {
 }
 
 type Action struct {
-	Type  string `json:"type"`
-	Allow *Allow `json:"allow,omitempty"`
+	Type     string    `json:"type"`
+	Override *Override `json:"override,omitempty"`
+	Allow    *Allow    `json:"allow,omitempty"`
+}
+
+type Override struct {
+	OneIn int `json:"one_in,omitempty"`
 }
 
 type Allow struct {

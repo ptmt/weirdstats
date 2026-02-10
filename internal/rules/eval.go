@@ -46,8 +46,21 @@ func ValidateRule(rule Rule, reg Registry) error {
 	if rule.Action.Type != "" && rule.Action.Type != "hide" {
 		return fmt.Errorf("%w: unsupported action", ErrInvalidRule)
 	}
+	if rule.Action.Override != nil {
+		if rule.Action.Override.OneIn < 0 || rule.Action.Override.OneIn == 1 {
+			return fmt.Errorf("%w: override.one_in must be >= 2", ErrInvalidRule)
+		}
+	}
 	if rule.Action.Allow != nil && rule.Action.Allow.OneIn > 0 && rule.Action.Allow.OneIn < 2 {
 		return fmt.Errorf("%w: allow.one_in must be >= 2", ErrInvalidRule)
+	}
+	if rule.Action.Allow != nil && rule.Action.Allow.OneIn < 0 {
+		return fmt.Errorf("%w: allow.one_in must be >= 2", ErrInvalidRule)
+	}
+	if rule.Action.Override != nil && rule.Action.Allow != nil &&
+		rule.Action.Override.OneIn >= 2 && rule.Action.Allow.OneIn >= 2 &&
+		rule.Action.Override.OneIn != rule.Action.Allow.OneIn {
+		return fmt.Errorf("%w: override.one_in and allow.one_in must match", ErrInvalidRule)
 	}
 	ops := DefaultOperators()
 	for _, cond := range rule.Conditions {
@@ -106,8 +119,8 @@ func Evaluate(rule Rule, reg Registry, ctx Context, ruleID int64) (bool, bool, e
 	if rule.Action.Type != "" && rule.Action.Type != "hide" {
 		return true, false, fmt.Errorf("unsupported action %s", rule.Action.Type)
 	}
-	if rule.Action.Allow != nil && rule.Action.Allow.OneIn >= 2 {
-		allowed := allowOneIn(ruleID, ctx.Activity.ID, rule.Action.Allow.OneIn)
+	if oneIn := effectiveOverrideOneIn(rule.Action); oneIn >= 2 {
+		allowed := allowOneIn(ruleID, ctx.Activity.ID, oneIn)
 		return true, !allowed, nil
 	}
 	return true, true, nil
@@ -135,10 +148,20 @@ func Describe(rule Rule, reg Registry) string {
 		parts = append(parts, fmt.Sprintf("%s %s %s", metric.Label, label, valueText))
 	}
 	description := strings.Join(parts, joiner)
-	if rule.Action.Allow != nil && rule.Action.Allow.OneIn >= 2 {
-		description += fmt.Sprintf(" · allow 1 in %d", rule.Action.Allow.OneIn)
+	if oneIn := effectiveOverrideOneIn(rule.Action); oneIn >= 2 {
+		description += fmt.Sprintf(" · override: unmute 1 in %d", oneIn)
 	}
 	return description
+}
+
+func effectiveOverrideOneIn(action Action) int {
+	if action.Override != nil && action.Override.OneIn >= 2 {
+		return action.Override.OneIn
+	}
+	if action.Allow != nil && action.Allow.OneIn >= 2 {
+		return action.Allow.OneIn
+	}
+	return 0
 }
 
 func operatorSpec(ops map[ValueType][]OperatorSpec, valueType ValueType, op string) *OperatorSpec {
