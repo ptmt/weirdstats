@@ -260,6 +260,7 @@
         lines.push('- action.type must be "hide".');
         lines.push("- action.override.one_in is optional and must be an integer >= 2 when present.");
         lines.push("- action.allow.one_in is also accepted as a legacy alias.");
+        lines.push("- if both override.one_in and allow.one_in are present, they must match.");
         lines.push("");
         lines.push("Operators by metric type:");
         Object.keys(operatorsByType).sort().forEach(function(valueType) {
@@ -316,17 +317,30 @@
             type: typeof safeAction.type === "string" && safeAction.type ? safeAction.type : "hide"
           }
         };
-        let oneInRaw;
         if (safeOverride && safeOverride.one_in !== undefined && safeOverride.one_in !== null && safeOverride.one_in !== "") {
-          oneInRaw = safeOverride.one_in;
-        } else if (safeAllow && safeAllow.one_in !== undefined && safeAllow.one_in !== null && safeAllow.one_in !== "") {
-          oneInRaw = safeAllow.one_in;
+          const oneIn = Number(safeOverride.one_in);
+          normalized.action.override = { one_in: Number.isInteger(oneIn) ? oneIn : safeOverride.one_in };
         }
-        if (oneInRaw !== undefined) {
-          const oneIn = Number(oneInRaw);
-          normalized.action.override = { one_in: Number.isInteger(oneIn) ? oneIn : oneInRaw };
+        if (safeAllow && safeAllow.one_in !== undefined && safeAllow.one_in !== null && safeAllow.one_in !== "") {
+          const oneIn = Number(safeAllow.one_in);
+          normalized.action.allow = { one_in: Number.isInteger(oneIn) ? oneIn : safeAllow.one_in };
+          if (!normalized.action.override) {
+            normalized.action.override = { one_in: normalized.action.allow.one_in };
+          }
         }
         return normalized;
+      }
+
+      function canonicalizeRule(rule) {
+        const out = JSON.parse(JSON.stringify(rule));
+        if (!out.action || typeof out.action !== "object") {
+          return out;
+        }
+        if (!out.action.override && out.action.allow && out.action.allow.one_in !== undefined) {
+          out.action.override = { one_in: out.action.allow.one_in };
+        }
+        delete out.action.allow;
+        return out;
       }
 
       function validateRule(rule) {
@@ -351,6 +365,19 @@
             return "action.override.one_in must be an integer >= 2.";
           }
           rule.action.override.one_in = oneIn;
+        }
+        if (rule.action.allow && rule.action.allow.one_in !== undefined) {
+          const oneIn = Number(rule.action.allow.one_in);
+          if (!Number.isInteger(oneIn) || oneIn < 2) {
+            return "action.allow.one_in must be an integer >= 2.";
+          }
+          rule.action.allow.one_in = oneIn;
+        }
+        if (rule.action.override && rule.action.allow &&
+            rule.action.override.one_in !== undefined &&
+            rule.action.allow.one_in !== undefined &&
+            rule.action.override.one_in !== rule.action.allow.one_in) {
+          return "action.override.one_in and action.allow.one_in must match when both are set.";
         }
         for (let i = 0; i < rule.conditions.length; i += 1) {
           const condition = rule.conditions[i];
@@ -437,7 +464,11 @@
         try {
           parsed = JSON.parse(raw);
         } catch (err) {
-          if (errorEl) errorEl.textContent = "Invalid JSON: " + err.message;
+          if (raw.includes("```")) {
+            if (errorEl) errorEl.textContent = "Invalid JSON: remove markdown fences and paste only the JSON object.";
+          } else {
+            if (errorEl) errorEl.textContent = "Invalid JSON: " + err.message;
+          }
           if (previewEl) previewEl.textContent = "{}";
           if (submitBtn) submitBtn.disabled = true;
           return { ok: false, rule: null };
@@ -450,11 +481,12 @@
           if (submitBtn) submitBtn.disabled = true;
           return { ok: false, rule: null };
         }
+        const canonical = canonicalizeRule(normalized);
         if (errorEl) errorEl.textContent = "";
-        if (previewEl) previewEl.textContent = JSON.stringify(normalized, null, 2);
-        if (nameEl) nameEl.value = deriveRuleName(normalized);
+        if (previewEl) previewEl.textContent = JSON.stringify(canonical, null, 2);
+        if (nameEl) nameEl.value = deriveRuleName(canonical);
         if (submitBtn) submitBtn.disabled = false;
-        return { ok: true, rule: normalized };
+        return { ok: true, rule: canonical };
       }
 
       let copyResetTimer = null;

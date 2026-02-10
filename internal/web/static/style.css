@@ -1413,13 +1413,14 @@ a {
   border-radius: 16px;
   background: var(--surface);
   border: 1px solid var(--border);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .rule-main {
   display: grid;
   gap: 6px;
   flex: 1 1 320px;
+  min-width: 0;
 }
 
 .rule-title {
@@ -1431,16 +1432,24 @@ a {
 
 .rule-actions {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 8px;
-  align-items: flex-start;
+  align-items: center;
+  flex-wrap: nowrap;
+  margin-left: auto;
 }
 
 .rule-action {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  margin: 0;
+}
+
+.rule-action .toggle,
+.rule-action .btn {
+  white-space: nowrap;
 }
 
 .rule-builder {
@@ -1831,12 +1840,19 @@ a {
     grid-template-columns: 1fr;
   }
 
+  .rule-row {
+    flex-wrap: wrap;
+  }
+
   .rule-actions {
     width: 100%;
+    flex-wrap: wrap;
+    margin-left: 0;
   }
 
   .rule-action {
     width: 100%;
+    flex-wrap: wrap;
   }
 
   .condition-row {

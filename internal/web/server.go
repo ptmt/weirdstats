@@ -1169,6 +1169,31 @@ func (s *Server) StravaCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/activities/?msg=strava+connected", http.StatusFound)
 }
 
+func compactErrMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := strings.TrimSpace(err.Error())
+	msg = strings.Join(strings.Fields(msg), " ")
+	if msg == "" {
+		return "unknown error"
+	}
+	const max = 200
+	if len(msg) > max {
+		return msg[:max] + "..."
+	}
+	return msg
+}
+
+func compactForLog(raw string, max int) string {
+	msg := strings.TrimSpace(raw)
+	msg = strings.Join(strings.Fields(msg), " ")
+	if max > 0 && len(msg) > max {
+		return msg[:max] + "..."
+	}
+	return msg
+}
+
 func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Redirect(w, r, "/activities/settings?msg=invalid+form", http.StatusFound)
@@ -1186,15 +1211,20 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 		}
 		parsedRule, err := rules.ParseRuleJSON(condition)
 		if err != nil {
-			http.Redirect(w, r, "/activities/settings?msg=invalid+rule+json", http.StatusFound)
+			detail := compactErrMessage(err)
+			log.Printf("settings add-rule parse failed: name=%q enabled=%t err=%v json=%q", name, enabled, err, compactForLog(condition, 500))
+			http.Redirect(w, r, "/activities/settings?msg="+url.QueryEscape("invalid rule json: "+detail), http.StatusFound)
 			return
 		}
 		if err := rules.ValidateRule(parsedRule, rules.DefaultRegistry()); err != nil {
-			http.Redirect(w, r, "/activities/settings?msg=invalid+rule+definition", http.StatusFound)
+			detail := compactErrMessage(err)
+			log.Printf("settings add-rule validation failed: name=%q enabled=%t err=%v json=%q", name, enabled, err, compactForLog(condition, 500))
+			http.Redirect(w, r, "/activities/settings?msg="+url.QueryEscape("invalid rule definition: "+detail), http.StatusFound)
 			return
 		}
 		normalized, err := json.Marshal(parsedRule)
 		if err != nil {
+			log.Printf("settings add-rule normalize failed: name=%q enabled=%t err=%v", name, enabled, err)
 			http.Redirect(w, r, "/activities/settings?msg=rule+save+failed", http.StatusFound)
 			return
 		}
@@ -1205,6 +1235,7 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 			Condition: condition,
 			Enabled:   enabled,
 		}); err != nil {
+			log.Printf("settings add-rule store failed: name=%q enabled=%t err=%v", name, enabled, err)
 			http.Redirect(w, r, "/activities/settings?msg=rule+save+failed", http.StatusFound)
 			return
 		}
