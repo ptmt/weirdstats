@@ -784,6 +784,11 @@ a {
   gap: 20px;
 }
 
+.activity-feed {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
 .stats-grid.has-contrib {
   margin-top: 14px;
 }
@@ -1095,8 +1100,8 @@ a {
 /* Activity cards (profile) */
 .activity-card {
   display: grid;
-  gap: 10px;
-  padding: 20px;
+  gap: 14px;
+  padding: 22px;
   min-width: 0;
   position: relative;
   transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
@@ -1127,7 +1132,8 @@ a {
 
 .activity-header-main {
   display: grid;
-  gap: 4px;
+  gap: 6px;
+  min-width: 0;
 }
 
 .activity-badges {
@@ -1164,7 +1170,8 @@ a {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  column-gap: 6px;
+  row-gap: 2px;
   font-size: 11px;
   letter-spacing: 0.02em;
   color: var(--ink-muted);
@@ -1177,6 +1184,7 @@ a {
 .activity-description {
   font-size: 12px;
   line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .activity-photo {
@@ -1194,9 +1202,10 @@ a {
 }
 
 .activity-metrics {
-  display: flex;
-  gap: 12px;
-  padding: 6px 10px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 10px 12px;
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.15);
   border: 1px solid var(--border);
@@ -1204,10 +1213,17 @@ a {
 }
 
 .metric {
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
+  display: grid;
+  gap: 3px;
+  align-content: start;
   min-width: 0;
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+}
+
+.metric:first-child {
+  padding-left: 0;
+  border-left: 0;
 }
 
 .metric-label {
@@ -1216,16 +1232,16 @@ a {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--ink-muted);
-  white-space: nowrap;
+  line-height: 1.2;
 }
 
 .metric-value {
   display: flex;
   align-items: baseline;
+  flex-wrap: wrap;
   gap: 2px;
   font-variant-numeric: tabular-nums;
   min-width: 0;
-  overflow: hidden;
 }
 
 .metric-number {
@@ -1233,14 +1249,14 @@ a {
   font-weight: 700;
   line-height: 1;
   color: var(--ink);
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .metric-unit {
   font-size: 10px;
   font-weight: 600;
   color: var(--ink-muted);
-  white-space: nowrap;
+  line-height: 1.2;
 }
 
 .metric.is-muted .metric-number,
@@ -1280,12 +1296,15 @@ a {
 }
 
 .activity-name {
+  display: block;
   font-family: "Bebas Neue", sans-serif;
   font-size: 20px;
+  line-height: 1.1;
   letter-spacing: 0.5px;
   color: var(--ink);
   text-decoration: none;
   transition: color 0.2s;
+  overflow-wrap: anywhere;
 }
 
 .activity-name:hover {
@@ -2087,13 +2106,25 @@ input::placeholder {
 
   .activity-card {
     padding: 16px;
-    gap: 8px;
+    gap: 10px;
   }
 
   .activity-metrics {
+    grid-template-columns: 1fr;
     gap: 8px;
-    padding: 5px 8px;
-    flex-wrap: wrap;
+    padding: 8px 10px;
+  }
+
+  .metric {
+    padding-left: 0;
+    border-left: 0;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+  }
+
+  .metric:first-child {
+    padding-top: 0;
+    border-top: 0;
   }
 
   .metric-number {

@@ -42,7 +42,7 @@
   {{end}}
 
   {{if .Activities}}
-    <section class="stats-grid{{if .Contributions}} has-contrib{{end}}">
+    <section class="stats-grid activity-feed{{if .Contributions}} has-contrib{{end}}">
       {{range .Activities}}
         <article class="card activity-card{{if .IsHidden}} is-hidden{{end}}">
           <div class="activity-header">
