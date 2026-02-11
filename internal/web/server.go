@@ -691,14 +691,26 @@ func (s *Server) ApplyActivityRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	baseDescription := activity.Description
+	baseHideFromHome := activity.HideFromHome
+	if s.ingestor != nil && s.ingestor.Strava != nil {
+		latest, err := s.ingestor.Strava.GetActivity(r.Context(), activityID)
+		if err != nil {
+			log.Printf("strava activity fetch failed (using cached description): %v", err)
+		} else {
+			baseDescription = latest.Description
+			baseHideFromHome = latest.HideFromHome
+		}
+	}
+
 	var descPtr *string
-	newDesc, descChanged := applyWeirdStatsDescription(activity.Description, statsSnapshot)
+	newDesc, descChanged := applyWeirdStatsDescription(baseDescription, statsSnapshot)
 	if descChanged {
 		descPtr = &newDesc
 	}
 
 	var hidePtr *bool
-	if hide && !activity.HideFromHome {
+	if hide && !baseHideFromHome {
 		val := true
 		hidePtr = &val
 	}
@@ -721,7 +733,7 @@ func (s *Server) ApplyActivityRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	descToStore := activity.Description
+	descToStore := baseDescription
 	if descPtr != nil {
 		descToStore = *descPtr
 	}
@@ -741,8 +753,8 @@ func totalStopSeconds(stops []StopView) int {
 }
 
 func (s *Server) evaluateHideRules(ctx context.Context, activity storage.Activity) (bool, stats.StopStats, error) {
-	statsSnapshot, err := s.store.GetActivityStats(ctx, activity.ID)
-	if err != nil && err != sql.ErrNoRows {
+	statsSnapshot, err := s.loadStatsSnapshot(ctx, activity.ID)
+	if err != nil {
 		return false, stats.StopStats{}, err
 	}
 	ruleRows, err := s.store.ListHideRules(ctx, activity.UserID)
@@ -796,6 +808,35 @@ func (s *Server) evaluateHideRules(ctx context.Context, activity storage.Activit
 	return hide, statsSnapshot, nil
 }
 
+func (s *Server) loadStatsSnapshot(ctx context.Context, activityID int64) (stats.StopStats, error) {
+	statsSnapshot, err := s.store.GetActivityStats(ctx, activityID)
+	if err == nil {
+		return statsSnapshot, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return stats.StopStats{}, err
+	}
+
+	stops, err := s.store.LoadActivityStops(ctx, activityID)
+	if err != nil {
+		return stats.StopStats{}, err
+	}
+	return stopStatsFromStops(stops), nil
+}
+
+func stopStatsFromStops(stops []storage.ActivityStop) stats.StopStats {
+	snapshot := stats.StopStats{
+		StopCount: len(stops),
+	}
+	for _, stop := range stops {
+		snapshot.StopTotalSeconds += stop.DurationSeconds
+		if stop.HasTrafficLight {
+			snapshot.TrafficLightStopCount++
+		}
+	}
+	return snapshot
+}
+
 const weirdStatsPrefix = "Weirdstats:"
 
 func applyWeirdStatsDescription(existing string, statsSnapshot stats.StopStats) (string, bool) {
@@ -804,19 +845,22 @@ func applyWeirdStatsDescription(existing string, statsSnapshot stats.StopStats) 
 		return existing, false
 	}
 
-	lines := strings.Split(existing, "\n")
-	filtered := make([]string, 0, len(lines)+1)
+	normalized := strings.ReplaceAll(existing, "\r\n", "\n")
+	lines := strings.Split(normalized, "\n")
+	filtered := make([]string, 0, len(lines))
 	for _, l := range lines {
 		if strings.HasPrefix(strings.TrimSpace(l), weirdStatsPrefix) {
 			continue
 		}
-		if strings.TrimSpace(l) == "" {
-			continue
-		}
 		filtered = append(filtered, l)
 	}
-	filtered = append(filtered, line)
-	updated := strings.Join(filtered, "\n")
+
+	base := strings.TrimRight(strings.Join(filtered, "\n"), "\n")
+	updated := line
+	if strings.TrimSpace(base) != "" {
+		updated = base + "\n\n" + line
+	}
+
 	return updated, updated != existing
 }
 
