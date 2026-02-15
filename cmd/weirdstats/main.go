@@ -77,6 +77,7 @@ func main() {
 	rulesProcessor := &processor.RulesProcessor{
 		Store:    store,
 		Registry: rules.DefaultRegistry(),
+		Strava:   stravaClient,
 	}
 	pipeline := &processor.PipelineProcessor{Ingest: ingestor, Stats: statsProcessor, Rules: rulesProcessor}
 	queueWorker := &worker.Worker{Store: store, Processor: pipeline}

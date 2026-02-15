@@ -3,14 +3,21 @@ package processor
 import (
 	"context"
 	"database/sql"
+	"log"
 
 	"weirdstats/internal/rules"
 	"weirdstats/internal/storage"
+	"weirdstats/internal/strava"
 )
+
+type ActivityUpdater interface {
+	UpdateActivity(ctx context.Context, id int64, update strava.UpdateActivityRequest) (strava.Activity, error)
+}
 
 type RulesProcessor struct {
 	Store    *storage.Store
 	Registry rules.Registry
+	Strava   ActivityUpdater
 }
 
 func (p *RulesProcessor) Process(ctx context.Context, activityID int64) error {
@@ -77,5 +84,22 @@ func (p *RulesProcessor) Process(ctx context.Context, activityID int64) error {
 		}
 	}
 
-	return p.Store.UpdateActivityHiddenByRule(ctx, activityID, hide)
+	if err := p.Store.UpdateActivityHiddenByRule(ctx, activityID, hide); err != nil {
+		return err
+	}
+
+	if !hide || activity.HideFromHome || p.Strava == nil {
+		return nil
+	}
+
+	hideFromHome := true
+	if _, err := p.Strava.UpdateActivity(ctx, activityID, strava.UpdateActivityRequest{
+		HideFromHome: &hideFromHome,
+	}); err != nil {
+		// Keep processing moving even if Strava update fails; activity can be retried manually.
+		log.Printf("rules processor: strava hide sync failed for activity %d: %v", activityID, err)
+		return nil
+	}
+
+	return p.Store.UpdateActivityHideFromHome(ctx, activityID, true)
 }
