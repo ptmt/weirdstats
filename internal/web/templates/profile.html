@@ -141,8 +141,19 @@
           {{if .HasRoutePreview}}
           <div class="activity-mini-map" aria-hidden="true">
             <svg viewBox="0 0 188 62" preserveAspectRatio="none" role="presentation" focusable="false">
+              <defs>
+                <linearGradient id="route-gradient-{{.ID}}" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="188" y2="62">
+                  <stop offset="0%" stop-color="#00f5ff"></stop>
+                  <stop offset="28%" stop-color="#ff3b9d"></stop>
+                  <stop offset="54%" stop-color="#b5ff2a"></stop>
+                  <stop offset="78%" stop-color="#7a5cff"></stop>
+                  <stop offset="100%" stop-color="#ff9a1f"></stop>
+                  <animateTransform attributeName="gradientTransform" type="rotate" values="0 94 31;210 94 31;0 94 31" dur="12s" repeatCount="indefinite"></animateTransform>
+                </linearGradient>
+              </defs>
               <path class="activity-mini-map-shadow" d="{{.RoutePath}}"></path>
-              <path class="activity-mini-map-line" d="{{.RoutePath}}"></path>
+              <path class="activity-mini-map-line" d="{{.RoutePath}}" style="stroke:url(#route-gradient-{{.ID}})"></path>
+              <path class="activity-mini-map-line-weird" d="{{.RoutePath}}" style="stroke:url(#route-gradient-{{.ID}})"></path>
               <circle class="activity-mini-map-start" cx="{{printf "%.2f" .RouteStartX}}" cy="{{printf "%.2f" .RouteStartY}}" r="2.3"></circle>
               <circle class="activity-mini-map-end" cx="{{printf "%.2f" .RouteEndX}}" cy="{{printf "%.2f" .RouteEndY}}" r="2.8"></circle>
             </svg>

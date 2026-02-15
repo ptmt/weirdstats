@@ -785,8 +785,9 @@ a {
 }
 
 .activity-feed {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: stretch;
 }
 
 .stats-grid.has-contrib {
@@ -1100,9 +1101,12 @@ a {
 /* Activity cards (profile) */
 .activity-card {
   display: grid;
-  gap: 14px;
-  padding: 22px;
+  grid-auto-rows: min-content;
+  gap: 16px;
+  padding: 22px 20px;
   min-width: 0;
+  min-height: 100%;
+  align-content: start;
   position: relative;
   overflow: visible;
   transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
@@ -1228,10 +1232,26 @@ a {
 
 .activity-mini-map-line {
   fill: none;
-  stroke: var(--cyan);
-  stroke-width: 2.2;
+  stroke-width: 2.4;
   stroke-linecap: round;
   stroke-linejoin: round;
+  filter: drop-shadow(0 0 6px rgba(255, 94, 230, 0.35));
+}
+
+.activity-mini-map-line-weird {
+  fill: none;
+  stroke-width: 1.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1.5 4.2;
+  opacity: 0.95;
+  animation: route-weird-dash 2.8s linear infinite;
+}
+
+@keyframes route-weird-dash {
+  to {
+    stroke-dashoffset: -38;
+  }
 }
 
 .activity-mini-map-start,
@@ -1250,8 +1270,8 @@ a {
 
 .activity-metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: 1fr;
+  gap: 8px;
   padding: 10px 12px;
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.15);
@@ -1264,13 +1284,13 @@ a {
   gap: 3px;
   align-content: start;
   min-width: 0;
-  padding-left: 10px;
-  border-left: 1px solid var(--border);
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
 }
 
 .metric:first-child {
-  padding-left: 0;
-  border-left: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 
 .metric-label {
@@ -1324,10 +1344,10 @@ a {
 }
 
 .activity-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: start;
+  gap: 10px;
 }
 
 .activity-header > div:first-child {
@@ -1361,6 +1381,7 @@ a {
 /* Activity menu dropdown */
 .activity-menu {
   position: relative;
+  justify-self: end;
 }
 
 .activity-menu-btn {
@@ -2155,9 +2176,32 @@ input::placeholder {
     grid-template-columns: 1fr;
   }
 
-  .activity-card {
-    padding: 16px;
+  .activity-feed {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
+  }
+
+  .activity-card {
+    padding: 14px;
+    gap: 10px;
+  }
+
+  .activity-name {
+    font-size: 17px;
+    line-height: 1.12;
+  }
+
+  .activity-meta {
+    font-size: 10px;
+  }
+
+  .activity-mini-map svg {
+    height: 54px;
+  }
+
+  .activity-substats .stat-tag {
+    padding: 4px 8px;
+    font-size: 11px;
   }
 
   .activity-metrics {
@@ -2167,8 +2211,6 @@ input::placeholder {
   }
 
   .metric {
-    padding-left: 0;
-    border-left: 0;
     padding-top: 8px;
     border-top: 1px solid var(--border);
   }
