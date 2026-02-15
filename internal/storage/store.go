@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -107,6 +108,11 @@ type ActivityTime struct {
 	MovingTime    int
 	EffortScore   float64
 	EffortVersion int
+}
+
+type ActivityRoutePoint struct {
+	Lat float64
+	Lon float64
 }
 
 func Open(path string) (*Store, error) {
@@ -1143,6 +1149,108 @@ ORDER BY seq
 		return nil, err
 	}
 	return stops, nil
+}
+
+func (s *Store) ListActivityRoutePreviewPoints(ctx context.Context, activityIDs []int64, maxPoints int) (map[int64][]ActivityRoutePoint, error) {
+	previews := make(map[int64][]ActivityRoutePoint, len(activityIDs))
+	if len(activityIDs) == 0 {
+		return previews, nil
+	}
+	if maxPoints <= 1 {
+		maxPoints = 2
+	}
+
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(activityIDs)), ",")
+	args := make([]interface{}, 0, len(activityIDs))
+	for _, id := range activityIDs {
+		args = append(args, id)
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+SELECT activity_id, lat, lon
+FROM activity_points
+WHERE activity_id IN (`+placeholders+`)
+ORDER BY activity_id, seq
+`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var (
+		currentID  int64
+		havePoints bool
+		raw        []ActivityRoutePoint
+	)
+	flush := func() {
+		if !havePoints {
+			return
+		}
+		previews[currentID] = sampleActivityRoutePoints(raw, maxPoints)
+	}
+
+	for rows.Next() {
+		var (
+			activityID int64
+			point      ActivityRoutePoint
+		)
+		if err := rows.Scan(&activityID, &point.Lat, &point.Lon); err != nil {
+			return nil, err
+		}
+
+		if !havePoints {
+			currentID = activityID
+			havePoints = true
+		} else if activityID != currentID {
+			flush()
+			currentID = activityID
+			raw = raw[:0]
+		}
+		raw = append(raw, point)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	flush()
+	return previews, nil
+}
+
+func sampleActivityRoutePoints(points []ActivityRoutePoint, maxPoints int) []ActivityRoutePoint {
+	if len(points) == 0 {
+		return nil
+	}
+	if maxPoints <= 1 {
+		maxPoints = 2
+	}
+	if len(points) <= maxPoints {
+		out := make([]ActivityRoutePoint, len(points))
+		copy(out, points)
+		return out
+	}
+
+	step := float64(len(points)-1) / float64(maxPoints-1)
+	sampled := make([]ActivityRoutePoint, 0, maxPoints)
+	lastIdx := -1
+	for i := 0; i < maxPoints; i++ {
+		idx := int(math.Round(float64(i) * step))
+		if idx <= lastIdx {
+			idx = lastIdx + 1
+		}
+		if idx >= len(points) {
+			idx = len(points) - 1
+		}
+		sampled = append(sampled, points[idx])
+		lastIdx = idx
+		if idx == len(points)-1 {
+			break
+		}
+	}
+
+	last := points[len(points)-1]
+	if tail := sampled[len(sampled)-1]; tail != last {
+		sampled = append(sampled, last)
+	}
+	return sampled
 }
 
 func (s *Store) ReplaceActivityStops(ctx context.Context, activityID int64, stops []ActivityStop, updatedAt time.Time) error {

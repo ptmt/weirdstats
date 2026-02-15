@@ -48,33 +48,39 @@ type Server struct {
 }
 
 type ActivityView struct {
-	ID             int64
-	Name           string
-	Type           string
-	TypeLabel      string
-	TypeClass      string
-	StartTime      string
-	Description    string
-	Distance       string
-	DistanceValue  string
-	DistanceUnit   string
-	Duration       string
-	PaceLabel      string
-	PaceValue      string
-	PaceUnit       string
-	PowerValue     string
-	PowerUnit      string
-	HasPower       bool
-	HasStats       bool
-	StopCount      int
-	StopTotal      string
-	LightStops     int
-	RoadCrossings  int
-	RecalculatedAt string
-	FetchedAt      string
-	IsHidden       bool
-	FeedMuted      bool
-	PhotoURL       string
+	ID              int64
+	Name            string
+	Type            string
+	TypeLabel       string
+	TypeClass       string
+	StartTime       string
+	Description     string
+	Distance        string
+	DistanceValue   string
+	DistanceUnit    string
+	Duration        string
+	PaceLabel       string
+	PaceValue       string
+	PaceUnit        string
+	PowerValue      string
+	PowerUnit       string
+	HasPower        bool
+	HasStats        bool
+	StopCount       int
+	StopTotal       string
+	LightStops      int
+	RoadCrossings   int
+	RecalculatedAt  string
+	FetchedAt       string
+	IsHidden        bool
+	FeedMuted       bool
+	PhotoURL        string
+	HasRoutePreview bool
+	RoutePath       string
+	RouteStartX     float64
+	RouteStartY     float64
+	RouteEndX       float64
+	RouteEndY       float64
 }
 
 type StopView struct {
@@ -405,6 +411,15 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var views []ActivityView
+	activityIDs := make([]int64, 0, len(activities))
+	for _, activity := range activities {
+		activityIDs = append(activityIDs, activity.ID)
+	}
+	routePointsByActivity, err := s.store.ListActivityRoutePreviewPoints(r.Context(), activityIDs, 48)
+	if err != nil {
+		log.Printf("route preview load failed: %v", err)
+		routePointsByActivity = map[int64][]storage.ActivityRoutePoint{}
+	}
 	for _, activity := range activities {
 		view := ActivityView{
 			ID:          activity.ID,
@@ -421,6 +436,14 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 			PhotoURL:    activity.PhotoURL,
 		}
 		enrichActivityView(&view, activity.Activity)
+		if path, startX, startY, endX, endY, ok := buildRoutePreviewPath(routePointsByActivity[activity.ID], 188, 62, 8); ok {
+			view.HasRoutePreview = true
+			view.RoutePath = path
+			view.RouteStartX = startX
+			view.RouteStartY = startY
+			view.RouteEndX = endX
+			view.RouteEndY = endY
+		}
 		views = append(views, view)
 	}
 	now := time.Now()
@@ -1746,6 +1769,87 @@ func contributionTooltip(day time.Time, inRange, inYear bool, effortLabel string
 	default:
 		return fmt.Sprintf("%s · Outside %d", label, year)
 	}
+}
+
+func buildRoutePreviewPath(points []storage.ActivityRoutePoint, width, height, padding float64) (string, float64, float64, float64, float64, bool) {
+	if len(points) < 2 {
+		return "", 0, 0, 0, 0, false
+	}
+	if width <= (padding*2) || height <= (padding*2) {
+		return "", 0, 0, 0, 0, false
+	}
+
+	minLat, maxLat := points[0].Lat, points[0].Lat
+	minLon, maxLon := points[0].Lon, points[0].Lon
+	for _, point := range points[1:] {
+		if point.Lat < minLat {
+			minLat = point.Lat
+		}
+		if point.Lat > maxLat {
+			maxLat = point.Lat
+		}
+		if point.Lon < minLon {
+			minLon = point.Lon
+		}
+		if point.Lon > maxLon {
+			maxLon = point.Lon
+		}
+	}
+
+	latSpan := maxLat - minLat
+	lonSpan := maxLon - minLon
+	if latSpan == 0 && lonSpan == 0 {
+		return "", 0, 0, 0, 0, false
+	}
+
+	innerWidth := width - (padding * 2)
+	innerHeight := height - (padding * 2)
+	if latSpan == 0 {
+		latSpan = 1
+	}
+	if lonSpan == 0 {
+		lonSpan = 1
+	}
+
+	scale := math.Min(innerWidth/lonSpan, innerHeight/latSpan)
+	if scale <= 0 || math.IsNaN(scale) || math.IsInf(scale, 0) {
+		return "", 0, 0, 0, 0, false
+	}
+
+	routeWidth := (maxLon - minLon) * scale
+	routeHeight := (maxLat - minLat) * scale
+	offsetX := padding + ((innerWidth - routeWidth) / 2)
+	offsetY := padding + ((innerHeight - routeHeight) / 2)
+
+	var path strings.Builder
+	path.Grow(len(points) * 14)
+
+	pointCount := 0
+	var startX, startY, endX, endY float64
+	for _, point := range points {
+		x := offsetX
+		if maxLon != minLon {
+			x += (point.Lon - minLon) * scale
+		}
+		y := offsetY
+		if maxLat != minLat {
+			y += (maxLat - point.Lat) * scale
+		}
+
+		if pointCount == 0 {
+			fmt.Fprintf(&path, "M %.2f %.2f", x, y)
+			startX, startY = x, y
+		} else {
+			fmt.Fprintf(&path, " L %.2f %.2f", x, y)
+		}
+		endX, endY = x, y
+		pointCount++
+	}
+
+	if pointCount < 2 || (startX == endX && startY == endY) {
+		return "", 0, 0, 0, 0, false
+	}
+	return path.String(), startX, startY, endX, endY, true
 }
 
 func enrichActivityView(view *ActivityView, activity storage.Activity) {

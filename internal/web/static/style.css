@@ -1202,6 +1202,52 @@ a {
   display: block;
 }
 
+.activity-mini-map {
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background:
+    linear-gradient(135deg, rgba(0, 212, 255, 0.09), rgba(236, 72, 153, 0.08)),
+    rgba(0, 0, 0, 0.16);
+  padding: 3px;
+  overflow: hidden;
+}
+
+.activity-mini-map svg {
+  display: block;
+  width: 100%;
+  height: 62px;
+}
+
+.activity-mini-map-shadow {
+  fill: none;
+  stroke: rgba(0, 0, 0, 0.35);
+  stroke-width: 4.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.activity-mini-map-line {
+  fill: none;
+  stroke: var(--cyan);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.activity-mini-map-start,
+.activity-mini-map-end {
+  stroke: rgba(0, 0, 0, 0.38);
+  stroke-width: 1;
+}
+
+.activity-mini-map-start {
+  fill: var(--cyan);
+}
+
+.activity-mini-map-end {
+  fill: var(--magenta);
+}
+
 .activity-metrics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

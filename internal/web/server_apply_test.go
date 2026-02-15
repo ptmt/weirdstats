@@ -1,6 +1,7 @@
 package web
 
 import (
+	"strings"
 	"testing"
 
 	"weirdstats/internal/stats"
@@ -88,5 +89,44 @@ func TestStopStatsFromStops(t *testing.T) {
 	}
 	if got.TrafficLightStopCount != 2 {
 		t.Fatalf("expected 2 traffic-light stops, got %d", got.TrafficLightStopCount)
+	}
+}
+
+func TestBuildRoutePreviewPath(t *testing.T) {
+	points := []storage.ActivityRoutePoint{
+		{Lat: 37.7788, Lon: -122.4350},
+		{Lat: 37.7762, Lon: -122.4269},
+		{Lat: 37.7701, Lon: -122.4213},
+		{Lat: 37.7685, Lon: -122.4120},
+	}
+
+	path, startX, startY, endX, endY, ok := buildRoutePreviewPath(points, 188, 62, 8)
+	if !ok {
+		t.Fatalf("expected route preview path")
+	}
+	if path == "" {
+		t.Fatalf("expected non-empty svg path")
+	}
+	if !strings.HasPrefix(path, "M ") {
+		t.Fatalf("expected path to start with move command, got %q", path)
+	}
+	if !strings.Contains(path, " L ") {
+		t.Fatalf("expected line segments in path, got %q", path)
+	}
+	if startX == endX && startY == endY {
+		t.Fatalf("expected distinct start/end points")
+	}
+	if startX < 0 || startX > 188 || endX < 0 || endX > 188 {
+		t.Fatalf("x coordinates out of bounds: start=%f end=%f", startX, endX)
+	}
+	if startY < 0 || startY > 62 || endY < 0 || endY > 62 {
+		t.Fatalf("y coordinates out of bounds: start=%f end=%f", startY, endY)
+	}
+}
+
+func TestBuildRoutePreviewPathRejectsSinglePoint(t *testing.T) {
+	_, _, _, _, _, ok := buildRoutePreviewPath([]storage.ActivityRoutePoint{{Lat: 1, Lon: 1}}, 188, 62, 8)
+	if ok {
+		t.Fatalf("expected single-point route to be rejected")
 	}
 }
