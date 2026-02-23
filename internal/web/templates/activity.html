@@ -73,13 +73,50 @@
         height: 16px;
         color: var(--ink-muted);
       }
-      .grid {
+      .activity-detail-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        grid-template-columns: minmax(0, 1.45fr) minmax(280px, 1fr);
         gap: 20px;
       }
-      .card {
-        height: 100%;
+      .activity-route-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.45fr) minmax(240px, 1fr);
+        gap: 16px;
+      }
+      .activity-route-map-wrap {
+        display: grid;
+        gap: 10px;
+      }
+      .activity-route-map-wrap #map {
+        height: min(62vh, 620px);
+        min-height: 480px;
+        width: 100%;
+      }
+      .activity-route-events {
+        display: grid;
+        gap: 10px;
+        min-height: 0;
+      }
+      .activity-route-events h4 {
+        margin: 0;
+        font-family: "Bebas Neue", sans-serif;
+        font-size: 20px;
+        letter-spacing: 1px;
+        color: var(--ink);
+      }
+      .activity-route-events .stop-list {
+        max-height: min(62vh, 620px);
+        overflow: auto;
+      }
+      @media (max-width: 980px) {
+        .activity-detail-grid,
+        .activity-route-grid {
+          grid-template-columns: 1fr;
+        }
+        .activity-route-map-wrap #map {
+          height: min(48vh, 460px);
+          min-height: 420px;
+        }
       }
       .card h3 {
         font-family: "Bebas Neue", sans-serif;
@@ -230,7 +267,7 @@
     </div>
   </section>
 
-  <section class="grid">
+  <section class="activity-detail-grid">
     <article class="card chart-card">
       <h3>Speed &amp; events</h3>
       <div class="layer-controls">
@@ -253,33 +290,36 @@
       <div class="map-note">Log scale {{if eq .Activity.Type "Run"}}pace{{else}}speed{{end}}; shaded regions highlight detected stops.</div>
     </article>
     <article class="card">
-      <h3>Events</h3>
-      {{if .Stops}}
-        <div class="stop-list">
-          {{range .Stops}}
-            <div class="stop-row">
-              <div class="label">
-                {{if .HasTrafficLight}}<span class="light-dot"></span>{{else if .HasRoadCrossing}}<span class="light-dot" style="background:#3b82f6; box-shadow: 0 0 0 4px rgba(59,130,246,0.15);"></span>{{else}}<span class="light-dot" style="background:#f5a524; box-shadow: 0 0 0 4px rgba(245,165,36,0.15);"></span>{{end}}
-                <div>
-                  <div>{{.Duration}}</div>
-                  <div class="muted">{{printf "%.5f" .Lat}}, {{printf "%.5f" .Lon}}{{if .CrossingRoad}} · {{.CrossingRoad}}{{end}}</div>
-                </div>
-              </div>
-              {{if .HasTrafficLight}}<span>🚦</span>{{else if .HasRoadCrossing}}<span>🚶</span>{{else}}<span class="muted">Stop</span>{{end}}
-            </div>
-          {{end}}
+      <h3>Route</h3>
+      <div class="activity-route-grid">
+        <div class="activity-route-map-wrap">
+          <div id="map"></div>
+          <div class="map-note">Red: traffic lights · Blue: road crossings · Orange: other stops</div>
+          <div class="map-note" id="map-error" style="display:none; color:#c00;">Map tiles failed to load. Configure an alternative tile URL if needed.</div>
         </div>
-      {{else}}
-        <p class="muted">No events detected for this activity.</p>
-      {{end}}
+        <aside class="activity-route-events">
+          <h4>Events</h4>
+          {{if .Stops}}
+            <div class="stop-list">
+              {{range .Stops}}
+                <div class="stop-row">
+                  <div class="label">
+                    {{if .HasTrafficLight}}<span class="light-dot"></span>{{else if .HasRoadCrossing}}<span class="light-dot" style="background:#3b82f6; box-shadow: 0 0 0 4px rgba(59,130,246,0.15);"></span>{{else}}<span class="light-dot" style="background:#f5a524; box-shadow: 0 0 0 4px rgba(245,165,36,0.15);"></span>{{end}}
+                    <div>
+                      <div>{{.Duration}}</div>
+                      <div class="muted">{{printf "%.5f" .Lat}}, {{printf "%.5f" .Lon}}{{if .CrossingRoad}} · {{.CrossingRoad}}{{end}}</div>
+                    </div>
+                  </div>
+                  {{if .HasTrafficLight}}<span>🚦</span>{{else if .HasRoadCrossing}}<span>🚶</span>{{else}}<span class="muted">Stop</span>{{end}}
+                </div>
+              {{end}}
+            </div>
+          {{else}}
+            <p class="muted">No events detected for this activity.</p>
+          {{end}}
+        </aside>
+      </div>
     </article>
-  </section>
-
-  <section class="card" style="margin-top: 16px;">
-    <h3>Route</h3>
-    <div id="map"></div>
-    <div class="map-note">Red: traffic lights · Blue: road crossings · Orange: other stops</div>
-    <div class="map-note" id="map-error" style="display:none; color:#c00;">Map tiles failed to load. Configure an alternative tile URL if needed.</div>
   </section>
   <link rel="stylesheet" href="/static/leaflet/leaflet.css" />
   <script src="/static/leaflet/leaflet.js"></script>
