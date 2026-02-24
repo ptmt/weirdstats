@@ -790,6 +790,24 @@ a {
   align-items: stretch;
 }
 
+.activity-card-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(220px, 0.95fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.activity-card-map-col,
+.activity-card-stats-col {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.activity-card-split--single {
+  grid-template-columns: 1fr;
+}
+
 .stats-grid.has-contrib {
   margin-top: 14px;
 }
@@ -1108,7 +1126,7 @@ a {
   min-height: 100%;
   align-content: start;
   position: relative;
-  overflow: visible;
+  overflow: hidden;
   transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
 }
 
@@ -1214,12 +1232,14 @@ a {
     rgba(0, 0, 0, 0.16);
   padding: 3px;
   overflow: hidden;
+  min-height: 150px;
 }
 
 .activity-mini-map svg {
   display: block;
   width: 100%;
-  height: 62px;
+  height: 140px;
+  min-height: 140px;
 }
 
 .activity-mini-map-shadow {
@@ -2177,7 +2197,7 @@ input::placeholder {
   }
 
   .activity-feed {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
     gap: 10px;
   }
 
@@ -2196,7 +2216,16 @@ input::placeholder {
   }
 
   .activity-mini-map svg {
-    height: 54px;
+    height: 120px;
+    min-height: 120px;
+  }
+
+  .activity-card-split {
+    grid-template-columns: 1fr;
+  }
+
+  .activity-mini-map {
+    min-height: 120px;
   }
 
   .activity-substats .stat-tag {

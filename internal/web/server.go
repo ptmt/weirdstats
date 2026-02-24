@@ -436,7 +436,7 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 			PhotoURL:    activity.PhotoURL,
 		}
 		enrichActivityView(&view, activity.Activity)
-		if path, startX, startY, endX, endY, ok := buildRoutePreviewPath(routePointsByActivity[activity.ID], 188, 62, 8); ok {
+		if path, startX, startY, endX, endY, ok := buildRoutePreviewPath(routePointsByActivity[activity.ID], 188, 120, 8); ok {
 			view.HasRoutePreview = true
 			view.RoutePath = path
 			view.RouteStartX = startX
