@@ -141,25 +141,7 @@
           <div class="activity-card-split{{if not .HasRoutePreview}} activity-card-split--single{{end}}">
             <div class="activity-card-map-col">
               {{if .HasRoutePreview}}
-              <div class="activity-mini-map" aria-hidden="true">
-                <svg viewBox="0 0 188 120" preserveAspectRatio="none" role="presentation" focusable="false">
-                  <defs>
-                    <linearGradient id="route-gradient-{{.ID}}" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="188" y2="120">
-                      <stop offset="0%" stop-color="#00f5ff"></stop>
-                      <stop offset="28%" stop-color="#ff3b9d"></stop>
-                      <stop offset="54%" stop-color="#b5ff2a"></stop>
-                      <stop offset="78%" stop-color="#7a5cff"></stop>
-                      <stop offset="100%" stop-color="#ff9a1f"></stop>
-                      <animateTransform attributeName="gradientTransform" type="rotate" values="0 94 60;210 94 60;0 94 60" dur="12s" repeatCount="indefinite"></animateTransform>
-                    </linearGradient>
-                  </defs>
-                  <path class="activity-mini-map-shadow" d="{{.RoutePath}}"></path>
-                  <path class="activity-mini-map-line" d="{{.RoutePath}}" style="stroke:url(#route-gradient-{{.ID}})"></path>
-                  <path class="activity-mini-map-line-weird" d="{{.RoutePath}}" style="stroke:url(#route-gradient-{{.ID}})"></path>
-                  <circle class="activity-mini-map-start" cx="{{printf "%.2f" .RouteStartX}}" cy="{{printf "%.2f" .RouteStartY}}" r="2.3"></circle>
-                  <circle class="activity-mini-map-end" cx="{{printf "%.2f" .RouteEndX}}" cy="{{printf "%.2f" .RouteEndY}}" r="2.8"></circle>
-                </svg>
-              </div>
+              <div class="activity-mini-map" data-route-points='{{.RoutePreviewJSON}}' aria-hidden="true"></div>
               {{end}}
             </div>
             <div class="activity-card-stats-col">
@@ -207,7 +189,75 @@
     </section>
   {{end}}
 
+  <link rel="stylesheet" href="/static/leaflet/leaflet.css" />
+  <script src="/static/leaflet/leaflet.js"></script>
   <script>
+    (function() {
+      const pointsToMap = document.querySelectorAll('.activity-mini-map[data-route-points]');
+      const tileUrl = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png';
+      const tileAttribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; CARTO';
+
+      pointsToMap.forEach((el) => {
+        let points = [];
+        try {
+          points = JSON.parse(el.getAttribute('data-route-points') || '[]');
+        } catch (err) {
+          return;
+        }
+        if (!Array.isArray(points) || points.length < 2) return;
+
+        const map = L.map(el, {
+          attributionControl: false,
+          zoomControl: false,
+          dragging: false,
+          scrollWheelZoom: false,
+          doubleClickZoom: false,
+          boxZoom: false,
+          keyboard: false,
+          touchZoom: false,
+          tap: false
+        });
+
+        L.tileLayer(tileUrl, {
+          attribution: tileAttribution,
+          subdomains: 'abcd'
+        }).addTo(map);
+
+        const coords = points
+          .map((p) => {
+            const lat = Number(p.lat);
+            const lon = Number(p.lon);
+            if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+            return [lat, lon];
+          })
+          .filter(Boolean);
+        if (coords.length < 2) {
+          return;
+        }
+        const polyline = L.polyline(coords, {
+          color: '#a855f7',
+          weight: 3,
+          opacity: 0.95
+        }).addTo(map);
+        if (coords.length > 0) {
+          map.fitBounds(polyline.getBounds(), { padding: [8, 8], maxZoom: 14 });
+        }
+
+        L.circleMarker(coords[0], {
+          radius: 4,
+          color: 'rgba(6, 182, 212, 0.95)',
+          fillColor: 'rgba(6, 182, 212, 0.95)',
+          fillOpacity: 1
+        }).addTo(map);
+        L.circleMarker(coords[coords.length - 1], {
+          radius: 4,
+          color: 'rgba(236, 72, 153, 0.95)',
+          fillColor: 'rgba(236, 72, 153, 0.95)',
+          fillOpacity: 1
+        }).addTo(map);
+      });
+    })();
+
     document.addEventListener('click', function(e) {
       document.querySelectorAll('.activity-menu.open').forEach(function(menu) {
         if (!menu.contains(e.target)) {

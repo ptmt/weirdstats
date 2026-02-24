@@ -81,6 +81,7 @@ type ActivityView struct {
 	RouteStartY     float64
 	RouteEndX       float64
 	RouteEndY       float64
+	RoutePreviewJSON template.JS
 }
 
 type StopView struct {
@@ -92,6 +93,11 @@ type StopView struct {
 	HasTrafficLight bool    `json:"has_traffic_light"`
 	HasRoadCrossing bool    `json:"has_road_crossing"`
 	CrossingRoad    string  `json:"crossing_road,omitempty"`
+}
+
+type routePreviewPoint struct {
+	Lat float64 `json:"lat"`
+	Lon float64 `json:"lon"`
 }
 
 type ActivityDetailData struct {
@@ -436,8 +442,25 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 			PhotoURL:    activity.PhotoURL,
 		}
 		enrichActivityView(&view, activity.Activity)
-		if path, startX, startY, endX, endY, ok := buildRoutePreviewPath(routePointsByActivity[activity.ID], 188, 120, 8); ok {
-			view.HasRoutePreview = true
+		routePoints := routePointsByActivity[activity.ID]
+		if len(routePoints) > 0 {
+			previewPoints := make([]routePreviewPoint, 0, len(routePoints))
+			for _, p := range routePoints {
+				previewPoints = append(previewPoints, routePreviewPoint{
+					Lat: p.Lat,
+					Lon: p.Lon,
+				})
+			}
+			pointsJSON, err := json.Marshal(previewPoints)
+			if err != nil {
+				log.Printf("route preview marshal failed for activity %d: %v", activity.ID, err)
+				view.RoutePreviewJSON = "[]"
+			} else {
+				view.RoutePreviewJSON = template.JS(pointsJSON)
+				view.HasRoutePreview = true
+			}
+		}
+		if path, startX, startY, endX, endY, ok := buildRoutePreviewPath(routePoints, 188, 120, 8); ok {
 			view.RoutePath = path
 			view.RouteStartX = startX
 			view.RouteStartY = startY
