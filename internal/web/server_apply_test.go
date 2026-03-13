@@ -1,11 +1,16 @@
 package web
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"weirdstats/internal/gps"
+	"weirdstats/internal/maps"
 	"weirdstats/internal/stats"
 	"weirdstats/internal/storage"
 )
@@ -21,47 +26,53 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 		AvgPower:       200,
 		AvgSpeedMPS:    30.0 / 3.6,
 	}
-	line := "Longest uninterrupted segment: 48km - 200w - 30kmh · 3 stops (1m 35s total) · 2 at lights #weirdstats"
+	coffeeFact := coffeeStopFact{Name: "Bean Machine"}
+	line := "Longest uninterrupted segment: 48km - 200w - 30kmh · Detected Coffee Stop: Bean Machine · 3 stops (1m 35s total) · 2 at lights #weirdstats"
 
 	tests := []struct {
-		name     string
-		existing string
-		stats    stats.StopStats
-		rideFact rideSegmentFact
-		want     string
-		changed  bool
+		name       string
+		existing   string
+		stats      stats.StopStats
+		rideFact   rideSegmentFact
+		coffeeFact coffeeStopFact
+		want       string
+		changed    bool
 	}{
 		{
-			name:     "appends to empty description",
-			existing: "",
-			stats:    snapshot,
-			rideFact: rideFact,
-			want:     line,
-			changed:  true,
+			name:       "appends to empty description",
+			existing:   "",
+			stats:      snapshot,
+			rideFact:   rideFact,
+			coffeeFact: coffeeFact,
+			want:       line,
+			changed:    true,
 		},
 		{
-			name:     "appends after existing text",
-			existing: "Morning ride with intervals",
-			stats:    snapshot,
-			rideFact: rideFact,
-			want:     "Morning ride with intervals\n\n" + line,
-			changed:  true,
+			name:       "appends after existing text",
+			existing:   "Morning ride with intervals",
+			stats:      snapshot,
+			rideFact:   rideFact,
+			coffeeFact: coffeeFact,
+			want:       "Morning ride with intervals\n\n" + line,
+			changed:    true,
 		},
 		{
-			name:     "replaces previous weirdstats line and keeps paragraphs",
-			existing: "First paragraph.\n\nSecond paragraph.\nWeirdstats: 1 stops (12s total)",
-			stats:    snapshot,
-			rideFact: rideFact,
-			want:     "First paragraph.\n\nSecond paragraph.\n\n" + line,
-			changed:  true,
+			name:       "replaces previous weirdstats line and keeps paragraphs",
+			existing:   "First paragraph.\n\nSecond paragraph.\nWeirdstats: 1 stops (12s total)",
+			stats:      snapshot,
+			rideFact:   rideFact,
+			coffeeFact: coffeeFact,
+			want:       "First paragraph.\n\nSecond paragraph.\n\n" + line,
+			changed:    true,
 		},
 		{
-			name:     "no change when same line already present",
-			existing: "Morning ride with intervals\n\n" + line,
-			stats:    snapshot,
-			rideFact: rideFact,
-			want:     "Morning ride with intervals\n\n" + line,
-			changed:  false,
+			name:       "no change when same line already present",
+			existing:   "Morning ride with intervals\n\n" + line,
+			stats:      snapshot,
+			rideFact:   rideFact,
+			coffeeFact: coffeeFact,
+			want:       "Morning ride with intervals\n\n" + line,
+			changed:    false,
 		},
 		{
 			name:     "no stats keeps description unchanged",
@@ -74,7 +85,7 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, changed := applyWeirdStatsDescription(tt.existing, tt.stats, tt.rideFact)
+			got, changed := applyWeirdStatsDescription(tt.existing, tt.stats, tt.rideFact, tt.coffeeFact)
 			if got != tt.want {
 				t.Fatalf("unexpected description\nwant: %q\n got: %q", tt.want, got)
 			}
@@ -92,7 +103,7 @@ func TestApplyWeirdStatsDescription_WithRideFactOnly(t *testing.T) {
 		AvgSpeedMPS:    29.8 / 3.6,
 	}
 
-	got, changed := applyWeirdStatsDescription("", stats.StopStats{}, rideFact)
+	got, changed := applyWeirdStatsDescription("", stats.StopStats{}, rideFact, coffeeStopFact{})
 	want := "Longest uninterrupted segment: 48.3km - 199w - 29.8kmh #weirdstats"
 	if got != want {
 		t.Fatalf("unexpected description\nwant: %q\n got: %q", want, got)
@@ -112,7 +123,7 @@ func TestApplyWeirdStatsDescription_ReplacesHashtagManagedLine(t *testing.T) {
 	existing := "Morning ride\n\n3 stops (1m 35s total) · 2 at lights #weirdstats"
 	want := "Morning ride\n\n2 stops (42s total) · 1 at lights #weirdstats"
 
-	got, changed := applyWeirdStatsDescription(existing, snapshot, rideSegmentFact{})
+	got, changed := applyWeirdStatsDescription(existing, snapshot, rideSegmentFact{}, coffeeStopFact{})
 	if got != want {
 		t.Fatalf("unexpected description\nwant: %q\n got: %q", want, got)
 	}
@@ -127,23 +138,31 @@ func TestBuildWeirdStatsLine(t *testing.T) {
 		AvgPower:       200,
 		AvgSpeedMPS:    30.0 / 3.6,
 	}
+	coffeeFact := coffeeStopFact{Name: "Bean Machine"}
 
 	tests := []struct {
-		name     string
-		stats    stats.StopStats
-		rideFact rideSegmentFact
-		want     string
+		name       string
+		stats      stats.StopStats
+		rideFact   rideSegmentFact
+		coffeeFact coffeeStopFact
+		want       string
 	}{
 		{
-			name:     "ride fact first with stops and lights",
-			stats:    stats.StopStats{StopCount: 3, StopTotalSeconds: 95, TrafficLightStopCount: 2},
-			rideFact: rideFact,
-			want:     "Longest uninterrupted segment: 48km - 200w - 30kmh · 3 stops (1m 35s total) · 2 at lights",
+			name:       "ride fact first with coffee, stops and lights",
+			stats:      stats.StopStats{StopCount: 3, StopTotalSeconds: 95, TrafficLightStopCount: 2},
+			rideFact:   rideFact,
+			coffeeFact: coffeeFact,
+			want:       "Longest uninterrupted segment: 48km - 200w - 30kmh · Detected Coffee Stop: Bean Machine · 3 stops (1m 35s total) · 2 at lights",
 		},
 		{
 			name:     "ride fact only",
 			rideFact: rideSegmentFact{DistanceMeters: 48250, AvgPower: 198.7, AvgSpeedMPS: 29.8 / 3.6},
 			want:     "Longest uninterrupted segment: 48.3km - 199w - 29.8kmh",
+		},
+		{
+			name:       "coffee fact only",
+			coffeeFact: coffeeFact,
+			want:       "Detected Coffee Stop: Bean Machine",
 		},
 		{
 			name:  "stops only",
@@ -163,7 +182,7 @@ func TestBuildWeirdStatsLine(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := buildWeirdStatsLine(tt.stats, tt.rideFact)
+			got := buildWeirdStatsLine(tt.stats, tt.rideFact, tt.coffeeFact)
 			if got != tt.want {
 				t.Fatalf("unexpected line\nwant: %q\n got: %q", tt.want, got)
 			}
@@ -199,6 +218,34 @@ func TestBuildRideSegmentPart(t *testing.T) {
 			got := buildRideSegmentPart(tt.fact)
 			if got != tt.want {
 				t.Fatalf("unexpected segment part\nwant: %q\n got: %q", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestBuildCoffeeStopPart(t *testing.T) {
+	tests := []struct {
+		name string
+		fact coffeeStopFact
+		want string
+	}{
+		{
+			name: "named stop",
+			fact: coffeeStopFact{Name: "Bean Machine"},
+			want: "Detected Coffee Stop: Bean Machine",
+		},
+		{
+			name: "missing name",
+			fact: coffeeStopFact{},
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildCoffeeStopPart(tt.fact)
+			if got != tt.want {
+				t.Fatalf("unexpected coffee part\nwant: %q\n got: %q", tt.want, got)
 			}
 		})
 	}
@@ -255,7 +302,7 @@ func TestIsWeirdstatsManagedLine(t *testing.T) {
 		},
 		{
 			name: "new stats line",
-			line: "Longest uninterrupted segment: 48km - 200w - 30kmh · 2 stops (42s total) #weirdstats",
+			line: "Longest uninterrupted segment: 48km - 200w - 30kmh · Detected Coffee Stop: Bean Machine · 2 stops (42s total) #weirdstats",
 			want: true,
 		},
 		{
@@ -389,6 +436,121 @@ func TestBuildRideSegmentWindows(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestBuildPauseWindows(t *testing.T) {
+	start := time.Date(2026, time.March, 1, 8, 0, 0, 0, time.UTC)
+	points := []gps.Point{
+		{Time: start, Speed: 6},
+		{Time: start.Add(30 * time.Second), Speed: 6},
+		{Time: start.Add(1 * time.Minute), Speed: 0},
+		{Time: start.Add(3 * time.Minute), Speed: 0},
+		{Time: start.Add(6 * time.Minute), Speed: 0},
+		{Time: start.Add(7 * time.Minute), Speed: 7},
+		{Time: start.Add(8 * time.Minute), Speed: 0},
+		{Time: start.Add(12 * time.Minute), Speed: 0},
+		{Time: start.Add(13 * time.Minute), Speed: 7},
+	}
+
+	got := buildPauseWindows(points, coffeeStopSpeedThresholdMPS, coffeeStopMinDuration)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 qualifying pause, got %d", len(got))
+	}
+	if got[0].start != start.Add(1*time.Minute) || got[0].end != start.Add(6*time.Minute) {
+		t.Fatalf("unexpected pause window: %#v", got[0])
+	}
+	if got[0].duration != 5*time.Minute {
+		t.Fatalf("unexpected pause duration: %s", got[0].duration)
+	}
+}
+
+func TestDetectCoffeeStopFact(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"elements": []map[string]any{
+				{
+					"type": "node",
+					"lat":  52.52035,
+					"lon":  13.40505,
+					"tags": map[string]any{"amenity": "restaurant", "name": "Lunch Spot"},
+				},
+				{
+					"type":   "way",
+					"center": map[string]any{"lat": 52.52031, "lon": 13.40501},
+					"tags":   map[string]any{"amenity": "cafe", "name": "Bean Machine"},
+				},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := &maps.OverpassClient{
+		BaseURL:      server.URL,
+		HTTPClient:   server.Client(),
+		DisableCache: true,
+	}
+
+	start := time.Date(2026, time.March, 1, 8, 0, 0, 0, time.UTC)
+	points := []gps.Point{
+		{Lat: 52.5200, Lon: 13.4047, Time: start, Speed: 7},
+		{Lat: 52.5202, Lon: 13.4049, Time: start.Add(1 * time.Minute), Speed: 7},
+		{Lat: 52.5203, Lon: 13.4050, Time: start.Add(2 * time.Minute), Speed: 0},
+		{Lat: 52.52031, Lon: 13.40501, Time: start.Add(5 * time.Minute), Speed: 0},
+		{Lat: 52.52032, Lon: 13.40502, Time: start.Add(7 * time.Minute), Speed: 0},
+		{Lat: 52.5206, Lon: 13.4053, Time: start.Add(8 * time.Minute), Speed: 8},
+	}
+
+	got, err := detectCoffeeStopFact(context.Background(), "Ride", points, client)
+	if err != nil {
+		t.Fatalf("detectCoffeeStopFact error: %v", err)
+	}
+	if got.Name != "Bean Machine" {
+		t.Fatalf("expected Bean Machine, got %+v", got)
+	}
+}
+
+func TestDetectCoffeeStopFact_IgnoresShortPause(t *testing.T) {
+	start := time.Date(2026, time.March, 1, 8, 0, 0, 0, time.UTC)
+	points := []gps.Point{
+		{Lat: 52.5200, Lon: 13.4047, Time: start, Speed: 7},
+		{Lat: 52.5202, Lon: 13.4049, Time: start.Add(1 * time.Minute), Speed: 7},
+		{Lat: 52.5203, Lon: 13.4050, Time: start.Add(2 * time.Minute), Speed: 0},
+		{Lat: 52.52031, Lon: 13.40501, Time: start.Add(6*time.Minute + 59*time.Second), Speed: 0},
+		{Lat: 52.5206, Lon: 13.4053, Time: start.Add(7 * time.Minute), Speed: 8},
+	}
+
+	got, err := detectCoffeeStopFact(context.Background(), "Ride", points, &maps.OverpassClient{
+		BaseURL:      "http://127.0.0.1:1",
+		HTTPClient:   &http.Client{Timeout: 100 * time.Millisecond},
+		DisableCache: true,
+	})
+	if err != nil {
+		t.Fatalf("detectCoffeeStopFact error: %v", err)
+	}
+	if got.Name != "" {
+		t.Fatalf("expected no coffee stop, got %+v", got)
+	}
+}
+
+func TestDetectCoffeeStopFact_RequiresMovement(t *testing.T) {
+	start := time.Date(2026, time.March, 1, 8, 0, 0, 0, time.UTC)
+	points := []gps.Point{
+		{Lat: 52.5200, Lon: 13.4047, Time: start, Speed: 0},
+		{Lat: 52.5202, Lon: 13.4049, Time: start.Add(6 * time.Minute), Speed: 0},
+	}
+
+	got, err := detectCoffeeStopFact(context.Background(), "Ride", points, &maps.OverpassClient{
+		BaseURL:      "http://127.0.0.1:1",
+		HTTPClient:   &http.Client{Timeout: 100 * time.Millisecond},
+		DisableCache: true,
+	})
+	if err != nil {
+		t.Fatalf("detectCoffeeStopFact error: %v", err)
+	}
+	if got.Name != "" {
+		t.Fatalf("expected no coffee stop, got %+v", got)
 	}
 }
 

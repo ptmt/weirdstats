@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 )
@@ -19,7 +20,7 @@ func TestOverpassClient_RequestsAndParses(t *testing.T) {
 		resp := overpassResponse{
 			Elements: []overpassElement{
 				{Lat: 40.0, Lon: -73.0, Tags: map[string]string{"highway": "traffic_signals", "name": "Main"}},
-				{Lat: 40.1, Lon: -73.1, Tags: map[string]string{"amenity": "cafe", "name": "Cafe XYZ"}},
+				{Type: "way", Center: &overpassLatLon{Lat: 40.1, Lon: -73.1}, Tags: map[string]string{"amenity": "cafe", "name": "Cafe XYZ"}},
 			},
 		}
 		_ = json.NewEncoder(w).Encode(resp)
@@ -51,9 +52,50 @@ func TestOverpassClient_RequestsAndParses(t *testing.T) {
 	if pois[0].Type != FeatureTrafficLight || pois[1].Type != FeatureCafe {
 		t.Fatalf("unexpected poi types: %+v", pois)
 	}
+	if pois[1].Lat != 40.1 || pois[1].Lon != -73.1 {
+		t.Fatalf("expected center coordinates for cafe, got %+v", pois[1])
+	}
 
 	if got := atomic.LoadInt32(&requestCount); got != 2 {
 		t.Fatalf("expected 2 requests (no cache), got %d", got)
+	}
+}
+
+func TestOverpassClient_FetchNearbyFoodPOIs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query().Get("data")
+		if query == "" || !strings.Contains(query, `around:45`) || !strings.Contains(query, `"amenity"~"^(cafe|restaurant)$"`) {
+			t.Fatalf("unexpected nearby food query: %q", query)
+		}
+
+		resp := overpassResponse{
+			Elements: []overpassElement{
+				{Type: "node", Lat: 40.0, Lon: -73.0, Tags: map[string]string{"amenity": "restaurant", "name": "Lunch Spot"}},
+				{Type: "way", Center: &overpassLatLon{Lat: 40.0002, Lon: -73.0001}, Tags: map[string]string{"amenity": "cafe", "name": "Bean House"}},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := &OverpassClient{
+		BaseURL:      server.URL,
+		HTTPClient:   server.Client(),
+		DisableCache: true,
+	}
+
+	pois, err := client.FetchNearbyFoodPOIs(context.Background(), 40.0, -73.0, 45)
+	if err != nil {
+		t.Fatalf("FetchNearbyFoodPOIs error: %v", err)
+	}
+	if len(pois) != 2 {
+		t.Fatalf("expected 2 pois, got %d", len(pois))
+	}
+	if pois[0].Type != FeatureRestaurant || pois[1].Type != FeatureCafe {
+		t.Fatalf("unexpected poi types: %+v", pois)
+	}
+	if pois[1].Lat != 40.0002 || pois[1].Lon != -73.0001 {
+		t.Fatalf("expected center coordinates for cafe, got %+v", pois[1])
 	}
 }
 

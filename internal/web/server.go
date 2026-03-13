@@ -210,6 +210,10 @@ type rideSegmentFact struct {
 	AvgSpeedMPS    float64
 }
 
+type coffeeStopFact struct {
+	Name string
+}
+
 // StaticHandler serves embedded static assets (leaflet, chart.js).
 func StaticHandler() http.Handler {
 	sub, err := fs.Sub(staticFS, "static")
@@ -746,12 +750,18 @@ func (s *Server) ApplyActivityRules(w http.ResponseWriter, r *http.Request) {
 	baseDescription := activity.Description
 	baseHideFromHome := activity.HideFromHome
 	rideFact := rideSegmentFact{}
+	coffeeFact := coffeeStopFact{}
 	if isRideType(activity.Type) {
 		points, err := s.store.LoadActivityPoints(r.Context(), activityID)
 		if err != nil {
 			log.Printf("local activity points load failed (skipping ride fact): %v", err)
 		} else {
 			rideFact = longestRideSegmentFact(activity.Type, points, s.stopOpts)
+			coffeeFact, err = detectCoffeeStopFact(r.Context(), activity.Type, points, s.overpass)
+			if err != nil {
+				log.Printf("local coffee stop detection failed (skipping coffee fact): %v", err)
+				coffeeFact = coffeeStopFact{}
+			}
 		}
 	}
 	if s.ingestor != nil && s.ingestor.Strava != nil {
@@ -766,16 +776,22 @@ func (s *Server) ApplyActivityRules(w http.ResponseWriter, r *http.Request) {
 				if err != nil {
 					log.Printf("strava streams fetch failed (using cached ride fact): %v", err)
 				} else {
-					rideFact = longestRideSegmentFact(latest.Type, buildPointsFromStreams(latest.StartDate, streams), s.stopOpts)
+					points := buildPointsFromStreams(latest.StartDate, streams)
+					rideFact = longestRideSegmentFact(latest.Type, points, s.stopOpts)
+					coffeeFact, err = detectCoffeeStopFact(r.Context(), latest.Type, points, s.overpass)
+					if err != nil {
+						log.Printf("strava coffee stop detection failed (using cached coffee fact): %v", err)
+					}
 				}
 			} else {
 				rideFact = rideSegmentFact{}
+				coffeeFact = coffeeStopFact{}
 			}
 		}
 	}
 
 	var descPtr *string
-	newDesc, descChanged := applyWeirdStatsDescription(baseDescription, statsSnapshot, rideFact)
+	newDesc, descChanged := applyWeirdStatsDescription(baseDescription, statsSnapshot, rideFact, coffeeFact)
 	if descChanged {
 		descPtr = &newDesc
 	}
@@ -911,8 +927,8 @@ func stopStatsFromStops(stops []storage.ActivityStop) stats.StopStats {
 const weirdStatsPrefix = "Weirdstats:"
 const weirdstatsTag = "#weirdstats"
 
-func applyWeirdStatsDescription(existing string, statsSnapshot stats.StopStats, rideFact rideSegmentFact) (string, bool) {
-	line := buildWeirdStatsLine(statsSnapshot, rideFact)
+func applyWeirdStatsDescription(existing string, statsSnapshot stats.StopStats, rideFact rideSegmentFact, coffeeFact coffeeStopFact) (string, bool) {
+	line := buildWeirdStatsLine(statsSnapshot, rideFact, coffeeFact)
 	if line == "" {
 		return existing, false
 	}
@@ -937,14 +953,18 @@ func applyWeirdStatsDescription(existing string, statsSnapshot stats.StopStats, 
 	return updated, updated != existing
 }
 
-func buildWeirdStatsLine(statsSnapshot stats.StopStats, rideFact rideSegmentFact) string {
+func buildWeirdStatsLine(statsSnapshot stats.StopStats, rideFact rideSegmentFact, coffeeFact coffeeStopFact) string {
 	ridePart := buildRideSegmentPart(rideFact)
-	if statsSnapshot.StopCount == 0 && statsSnapshot.TrafficLightStopCount == 0 && ridePart == "" {
+	coffeePart := buildCoffeeStopPart(coffeeFact)
+	if statsSnapshot.StopCount == 0 && statsSnapshot.TrafficLightStopCount == 0 && ridePart == "" && coffeePart == "" {
 		return ""
 	}
-	parts := make([]string, 0, 3)
+	parts := make([]string, 0, 4)
 	if ridePart != "" {
 		parts = append(parts, ridePart)
+	}
+	if coffeePart != "" {
+		parts = append(parts, coffeePart)
 	}
 	if statsSnapshot.StopCount > 0 {
 		part := fmt.Sprintf("%d stops", statsSnapshot.StopCount)
@@ -974,6 +994,14 @@ func buildRideSegmentPart(fact rideSegmentFact) string {
 	return "Longest uninterrupted segment: " + strings.Join(parts, " - ")
 }
 
+func buildCoffeeStopPart(fact coffeeStopFact) string {
+	name := strings.TrimSpace(fact.Name)
+	if name == "" {
+		return ""
+	}
+	return "Detected Coffee Stop: " + name
+}
+
 func appendWeirdstatsTag(text string) string {
 	trimmed := strings.TrimSpace(text)
 	trimmed = strings.TrimSpace(strings.TrimSuffix(trimmed, weirdstatsTag))
@@ -996,7 +1024,8 @@ func isWeirdstatsManagedLine(line string) bool {
 	}
 	return strings.Contains(trimmed, "stops") ||
 		strings.Contains(trimmed, "at lights") ||
-		strings.Contains(trimmed, "Longest uninterrupted segment:")
+		strings.Contains(trimmed, "Longest uninterrupted segment:") ||
+		strings.Contains(trimmed, "Detected Coffee Stop:")
 }
 
 func buildPointsFromStreams(start time.Time, streams strava.StreamSet) []gps.Point {
@@ -1029,6 +1058,9 @@ const (
 	longestRideSegmentMinSpeedKPH = 15.0
 	longestRideSegmentMinSpeedMPS = longestRideSegmentMinSpeedKPH / 3.6
 	longestRideSegmentMinSlowTime = 5 * time.Second
+	coffeeStopMinDuration         = 5 * time.Minute
+	coffeeStopSpeedThresholdMPS   = 0.5
+	coffeeStopSearchRadiusMeters  = 45
 )
 
 func longestRideSegmentFact(activityType string, points []gps.Point, _ gps.StopOptions) rideSegmentFact {
@@ -1050,6 +1082,14 @@ func longestRideSegmentFact(activityType string, points []gps.Point, _ gps.StopO
 type rideSegmentWindow struct {
 	start time.Time
 	end   time.Time
+}
+
+type pauseWindow struct {
+	startIdx int
+	endIdx   int
+	start    time.Time
+	end      time.Time
+	duration time.Duration
 }
 
 func buildRideSegmentWindows(points []gps.Point, minSpeedMPS float64, minSlowTime time.Duration) []rideSegmentWindow {
@@ -1151,6 +1191,223 @@ func rideSegmentFactForWindow(points []gps.Point, start, end time.Time, speedThr
 		fact.AvgPower = powerTotal / float64(powerCount)
 	}
 	return fact
+}
+
+func detectCoffeeStopFact(ctx context.Context, activityType string, points []gps.Point, overpass *maps.OverpassClient) (coffeeStopFact, error) {
+	if !isRideType(activityType) || len(points) == 0 || overpass == nil {
+		return coffeeStopFact{}, nil
+	}
+	if !hasMovingPoints(points, coffeeStopSpeedThresholdMPS) {
+		return coffeeStopFact{}, nil
+	}
+
+	windows := buildPauseWindows(points, coffeeStopSpeedThresholdMPS, coffeeStopMinDuration)
+	best := coffeeStopCandidate{}
+	for _, window := range windows {
+		lat, lon, ok := pauseCentroid(points, window.startIdx, window.endIdx)
+		if !ok {
+			continue
+		}
+
+		pois, err := overpass.FetchNearbyFoodPOIs(ctx, lat, lon, coffeeStopSearchRadiusMeters)
+		if err != nil {
+			return coffeeStopFact{}, err
+		}
+
+		poi, distanceMeters, ok := selectCoffeePOI(lat, lon, pois)
+		if !ok {
+			continue
+		}
+
+		candidate := coffeeStopCandidate{
+			name:           coffeeStopDisplayName(poi),
+			duration:       window.duration,
+			distanceMeters: distanceMeters,
+			pauseStart:     window.start,
+			isCafe:         poi.Type == maps.FeatureCafe,
+			hasName:        strings.TrimSpace(poi.Name) != "",
+			valid:          true,
+		}
+		if candidate.betterThan(best) {
+			best = candidate
+		}
+	}
+
+	if !best.valid {
+		return coffeeStopFact{}, nil
+	}
+	return coffeeStopFact{Name: best.name}, nil
+}
+
+type coffeeStopCandidate struct {
+	name           string
+	duration       time.Duration
+	distanceMeters float64
+	pauseStart     time.Time
+	isCafe         bool
+	hasName        bool
+	valid          bool
+}
+
+func (c coffeeStopCandidate) betterThan(other coffeeStopCandidate) bool {
+	if !other.valid {
+		return c.valid
+	}
+	if c.isCafe != other.isCafe {
+		return c.isCafe
+	}
+	if c.hasName != other.hasName {
+		return c.hasName
+	}
+	if c.duration != other.duration {
+		return c.duration > other.duration
+	}
+	if c.distanceMeters != other.distanceMeters {
+		return c.distanceMeters < other.distanceMeters
+	}
+	return c.pauseStart.Before(other.pauseStart)
+}
+
+func buildPauseWindows(points []gps.Point, speedThreshold float64, minDuration time.Duration) []pauseWindow {
+	if len(points) == 0 {
+		return nil
+	}
+
+	windows := make([]pauseWindow, 0, 2)
+	inPause := false
+	startIdx := 0
+	lastSlowIdx := 0
+
+	for idx, point := range points {
+		if point.Speed <= speedThreshold {
+			if !inPause {
+				inPause = true
+				startIdx = idx
+			}
+			lastSlowIdx = idx
+			continue
+		}
+
+		if !inPause {
+			continue
+		}
+
+		duration := points[lastSlowIdx].Time.Sub(points[startIdx].Time)
+		if duration >= minDuration {
+			windows = append(windows, pauseWindow{
+				startIdx: startIdx,
+				endIdx:   lastSlowIdx,
+				start:    points[startIdx].Time,
+				end:      points[lastSlowIdx].Time,
+				duration: duration,
+			})
+		}
+		inPause = false
+	}
+
+	if !inPause {
+		return windows
+	}
+
+	duration := points[lastSlowIdx].Time.Sub(points[startIdx].Time)
+	if duration >= minDuration {
+		windows = append(windows, pauseWindow{
+			startIdx: startIdx,
+			endIdx:   lastSlowIdx,
+			start:    points[startIdx].Time,
+			end:      points[lastSlowIdx].Time,
+			duration: duration,
+		})
+	}
+	return windows
+}
+
+func pauseCentroid(points []gps.Point, startIdx, endIdx int) (float64, float64, bool) {
+	if startIdx < 0 || endIdx >= len(points) || startIdx > endIdx {
+		return 0, 0, false
+	}
+
+	var (
+		latTotal float64
+		lonTotal float64
+		count    int
+	)
+	for idx := startIdx; idx <= endIdx; idx++ {
+		latTotal += points[idx].Lat
+		lonTotal += points[idx].Lon
+		count++
+	}
+	if count == 0 {
+		return 0, 0, false
+	}
+	return latTotal / float64(count), lonTotal / float64(count), true
+}
+
+func hasMovingPoints(points []gps.Point, speedThreshold float64) bool {
+	for _, point := range points {
+		if point.Speed > speedThreshold {
+			return true
+		}
+	}
+	return false
+}
+
+func selectCoffeePOI(lat, lon float64, pois []maps.POI) (maps.POI, float64, bool) {
+	best := maps.POI{}
+	bestDistance := 0.0
+	bestFound := false
+	for _, poi := range pois {
+		if poi.Type != maps.FeatureCafe && poi.Type != maps.FeatureRestaurant {
+			continue
+		}
+
+		distance := haversineMeters(lat, lon, poi.Lat, poi.Lon)
+		if !bestFound {
+			best = poi
+			bestDistance = distance
+			bestFound = true
+			continue
+		}
+
+		if coffeePOIBetter(poi, distance, best, bestDistance) {
+			best = poi
+			bestDistance = distance
+		}
+	}
+	return best, bestDistance, bestFound
+}
+
+func coffeePOIBetter(candidate maps.POI, candidateDistance float64, current maps.POI, currentDistance float64) bool {
+	candidateIsCafe := candidate.Type == maps.FeatureCafe
+	currentIsCafe := current.Type == maps.FeatureCafe
+	if candidateIsCafe != currentIsCafe {
+		return candidateIsCafe
+	}
+
+	candidateHasName := strings.TrimSpace(candidate.Name) != ""
+	currentHasName := strings.TrimSpace(current.Name) != ""
+	if candidateHasName != currentHasName {
+		return candidateHasName
+	}
+
+	if candidateDistance != currentDistance {
+		return candidateDistance < currentDistance
+	}
+	return strings.TrimSpace(candidate.Name) < strings.TrimSpace(current.Name)
+}
+
+func coffeeStopDisplayName(poi maps.POI) string {
+	if name := strings.TrimSpace(poi.Name); name != "" {
+		return name
+	}
+	switch poi.Type {
+	case maps.FeatureCafe:
+		return "Unnamed cafe"
+	case maps.FeatureRestaurant:
+		return "Unnamed restaurant"
+	default:
+		return "Unnamed stop"
+	}
 }
 
 func haversineMeters(lat1, lon1, lat2, lon2 float64) float64 {

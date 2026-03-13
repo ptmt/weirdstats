@@ -65,7 +65,7 @@ func (c *OverpassClient) FetchPOIs(ctx context.Context, bbox BBox, includeTraffi
 		queries = append(queries, fmt.Sprintf(`node["highway"="traffic_signals"](%s);`, bbox.String()))
 	}
 	if includeFood {
-		queries = append(queries, fmt.Sprintf(`node["amenity"~"^(cafe|restaurant|fast_food|bar)$"](%s);`, bbox.String()))
+		queries = append(queries, fmt.Sprintf(`nwr["amenity"~"^(cafe|restaurant|fast_food|bar)$"](%s);`, bbox.String()))
 	}
 
 	query := fmt.Sprintf(`[out:json][timeout:25];
@@ -82,20 +82,29 @@ out center;`, strings.Join(queries, "\n"))
 		return nil, err
 	}
 
-	var pois []POI
-	for _, el := range elements {
-		poiType := classifyPOI(el.Tags)
-		pois = append(pois, POI{
-			Feature: Feature{
-				Type: poiType,
-				Name: el.Tags["name"],
-			},
-			Lat:  el.Lat,
-			Lon:  el.Lon,
-			Tags: el.Tags,
-		})
+	return poisFromOverpassElements(elements), nil
+}
+
+func (c *OverpassClient) FetchNearbyFoodPOIs(ctx context.Context, lat, lon float64, radiusMeters int) ([]POI, error) {
+	if radiusMeters <= 0 {
+		radiusMeters = 40
 	}
-	return pois, nil
+
+	query := fmt.Sprintf(`[out:json][timeout:25];
+(
+  nwr(around:%d,%.6f,%.6f)["amenity"~"^(cafe|restaurant)$"];
+);
+out center;`, radiusMeters, lat, lon)
+
+	ctx, cancel := context.WithTimeout(ctx, c.effectiveTimeout())
+	defer cancel()
+
+	elements, err := c.fetchWithCache(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	return poisFromOverpassElements(elements), nil
 }
 
 // FetchNearbyRoads returns roads within the given radius (meters) of a point.
@@ -302,13 +311,39 @@ func classifyPOI(tags map[string]string) FeatureType {
 	return FeatureType(tags["amenity"])
 }
 
+func poisFromOverpassElements(elements []overpassElement) []POI {
+	pois := make([]POI, 0, len(elements))
+	for _, el := range elements {
+		poiType := classifyPOI(el.Tags)
+		lat, lon := el.coordinates()
+		pois = append(pois, POI{
+			Feature: Feature{
+				Type: poiType,
+				Name: el.Tags["name"],
+			},
+			Lat:  lat,
+			Lon:  lon,
+			Tags: el.Tags,
+		})
+	}
+	return pois
+}
+
 type overpassElement struct {
 	Type     string            `json:"type"`
 	ID       int64             `json:"id"`
 	Lat      float64           `json:"lat"`
 	Lon      float64           `json:"lon"`
+	Center   *overpassLatLon   `json:"center,omitempty"`
 	Tags     map[string]string `json:"tags"`
 	Geometry []overpassLatLon  `json:"geometry,omitempty"` // for ways with out geom
+}
+
+func (e overpassElement) coordinates() (float64, float64) {
+	if e.Center != nil {
+		return e.Center.Lat, e.Center.Lon
+	}
+	return e.Lat, e.Lon
 }
 
 type overpassLatLon struct {
