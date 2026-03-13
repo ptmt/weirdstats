@@ -121,6 +121,160 @@ func TestApplyWeirdStatsDescription_ReplacesHashtagManagedLine(t *testing.T) {
 	}
 }
 
+func TestBuildWeirdStatsLine(t *testing.T) {
+	rideFact := rideSegmentFact{
+		DistanceMeters: 48000,
+		AvgPower:       200,
+		AvgSpeedMPS:    30.0 / 3.6,
+	}
+
+	tests := []struct {
+		name     string
+		stats    stats.StopStats
+		rideFact rideSegmentFact
+		want     string
+	}{
+		{
+			name:     "ride fact first with stops and lights",
+			stats:    stats.StopStats{StopCount: 3, StopTotalSeconds: 95, TrafficLightStopCount: 2},
+			rideFact: rideFact,
+			want:     "Longest uninterrupted segment: 48km - 200w - 30kmh · 3 stops (1m 35s total) · 2 at lights",
+		},
+		{
+			name:     "ride fact only",
+			rideFact: rideSegmentFact{DistanceMeters: 48250, AvgPower: 198.7, AvgSpeedMPS: 29.8 / 3.6},
+			want:     "Longest uninterrupted segment: 48.3km - 199w - 29.8kmh",
+		},
+		{
+			name:  "stops only",
+			stats: stats.StopStats{StopCount: 2, StopTotalSeconds: 42},
+			want:  "2 stops (42s total)",
+		},
+		{
+			name:  "lights only",
+			stats: stats.StopStats{TrafficLightStopCount: 1},
+			want:  "1 at lights",
+		},
+		{
+			name: "empty stats",
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildWeirdStatsLine(tt.stats, tt.rideFact)
+			if got != tt.want {
+				t.Fatalf("unexpected line\nwant: %q\n got: %q", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestBuildRideSegmentPart(t *testing.T) {
+	tests := []struct {
+		name string
+		fact rideSegmentFact
+		want string
+	}{
+		{
+			name: "with power",
+			fact: rideSegmentFact{DistanceMeters: 48000, AvgPower: 200, AvgSpeedMPS: 30.0 / 3.6},
+			want: "Longest uninterrupted segment: 48km - 200w - 30kmh",
+		},
+		{
+			name: "without power",
+			fact: rideSegmentFact{DistanceMeters: 12345, AvgSpeedMPS: 25.0 / 3.6},
+			want: "Longest uninterrupted segment: 12.3km - 25kmh",
+		},
+		{
+			name: "missing speed",
+			fact: rideSegmentFact{DistanceMeters: 12345},
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildRideSegmentPart(tt.fact)
+			if got != tt.want {
+				t.Fatalf("unexpected segment part\nwant: %q\n got: %q", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestAppendWeirdstatsTag(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want string
+	}{
+		{
+			name: "appends tag",
+			text: "2 stops (42s total)",
+			want: "2 stops (42s total) #weirdstats",
+		},
+		{
+			name: "dedupes trailing tag",
+			text: "2 stops (42s total) #weirdstats",
+			want: "2 stops (42s total) #weirdstats",
+		},
+		{
+			name: "tag only",
+			text: "   ",
+			want: "#weirdstats",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := appendWeirdstatsTag(tt.text)
+			if got != tt.want {
+				t.Fatalf("unexpected tagged text\nwant: %q\n got: %q", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestIsWeirdstatsManagedLine(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want bool
+	}{
+		{
+			name: "legacy prefixed line",
+			line: "Weirdstats: 2 stops (42s total)",
+			want: true,
+		},
+		{
+			name: "tag only line",
+			line: "#weirdstats",
+			want: true,
+		},
+		{
+			name: "new stats line",
+			line: "Longest uninterrupted segment: 48km - 200w - 30kmh · 2 stops (42s total) #weirdstats",
+			want: true,
+		},
+		{
+			name: "unrelated tagged line",
+			line: "coffee with friends #weirdstats",
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isWeirdstatsManagedLine(tt.line)
+			if got != tt.want {
+				t.Fatalf("unexpected managed result: want %v got %v", tt.want, got)
+			}
+		})
+	}
+}
+
 func TestLongestRideSegmentFact(t *testing.T) {
 	start := time.Date(2026, time.March, 1, 8, 0, 0, 0, time.UTC)
 	points := []gps.Point{
@@ -170,6 +324,71 @@ func TestLongestRideSegmentFact_DoesNotSplitBriefSlowdown(t *testing.T) {
 	}
 	if got.AvgSpeedMPS < 9.5 || got.AvgSpeedMPS > 10.5 {
 		t.Fatalf("expected average speed near 10 m/s, got %.2f", got.AvgSpeedMPS)
+	}
+}
+
+func TestBuildRideSegmentWindows(t *testing.T) {
+	start := time.Date(2026, time.March, 1, 8, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name   string
+		points []gps.Point
+		want   []rideSegmentWindow
+	}{
+		{
+			name: "splits on sustained slowdown",
+			points: []gps.Point{
+				{Time: start, Speed: 8},
+				{Time: start.Add(4 * time.Second), Speed: 8},
+				{Time: start.Add(10 * time.Second), Speed: 3},
+				{Time: start.Add(16 * time.Second), Speed: 8},
+				{Time: start.Add(20 * time.Second), Speed: 8},
+			},
+			want: []rideSegmentWindow{
+				{start: start, end: start.Add(10 * time.Second)},
+				{start: start.Add(16 * time.Second), end: start.Add(20 * time.Second)},
+			},
+		},
+		{
+			name: "keeps brief slowdown in one window",
+			points: []gps.Point{
+				{Time: start, Speed: 8},
+				{Time: start.Add(4 * time.Second), Speed: 8},
+				{Time: start.Add(10 * time.Second), Speed: 3},
+				{Time: start.Add(13 * time.Second), Speed: 3},
+				{Time: start.Add(14 * time.Second), Speed: 8},
+				{Time: start.Add(20 * time.Second), Speed: 8},
+			},
+			want: []rideSegmentWindow{
+				{start: start, end: start.Add(20 * time.Second)},
+			},
+		},
+		{
+			name: "drops sustained slow tail",
+			points: []gps.Point{
+				{Time: start, Speed: 8},
+				{Time: start.Add(4 * time.Second), Speed: 8},
+				{Time: start.Add(10 * time.Second), Speed: 3},
+				{Time: start.Add(16 * time.Second), Speed: 3},
+			},
+			want: []rideSegmentWindow{
+				{start: start, end: start.Add(10 * time.Second)},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildRideSegmentWindows(tt.points, longestRideSegmentMinSpeedMPS, longestRideSegmentMinSlowTime)
+			if len(got) != len(tt.want) {
+				t.Fatalf("unexpected window count: want %d got %d", len(tt.want), len(got))
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Fatalf("unexpected window %d: want %#v got %#v", i, tt.want[i], got[i])
+				}
+			}
+		})
 	}
 }
 
