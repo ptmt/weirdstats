@@ -7,6 +7,7 @@ type Point struct {
 	Lon   float64
 	Time  time.Time
 	Speed float64
+	Power float64
 }
 
 type Stop struct {

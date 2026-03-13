@@ -3,7 +3,9 @@ package web
 import (
 	"strings"
 	"testing"
+	"time"
 
+	"weirdstats/internal/gps"
 	"weirdstats/internal/stats"
 	"weirdstats/internal/storage"
 )
@@ -14,12 +16,18 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 		StopTotalSeconds:      95,
 		TrafficLightStopCount: 2,
 	}
-	line := "Weirdstats: 3 stops (1m 35s total) · 2 at lights"
+	rideFact := rideSegmentFact{
+		DistanceMeters: 48000,
+		AvgPower:       200,
+		AvgSpeedMPS:    30.0 / 3.6,
+	}
+	line := "Weirdstats: 3 stops (1m 35s total) · 2 at lights · Longest uninterrupted segment: 48km - 200w - 30kmh #weirdstats"
 
 	tests := []struct {
 		name     string
 		existing string
 		stats    stats.StopStats
+		rideFact rideSegmentFact
 		want     string
 		changed  bool
 	}{
@@ -27,6 +35,7 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 			name:     "appends to empty description",
 			existing: "",
 			stats:    snapshot,
+			rideFact: rideFact,
 			want:     line,
 			changed:  true,
 		},
@@ -34,6 +43,7 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 			name:     "appends after existing text",
 			existing: "Morning ride with intervals",
 			stats:    snapshot,
+			rideFact: rideFact,
 			want:     "Morning ride with intervals\n\n" + line,
 			changed:  true,
 		},
@@ -41,6 +51,7 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 			name:     "replaces previous weirdstats line and keeps paragraphs",
 			existing: "First paragraph.\n\nSecond paragraph.\nWeirdstats: 1 stops (12s total)",
 			stats:    snapshot,
+			rideFact: rideFact,
 			want:     "First paragraph.\n\nSecond paragraph.\n\n" + line,
 			changed:  true,
 		},
@@ -48,6 +59,7 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 			name:     "no change when same line already present",
 			existing: "Morning ride with intervals\n\n" + line,
 			stats:    snapshot,
+			rideFact: rideFact,
 			want:     "Morning ride with intervals\n\n" + line,
 			changed:  false,
 		},
@@ -62,7 +74,7 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, changed := applyWeirdStatsDescription(tt.existing, tt.stats)
+			got, changed := applyWeirdStatsDescription(tt.existing, tt.stats, tt.rideFact)
 			if got != tt.want {
 				t.Fatalf("unexpected description\nwant: %q\n got: %q", tt.want, got)
 			}
@@ -70,6 +82,51 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 				t.Fatalf("unexpected changed flag: want %v got %v", tt.changed, changed)
 			}
 		})
+	}
+}
+
+func TestApplyWeirdStatsDescription_WithRideFactOnly(t *testing.T) {
+	rideFact := rideSegmentFact{
+		DistanceMeters: 48250,
+		AvgPower:       198.7,
+		AvgSpeedMPS:    29.8 / 3.6,
+	}
+
+	got, changed := applyWeirdStatsDescription("", stats.StopStats{}, rideFact)
+	want := "Weirdstats: Longest uninterrupted segment: 48.3km - 199w - 29.8kmh #weirdstats"
+	if got != want {
+		t.Fatalf("unexpected description\nwant: %q\n got: %q", want, got)
+	}
+	if !changed {
+		t.Fatalf("expected description to change")
+	}
+}
+
+func TestLongestRideSegmentFact(t *testing.T) {
+	start := time.Date(2026, time.March, 1, 8, 0, 0, 0, time.UTC)
+	points := []gps.Point{
+		{Lat: 0, Lon: 0, Time: start, Speed: 15, Power: 200},
+		{Lat: 0.0045, Lon: 0, Time: start.Add(time.Minute), Speed: 15, Power: 200},
+		{Lat: 0.0090, Lon: 0, Time: start.Add(2 * time.Minute), Speed: 0},
+		{Lat: 0.0090, Lon: 0, Time: start.Add(3 * time.Minute), Speed: 0},
+		{Lat: 0.0180, Lon: 0, Time: start.Add(4 * time.Minute), Speed: 15, Power: 250},
+		{Lat: 0.0270, Lon: 0, Time: start.Add(5 * time.Minute), Speed: 15, Power: 250},
+		{Lat: 0.0360, Lon: 0, Time: start.Add(6 * time.Minute), Speed: 15, Power: 250},
+	}
+
+	got := longestRideSegmentFact("Ride", points, gps.StopOptions{
+		SpeedThreshold: 0.5,
+		MinDuration:    30 * time.Second,
+	})
+
+	if got.DistanceMeters < 2900 || got.DistanceMeters > 3100 {
+		t.Fatalf("expected longest segment around 3km, got %.1fm", got.DistanceMeters)
+	}
+	if got.AvgPower != 250 {
+		t.Fatalf("expected 250W average power, got %.1f", got.AvgPower)
+	}
+	if got.AvgSpeedMPS != 15 {
+		t.Fatalf("expected 15 m/s average speed, got %.2f", got.AvgSpeedMPS)
 	}
 }
 

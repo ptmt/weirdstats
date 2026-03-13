@@ -48,39 +48,39 @@ type Server struct {
 }
 
 type ActivityView struct {
-	ID              int64
-	Name            string
-	Type            string
-	TypeLabel       string
-	TypeClass       string
-	StartTime       string
-	Description     string
-	Distance        string
-	DistanceValue   string
-	DistanceUnit    string
-	Duration        string
-	PaceLabel       string
-	PaceValue       string
-	PaceUnit        string
-	PowerValue      string
-	PowerUnit       string
-	HasPower        bool
-	HasStats        bool
-	StopCount       int
-	StopTotal       string
-	LightStops      int
-	RoadCrossings   int
-	RecalculatedAt  string
-	FetchedAt       string
-	IsHidden        bool
-	FeedMuted       bool
-	PhotoURL        string
-	HasRoutePreview bool
-	RoutePath       string
-	RouteStartX     float64
-	RouteStartY     float64
-	RouteEndX       float64
-	RouteEndY       float64
+	ID               int64
+	Name             string
+	Type             string
+	TypeLabel        string
+	TypeClass        string
+	StartTime        string
+	Description      string
+	Distance         string
+	DistanceValue    string
+	DistanceUnit     string
+	Duration         string
+	PaceLabel        string
+	PaceValue        string
+	PaceUnit         string
+	PowerValue       string
+	PowerUnit        string
+	HasPower         bool
+	HasStats         bool
+	StopCount        int
+	StopTotal        string
+	LightStops       int
+	RoadCrossings    int
+	RecalculatedAt   string
+	FetchedAt        string
+	IsHidden         bool
+	FeedMuted        bool
+	PhotoURL         string
+	HasRoutePreview  bool
+	RoutePath        string
+	RouteStartX      float64
+	RouteStartY      float64
+	RouteEndX        float64
+	RouteEndY        float64
 	RoutePreviewJSON template.JS
 }
 
@@ -202,6 +202,12 @@ type StravaConfig struct {
 	AuthBaseURL     string
 	RedirectURL     string
 	InitialSyncDays int
+}
+
+type rideSegmentFact struct {
+	DistanceMeters float64
+	AvgPower       float64
+	AvgSpeedMPS    float64
 }
 
 // StaticHandler serves embedded static assets (leaflet, chart.js).
@@ -739,6 +745,15 @@ func (s *Server) ApplyActivityRules(w http.ResponseWriter, r *http.Request) {
 
 	baseDescription := activity.Description
 	baseHideFromHome := activity.HideFromHome
+	rideFact := rideSegmentFact{}
+	if isRideType(activity.Type) {
+		points, err := s.store.LoadActivityPoints(r.Context(), activityID)
+		if err != nil {
+			log.Printf("local activity points load failed (skipping ride fact): %v", err)
+		} else {
+			rideFact = longestRideSegmentFact(activity.Type, points, s.stopOpts)
+		}
+	}
 	if s.ingestor != nil && s.ingestor.Strava != nil {
 		latest, err := s.ingestor.Strava.GetActivity(r.Context(), activityID)
 		if err != nil {
@@ -746,11 +761,21 @@ func (s *Server) ApplyActivityRules(w http.ResponseWriter, r *http.Request) {
 		} else {
 			baseDescription = latest.Description
 			baseHideFromHome = latest.HideFromHome
+			if isRideType(latest.Type) {
+				streams, err := s.ingestor.Strava.GetStreams(r.Context(), activityID)
+				if err != nil {
+					log.Printf("strava streams fetch failed (using cached ride fact): %v", err)
+				} else {
+					rideFact = longestRideSegmentFact(latest.Type, buildPointsFromStreams(latest.StartDate, streams), s.stopOpts)
+				}
+			} else {
+				rideFact = rideSegmentFact{}
+			}
 		}
 	}
 
 	var descPtr *string
-	newDesc, descChanged := applyWeirdStatsDescription(baseDescription, statsSnapshot)
+	newDesc, descChanged := applyWeirdStatsDescription(baseDescription, statsSnapshot, rideFact)
 	if descChanged {
 		descPtr = &newDesc
 	}
@@ -884,9 +909,10 @@ func stopStatsFromStops(stops []storage.ActivityStop) stats.StopStats {
 }
 
 const weirdStatsPrefix = "Weirdstats:"
+const weirdstatsTag = "#weirdstats"
 
-func applyWeirdStatsDescription(existing string, statsSnapshot stats.StopStats) (string, bool) {
-	line := buildWeirdStatsLine(statsSnapshot)
+func applyWeirdStatsDescription(existing string, statsSnapshot stats.StopStats, rideFact rideSegmentFact) (string, bool) {
+	line := buildWeirdStatsLine(statsSnapshot, rideFact)
 	if line == "" {
 		return existing, false
 	}
@@ -895,7 +921,8 @@ func applyWeirdStatsDescription(existing string, statsSnapshot stats.StopStats) 
 	lines := strings.Split(normalized, "\n")
 	filtered := make([]string, 0, len(lines))
 	for _, l := range lines {
-		if strings.HasPrefix(strings.TrimSpace(l), weirdStatsPrefix) {
+		trimmed := strings.TrimSpace(l)
+		if strings.HasPrefix(trimmed, weirdStatsPrefix) || strings.EqualFold(trimmed, weirdstatsTag) {
 			continue
 		}
 		filtered = append(filtered, l)
@@ -906,15 +933,17 @@ func applyWeirdStatsDescription(existing string, statsSnapshot stats.StopStats) 
 	if strings.TrimSpace(base) != "" {
 		updated = base + "\n\n" + line
 	}
+	updated = appendWeirdstatsTag(updated)
 
 	return updated, updated != existing
 }
 
-func buildWeirdStatsLine(statsSnapshot stats.StopStats) string {
-	if statsSnapshot.StopCount == 0 && statsSnapshot.TrafficLightStopCount == 0 {
+func buildWeirdStatsLine(statsSnapshot stats.StopStats, rideFact rideSegmentFact) string {
+	ridePart := buildRideSegmentPart(rideFact)
+	if statsSnapshot.StopCount == 0 && statsSnapshot.TrafficLightStopCount == 0 && ridePart == "" {
 		return ""
 	}
-	parts := make([]string, 0, 2)
+	parts := make([]string, 0, 3)
 	if statsSnapshot.StopCount > 0 {
 		part := fmt.Sprintf("%d stops", statsSnapshot.StopCount)
 		if statsSnapshot.StopTotalSeconds > 0 {
@@ -925,10 +954,182 @@ func buildWeirdStatsLine(statsSnapshot stats.StopStats) string {
 	if statsSnapshot.TrafficLightStopCount > 0 {
 		parts = append(parts, fmt.Sprintf("%d at lights", statsSnapshot.TrafficLightStopCount))
 	}
+	if ridePart != "" {
+		parts = append(parts, ridePart)
+	}
 	if len(parts) == 0 {
 		return ""
 	}
 	return weirdStatsPrefix + " " + strings.Join(parts, " · ")
+}
+
+func buildRideSegmentPart(fact rideSegmentFact) string {
+	if fact.DistanceMeters <= 0 || fact.AvgSpeedMPS <= 0 {
+		return ""
+	}
+	parts := []string{formatCompactNumber(fact.DistanceMeters/1000, 1) + "km"}
+	if fact.AvgPower > 0 {
+		parts = append(parts, formatCompactNumber(fact.AvgPower, 0)+"w")
+	}
+	parts = append(parts, formatCompactNumber(fact.AvgSpeedMPS*3.6, 1)+"kmh")
+	return "Longest uninterrupted segment: " + strings.Join(parts, " - ")
+}
+
+func appendWeirdstatsTag(text string) string {
+	trimmed := strings.TrimSpace(text)
+	trimmed = strings.TrimSpace(strings.TrimSuffix(trimmed, weirdstatsTag))
+	if trimmed == "" {
+		return weirdstatsTag
+	}
+	return trimmed + " " + weirdstatsTag
+}
+
+func buildPointsFromStreams(start time.Time, streams strava.StreamSet) []gps.Point {
+	if len(streams.LatLng) == 0 || len(streams.TimeOffsetsSec) == 0 {
+		return nil
+	}
+	if len(streams.LatLng) != len(streams.TimeOffsetsSec) {
+		return nil
+	}
+
+	points := make([]gps.Point, 0, len(streams.LatLng))
+	for idx, coord := range streams.LatLng {
+		point := gps.Point{
+			Lat:  coord[0],
+			Lon:  coord[1],
+			Time: start.Add(time.Duration(streams.TimeOffsetsSec[idx]) * time.Second),
+		}
+		if idx < len(streams.VelocitySmooth) {
+			point.Speed = streams.VelocitySmooth[idx]
+		}
+		if idx < len(streams.Watts) {
+			point.Power = streams.Watts[idx]
+		}
+		points = append(points, point)
+	}
+	return points
+}
+
+func longestRideSegmentFact(activityType string, points []gps.Point, stopOpts gps.StopOptions) rideSegmentFact {
+	if !isRideType(activityType) || len(points) < 2 {
+		return rideSegmentFact{}
+	}
+
+	stops := gps.DetectStops(points, stopOpts)
+	windows := buildRideSegmentWindows(points, stops)
+	best := rideSegmentFact{}
+	for _, window := range windows {
+		fact := rideSegmentFactForWindow(points, window.start, window.end, stopOpts.SpeedThreshold)
+		if fact.DistanceMeters > best.DistanceMeters {
+			best = fact
+		}
+	}
+	return best
+}
+
+type rideSegmentWindow struct {
+	start time.Time
+	end   time.Time
+}
+
+func buildRideSegmentWindows(points []gps.Point, stops []gps.Stop) []rideSegmentWindow {
+	lastPointTime := points[len(points)-1].Time
+	windows := make([]rideSegmentWindow, 0, len(stops)+1)
+	start := points[0].Time
+	for _, stop := range stops {
+		if stop.StartTime.After(start) {
+			windows = append(windows, rideSegmentWindow{start: start, end: stop.StartTime})
+		}
+		stopEnd := stop.StartTime.Add(stop.Duration)
+		if stopEnd.After(start) {
+			start = stopEnd
+		}
+	}
+	if lastPointTime.After(start) {
+		windows = append(windows, rideSegmentWindow{start: start, end: lastPointTime})
+	}
+	if len(windows) == 0 && lastPointTime.After(points[0].Time) {
+		windows = append(windows, rideSegmentWindow{start: points[0].Time, end: lastPointTime})
+	}
+	return windows
+}
+
+func rideSegmentFactForWindow(points []gps.Point, start, end time.Time, speedThreshold float64) rideSegmentFact {
+	if !end.After(start) {
+		return rideSegmentFact{}
+	}
+
+	var (
+		prev       gps.Point
+		havePrev   bool
+		distanceM  float64
+		speedTotal float64
+		speedCount int
+		powerTotal float64
+		powerCount int
+	)
+
+	for _, point := range points {
+		if point.Time.Before(start) || point.Time.After(end) {
+			continue
+		}
+		if havePrev {
+			distanceM += haversineMeters(prev.Lat, prev.Lon, point.Lat, point.Lon)
+		}
+		prev = point
+		havePrev = true
+
+		if point.Speed <= speedThreshold {
+			continue
+		}
+		speedTotal += point.Speed
+		speedCount++
+		if point.Power > 0 {
+			powerTotal += point.Power
+			powerCount++
+		}
+	}
+
+	if distanceM <= 0 || speedCount == 0 {
+		return rideSegmentFact{}
+	}
+
+	fact := rideSegmentFact{
+		DistanceMeters: distanceM,
+		AvgSpeedMPS:    speedTotal / float64(speedCount),
+	}
+	if powerCount > 0 {
+		fact.AvgPower = powerTotal / float64(powerCount)
+	}
+	return fact
+}
+
+func haversineMeters(lat1, lon1, lat2, lon2 float64) float64 {
+	const earthRadius = 6371000.0
+	lat1Rad := lat1 * math.Pi / 180
+	lat2Rad := lat2 * math.Pi / 180
+	dLat := (lat2 - lat1) * math.Pi / 180
+	dLon := (lon2 - lon1) * math.Pi / 180
+
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+		math.Cos(lat1Rad)*math.Cos(lat2Rad)*math.Sin(dLon/2)*math.Sin(dLon/2)
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+	return earthRadius * c
+}
+
+func formatCompactNumber(value float64, precision int) string {
+	scale := math.Pow(10, float64(precision))
+	rounded := math.Round(value*scale) / scale
+	text := fmt.Sprintf("%.*f", precision, rounded)
+	if precision > 0 {
+		text = strings.TrimSuffix(text, "0")
+		text = strings.TrimSuffix(text, ".")
+	}
+	return text
+}
+
+func isRideType(activityType string) bool {
+	return strings.Contains(strings.ToLower(activityType), "ride")
 }
 
 func (s *Server) redirectBack(w http.ResponseWriter, r *http.Request, activityID int64, msg string) {

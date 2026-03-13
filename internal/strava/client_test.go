@@ -19,7 +19,8 @@ func TestClientGetsActivityAndStreams(t *testing.T) {
 			_, _ = w.Write([]byte(`{
   "latlng":{"data":[[1.0,2.0],[3.0,4.0]]},
   "time":{"data":[0,60]},
-  "velocity_smooth":{"data":[1.2,2.3]}
+  "velocity_smooth":{"data":[1.2,2.3]},
+  "watts":{"data":[210.0,220.0]}
 }`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -43,5 +44,8 @@ func TestClientGetsActivityAndStreams(t *testing.T) {
 	}
 	if len(streams.LatLng) != 2 || len(streams.TimeOffsetsSec) != 2 {
 		t.Fatalf("unexpected stream lengths")
+	}
+	if len(streams.Watts) != 2 || streams.Watts[0] != 210 || streams.Watts[1] != 220 {
+		t.Fatalf("unexpected power stream: %#v", streams.Watts)
 	}
 }

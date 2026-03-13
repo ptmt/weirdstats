@@ -203,6 +203,7 @@ type StreamSet struct {
 	LatLng         [][2]float64
 	TimeOffsetsSec []int
 	VelocitySmooth []float64
+	Watts          []float64
 }
 
 type UpdateActivityRequest struct {
@@ -358,7 +359,7 @@ func (c *Client) UpdateActivity(ctx context.Context, id int64, update UpdateActi
 
 func (c *Client) GetStreams(ctx context.Context, id int64) (StreamSet, error) {
 	params := url.Values{}
-	params.Set("keys", "latlng,time,velocity_smooth")
+	params.Set("keys", "latlng,time,velocity_smooth,watts")
 	params.Set("key_by_type", "true")
 
 	var payload map[string]struct {
@@ -395,6 +396,14 @@ func (c *Client) GetStreams(ctx context.Context, id int64) (StreamSet, error) {
 			return StreamSet{}, fmt.Errorf("parse velocity_smooth: %w", err)
 		}
 		streams.VelocitySmooth = append(streams.VelocitySmooth, v)
+	}
+
+	for _, entry := range payload["watts"].Data {
+		var v float64
+		if err := json.Unmarshal(entry, &v); err != nil {
+			return StreamSet{}, fmt.Errorf("parse watts: %w", err)
+		}
+		streams.Watts = append(streams.Watts, v)
 	}
 
 	return streams, nil
