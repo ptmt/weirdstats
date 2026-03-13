@@ -741,15 +741,32 @@ func (s *Server) ApplyActivityRules(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-
-	hide, statsSnapshot, err := s.evaluateHideRules(r.Context(), activity)
-	if err != nil {
-		http.Error(w, "failed to evaluate rules", http.StatusInternalServerError)
+	if err := jobs.EnqueueApplyActivityRules(r.Context(), s.store, activityID); err != nil {
+		http.Error(w, "failed to enqueue activity apply", http.StatusInternalServerError)
 		return
 	}
-	if err := s.store.UpdateActivityHiddenByRule(r.Context(), activityID, hide); err != nil {
-		http.Error(w, "failed to update rule status", http.StatusInternalServerError)
-		return
+	s.redirectBack(w, r, activityID, "sync+queued")
+}
+
+func (s *Server) Apply(ctx context.Context, activityID int64) error {
+	return s.applyActivityRules(ctx, activityID)
+}
+
+func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error {
+	activity, err := s.store.GetActivity(ctx, activityID)
+	if err != nil {
+		return err
+	}
+	if activity.UserID != 1 {
+		return fmt.Errorf("forbidden")
+	}
+
+	hide, statsSnapshot, err := s.evaluateHideRules(ctx, activity)
+	if err != nil {
+		return err
+	}
+	if err := s.store.UpdateActivityHiddenByRule(ctx, activityID, hide); err != nil {
+		return err
 	}
 
 	baseDescription := activity.Description
@@ -758,17 +775,17 @@ func (s *Server) ApplyActivityRules(w http.ResponseWriter, r *http.Request) {
 	coffeeFact := coffeeStopFact{}
 	routeFact := routeHighlightFact{}
 	if isRideType(activity.Type) {
-		points, err := s.store.LoadActivityPoints(r.Context(), activityID)
+		points, err := s.store.LoadActivityPoints(ctx, activityID)
 		if err != nil {
 			log.Printf("local activity points load failed (skipping ride fact): %v", err)
 		} else {
-			routeFact, err = detectRouteHighlightFact(r.Context(), points, s.overpass)
+			routeFact, err = detectRouteHighlightFact(ctx, points, s.overpass)
 			if err != nil {
 				log.Printf("local route highlight detection failed (skipping route highlights): %v", err)
 				routeFact = routeHighlightFact{}
 			}
 			rideFact = longestRideSegmentFact(activity.Type, points, s.stopOpts)
-			coffeeFact, err = detectCoffeeStopFact(r.Context(), activity.Type, points, s.overpass)
+			coffeeFact, err = detectCoffeeStopFact(ctx, activity.Type, points, s.overpass)
 			if err != nil {
 				log.Printf("local coffee stop detection failed (skipping coffee fact): %v", err)
 				coffeeFact = coffeeStopFact{}
@@ -776,24 +793,24 @@ func (s *Server) ApplyActivityRules(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if s.ingestor != nil && s.ingestor.Strava != nil {
-		latest, err := s.ingestor.Strava.GetActivity(r.Context(), activityID)
+		latest, err := s.ingestor.Strava.GetActivity(ctx, activityID)
 		if err != nil {
 			log.Printf("strava activity fetch failed (using cached description): %v", err)
 		} else {
 			baseDescription = latest.Description
 			baseHideFromHome = latest.HideFromHome
 			if isRideType(latest.Type) {
-				streams, err := s.ingestor.Strava.GetStreams(r.Context(), activityID)
+				streams, err := s.ingestor.Strava.GetStreams(ctx, activityID)
 				if err != nil {
 					log.Printf("strava streams fetch failed (using cached ride fact): %v", err)
 				} else {
 					points := buildPointsFromStreams(latest.StartDate, streams)
-					routeFact, err = detectRouteHighlightFact(r.Context(), points, s.overpass)
+					routeFact, err = detectRouteHighlightFact(ctx, points, s.overpass)
 					if err != nil {
 						log.Printf("strava route highlight detection failed (using cached route highlights): %v", err)
 					}
 					rideFact = longestRideSegmentFact(latest.Type, points, s.stopOpts)
-					coffeeFact, err = detectCoffeeStopFact(r.Context(), latest.Type, points, s.overpass)
+					coffeeFact, err = detectCoffeeStopFact(ctx, latest.Type, points, s.overpass)
 					if err != nil {
 						log.Printf("strava coffee stop detection failed (using cached coffee fact): %v", err)
 					}
@@ -819,32 +836,27 @@ func (s *Server) ApplyActivityRules(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if descPtr == nil && hidePtr == nil {
-		s.redirectBack(w, r, activityID, "sync+no+changes")
-		return
+		return nil
 	}
 	if s.ingestor == nil || s.ingestor.Strava == nil {
-		s.redirectBack(w, r, activityID, "sync+not+configured")
-		return
+		return fmt.Errorf("strava client not configured")
 	}
 
-	if _, err := s.ingestor.Strava.UpdateActivity(r.Context(), activityID, strava.UpdateActivityRequest{
+	if _, err := s.ingestor.Strava.UpdateActivity(ctx, activityID, strava.UpdateActivityRequest{
 		Description:  descPtr,
 		HideFromHome: hidePtr,
 	}); err != nil {
-		log.Printf("strava update failed: %v", err)
-		s.redirectBack(w, r, activityID, "sync+failed")
-		return
+		return err
 	}
 
 	descToStore := baseDescription
 	if descPtr != nil {
 		descToStore = *descPtr
 	}
-	if err := s.store.UpdateActivityDescriptionAndHideFromHome(r.Context(), activityID, descToStore, hidePtr); err != nil {
+	if err := s.store.UpdateActivityDescriptionAndHideFromHome(ctx, activityID, descToStore, hidePtr); err != nil {
 		log.Printf("local update failed: %v", err)
 	}
-
-	s.redirectBack(w, r, activityID, "sync+updated")
+	return nil
 }
 
 func totalStopSeconds(stops []StopView) int {
@@ -2294,6 +2306,12 @@ func jobTypeLabel(job storage.Job) string {
 			return fmt.Sprintf("Process activity %d", payload.ActivityID)
 		}
 		return "Process activity"
+	case jobs.JobTypeApplyActivityRules:
+		var payload jobs.ProcessActivityPayload
+		if err := json.Unmarshal([]byte(job.Payload), &payload); err == nil && payload.ActivityID > 0 {
+			return fmt.Sprintf("Apply activity %d", payload.ActivityID)
+		}
+		return "Apply activity"
 	default:
 		return job.Type
 	}

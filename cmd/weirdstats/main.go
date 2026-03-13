@@ -99,6 +99,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("load templates: %v", err)
 	}
+	jobRunner.Applier = webServer
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", webServer.Landing)
