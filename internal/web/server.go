@@ -943,6 +943,9 @@ func buildWeirdStatsLine(statsSnapshot stats.StopStats, rideFact rideSegmentFact
 		return ""
 	}
 	parts := make([]string, 0, 3)
+	if ridePart != "" {
+		parts = append(parts, ridePart)
+	}
 	if statsSnapshot.StopCount > 0 {
 		part := fmt.Sprintf("%d stops", statsSnapshot.StopCount)
 		if statsSnapshot.StopTotalSeconds > 0 {
@@ -952,9 +955,6 @@ func buildWeirdStatsLine(statsSnapshot stats.StopStats, rideFact rideSegmentFact
 	}
 	if statsSnapshot.TrafficLightStopCount > 0 {
 		parts = append(parts, fmt.Sprintf("%d at lights", statsSnapshot.TrafficLightStopCount))
-	}
-	if ridePart != "" {
-		parts = append(parts, ridePart)
 	}
 	if len(parts) == 0 {
 		return ""
@@ -1025,16 +1025,21 @@ func buildPointsFromStreams(start time.Time, streams strava.StreamSet) []gps.Poi
 	return points
 }
 
-func longestRideSegmentFact(activityType string, points []gps.Point, stopOpts gps.StopOptions) rideSegmentFact {
+const (
+	longestRideSegmentMinSpeedKPH = 15.0
+	longestRideSegmentMinSpeedMPS = longestRideSegmentMinSpeedKPH / 3.6
+	longestRideSegmentMinSlowTime = 5 * time.Second
+)
+
+func longestRideSegmentFact(activityType string, points []gps.Point, _ gps.StopOptions) rideSegmentFact {
 	if !isRideType(activityType) || len(points) < 2 {
 		return rideSegmentFact{}
 	}
 
-	stops := gps.DetectStops(points, stopOpts)
-	windows := buildRideSegmentWindows(points, stops)
+	windows := buildRideSegmentWindows(points, longestRideSegmentMinSpeedMPS, longestRideSegmentMinSlowTime)
 	best := rideSegmentFact{}
 	for _, window := range windows {
-		fact := rideSegmentFactForWindow(points, window.start, window.end, stopOpts.SpeedThreshold)
+		fact := rideSegmentFactForWindow(points, window.start, window.end, longestRideSegmentMinSpeedMPS)
 		if fact.DistanceMeters > best.DistanceMeters {
 			best = fact
 		}
@@ -1047,19 +1052,48 @@ type rideSegmentWindow struct {
 	end   time.Time
 }
 
-func buildRideSegmentWindows(points []gps.Point, stops []gps.Stop) []rideSegmentWindow {
-	lastPointTime := points[len(points)-1].Time
-	windows := make([]rideSegmentWindow, 0, len(stops)+1)
-	start := points[0].Time
-	for _, stop := range stops {
-		if stop.StartTime.After(start) {
-			windows = append(windows, rideSegmentWindow{start: start, end: stop.StartTime})
-		}
-		stopEnd := stop.StartTime.Add(stop.Duration)
-		if stopEnd.After(start) {
-			start = stopEnd
-		}
+func buildRideSegmentWindows(points []gps.Point, minSpeedMPS float64, minSlowTime time.Duration) []rideSegmentWindow {
+	if len(points) == 0 {
+		return nil
 	}
+
+	lastPointTime := points[len(points)-1].Time
+	windows := make([]rideSegmentWindow, 0, 4)
+	start := points[0].Time
+
+	var (
+		inSlow   bool
+		slowFrom time.Time
+	)
+	for _, point := range points {
+		if point.Speed < minSpeedMPS {
+			if !inSlow {
+				inSlow = true
+				slowFrom = point.Time
+			}
+			continue
+		}
+
+		if !inSlow {
+			continue
+		}
+
+		if point.Time.Sub(slowFrom) >= minSlowTime {
+			if slowFrom.After(start) {
+				windows = append(windows, rideSegmentWindow{start: start, end: slowFrom})
+			}
+			start = point.Time
+		}
+		inSlow = false
+	}
+
+	if inSlow && lastPointTime.Sub(slowFrom) >= minSlowTime {
+		if slowFrom.After(start) {
+			windows = append(windows, rideSegmentWindow{start: start, end: slowFrom})
+		}
+		return windows
+	}
+
 	if lastPointTime.After(start) {
 		windows = append(windows, rideSegmentWindow{start: start, end: lastPointTime})
 	}

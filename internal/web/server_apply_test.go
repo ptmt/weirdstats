@@ -21,7 +21,7 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 		AvgPower:       200,
 		AvgSpeedMPS:    30.0 / 3.6,
 	}
-	line := "3 stops (1m 35s total) · 2 at lights · Longest uninterrupted segment: 48km - 200w - 30kmh #weirdstats"
+	line := "Longest uninterrupted segment: 48km - 200w - 30kmh · 3 stops (1m 35s total) · 2 at lights #weirdstats"
 
 	tests := []struct {
 		name     string
@@ -138,14 +138,38 @@ func TestLongestRideSegmentFact(t *testing.T) {
 		MinDuration:    30 * time.Second,
 	})
 
-	if got.DistanceMeters < 2900 || got.DistanceMeters > 3100 {
-		t.Fatalf("expected longest segment around 3km, got %.1fm", got.DistanceMeters)
+	if got.DistanceMeters < 1900 || got.DistanceMeters > 2100 {
+		t.Fatalf("expected longest segment around 2km, got %.1fm", got.DistanceMeters)
 	}
 	if got.AvgPower != 250 {
 		t.Fatalf("expected 250W average power, got %.1f", got.AvgPower)
 	}
 	if got.AvgSpeedMPS != 15 {
 		t.Fatalf("expected 15 m/s average speed, got %.2f", got.AvgSpeedMPS)
+	}
+}
+
+func TestLongestRideSegmentFact_DoesNotSplitBriefSlowdown(t *testing.T) {
+	start := time.Date(2026, time.March, 1, 8, 0, 0, 0, time.UTC)
+	points := []gps.Point{
+		{Lat: 0, Lon: 0, Time: start, Speed: 10, Power: 190},
+		{Lat: 0.0045, Lon: 0, Time: start.Add(1 * time.Second), Speed: 10, Power: 190},
+		{Lat: 0.0046, Lon: 0, Time: start.Add(2 * time.Second), Speed: 4, Power: 120},
+		{Lat: 0.0047, Lon: 0, Time: start.Add(4 * time.Second), Speed: 4, Power: 120},
+		{Lat: 0.0092, Lon: 0, Time: start.Add(6 * time.Second), Speed: 10, Power: 210},
+		{Lat: 0.0137, Lon: 0, Time: start.Add(7 * time.Second), Speed: 10, Power: 210},
+	}
+
+	got := longestRideSegmentFact("Ride", points, gps.StopOptions{})
+
+	if got.DistanceMeters < 1450 || got.DistanceMeters > 1550 {
+		t.Fatalf("expected slowdown to remain inside segment, got %.1fm", got.DistanceMeters)
+	}
+	if got.AvgPower < 190 || got.AvgPower > 210 {
+		t.Fatalf("expected average power to stay in-range, got %.1f", got.AvgPower)
+	}
+	if got.AvgSpeedMPS < 9.5 || got.AvgSpeedMPS > 10.5 {
+		t.Fatalf("expected average speed near 10 m/s, got %.2f", got.AvgSpeedMPS)
 	}
 }
 
