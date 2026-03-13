@@ -1433,10 +1433,6 @@ a {
   color: var(--ink-muted);
 }
 
-.activity-dropdown .icon-reapply {
-  width: 14px;
-}
-
 /* Settings page */
 .rule {
   display: grid;

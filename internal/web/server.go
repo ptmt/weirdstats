@@ -921,8 +921,7 @@ func applyWeirdStatsDescription(existing string, statsSnapshot stats.StopStats, 
 	lines := strings.Split(normalized, "\n")
 	filtered := make([]string, 0, len(lines))
 	for _, l := range lines {
-		trimmed := strings.TrimSpace(l)
-		if strings.HasPrefix(trimmed, weirdStatsPrefix) || strings.EqualFold(trimmed, weirdstatsTag) {
+		if isWeirdstatsManagedLine(l) {
 			continue
 		}
 		filtered = append(filtered, l)
@@ -960,7 +959,7 @@ func buildWeirdStatsLine(statsSnapshot stats.StopStats, rideFact rideSegmentFact
 	if len(parts) == 0 {
 		return ""
 	}
-	return weirdStatsPrefix + " " + strings.Join(parts, " · ")
+	return strings.Join(parts, " · ")
 }
 
 func buildRideSegmentPart(fact rideSegmentFact) string {
@@ -982,6 +981,22 @@ func appendWeirdstatsTag(text string) string {
 		return weirdstatsTag
 	}
 	return trimmed + " " + weirdstatsTag
+}
+
+func isWeirdstatsManagedLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return false
+	}
+	if strings.HasPrefix(trimmed, weirdStatsPrefix) || strings.EqualFold(trimmed, weirdstatsTag) {
+		return true
+	}
+	if !strings.Contains(trimmed, weirdstatsTag) {
+		return false
+	}
+	return strings.Contains(trimmed, "stops") ||
+		strings.Contains(trimmed, "at lights") ||
+		strings.Contains(trimmed, "Longest uninterrupted segment:")
 }
 
 func buildPointsFromStreams(start time.Time, streams strava.StreamSet) []gps.Point {

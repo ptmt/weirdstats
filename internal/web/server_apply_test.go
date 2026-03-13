@@ -21,7 +21,7 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 		AvgPower:       200,
 		AvgSpeedMPS:    30.0 / 3.6,
 	}
-	line := "Weirdstats: 3 stops (1m 35s total) · 2 at lights · Longest uninterrupted segment: 48km - 200w - 30kmh #weirdstats"
+	line := "3 stops (1m 35s total) · 2 at lights · Longest uninterrupted segment: 48km - 200w - 30kmh #weirdstats"
 
 	tests := []struct {
 		name     string
@@ -93,7 +93,26 @@ func TestApplyWeirdStatsDescription_WithRideFactOnly(t *testing.T) {
 	}
 
 	got, changed := applyWeirdStatsDescription("", stats.StopStats{}, rideFact)
-	want := "Weirdstats: Longest uninterrupted segment: 48.3km - 199w - 29.8kmh #weirdstats"
+	want := "Longest uninterrupted segment: 48.3km - 199w - 29.8kmh #weirdstats"
+	if got != want {
+		t.Fatalf("unexpected description\nwant: %q\n got: %q", want, got)
+	}
+	if !changed {
+		t.Fatalf("expected description to change")
+	}
+}
+
+func TestApplyWeirdStatsDescription_ReplacesHashtagManagedLine(t *testing.T) {
+	snapshot := stats.StopStats{
+		StopCount:             2,
+		StopTotalSeconds:      42,
+		TrafficLightStopCount: 1,
+	}
+
+	existing := "Morning ride\n\n3 stops (1m 35s total) · 2 at lights #weirdstats"
+	want := "Morning ride\n\n2 stops (42s total) · 1 at lights #weirdstats"
+
+	got, changed := applyWeirdStatsDescription(existing, snapshot, rideSegmentFact{})
 	if got != want {
 		t.Fatalf("unexpected description\nwant: %q\n got: %q", want, got)
 	}
