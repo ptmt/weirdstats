@@ -107,6 +107,27 @@ out center;`, radiusMeters, lat, lon)
 	return poisFromOverpassElements(elements), nil
 }
 
+func (c *OverpassClient) FetchLandmarkPOIs(ctx context.Context, bbox BBox) ([]POI, error) {
+	query := fmt.Sprintf(`[out:json][timeout:25];
+(
+  nwr["name"]["tourism"~"^(attraction|artwork|museum|viewpoint)$"](%s);
+  nwr["name"]["historic"~"^(monument|memorial|castle|ruins|archaeological_site)$"](%s);
+  nwr["name"]["amenity"="place_of_worship"](%s);
+  nwr["name"]["building"~"^(church|cathedral)$"](%s);
+);
+out center;`, bbox.String(), bbox.String(), bbox.String(), bbox.String())
+
+	ctx, cancel := context.WithTimeout(ctx, c.effectiveTimeout())
+	defer cancel()
+
+	elements, err := c.fetchWithCache(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	return poisFromOverpassElements(elements), nil
+}
+
 // FetchNearbyRoads returns roads within the given radius (meters) of a point.
 // Only fetches roads suitable for crossing detection (excludes footways, paths, etc.)
 func (c *OverpassClient) FetchNearbyRoads(ctx context.Context, lat, lon float64, radiusMeters int) ([]Road, error) {
@@ -304,9 +325,20 @@ func classifyPOI(tags map[string]string) FeatureType {
 		return FeatureFastFood
 	case "bar":
 		return FeatureBar
+	case "place_of_worship":
+		return FeatureType("place_of_worship")
+	}
+	if tourism := tags["tourism"]; tourism != "" {
+		return FeatureType(tourism)
+	}
+	if historic := tags["historic"]; historic != "" {
+		return FeatureType(historic)
 	}
 	if tags["highway"] == "traffic_signals" {
 		return FeatureTrafficLight
+	}
+	if building := tags["building"]; building != "" {
+		return FeatureType(building)
 	}
 	return FeatureType(tags["amenity"])
 }

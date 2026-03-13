@@ -99,6 +99,49 @@ func TestOverpassClient_FetchNearbyFoodPOIs(t *testing.T) {
 	}
 }
 
+func TestOverpassClient_FetchLandmarkPOIs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query().Get("data")
+		if query == "" ||
+			!strings.Contains(query, `["tourism"~"^(attraction|artwork|museum|viewpoint)$"]`) ||
+			!strings.Contains(query, `["historic"~"^(monument|memorial|castle|ruins|archaeological_site)$"]`) ||
+			!strings.Contains(query, `["amenity"="place_of_worship"]`) ||
+			!strings.Contains(query, `["building"~"^(church|cathedral)$"]`) ||
+			!strings.Contains(query, `["name"]`) {
+			t.Fatalf("unexpected landmark query: %q", query)
+		}
+
+		resp := overpassResponse{
+			Elements: []overpassElement{
+				{Type: "node", Lat: 40.0, Lon: -73.0, Tags: map[string]string{"tourism": "attraction", "name": "Grand Arch", "wikipedia": "en:Grand Arch"}},
+				{Type: "way", Center: &overpassLatLon{Lat: 40.0003, Lon: -73.0002}, Tags: map[string]string{"building": "church", "name": "Old Church"}},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := &OverpassClient{
+		BaseURL:      server.URL,
+		HTTPClient:   server.Client(),
+		DisableCache: true,
+	}
+
+	pois, err := client.FetchLandmarkPOIs(context.Background(), BBox{South: 1, West: 1, North: 2, East: 2})
+	if err != nil {
+		t.Fatalf("FetchLandmarkPOIs error: %v", err)
+	}
+	if len(pois) != 2 {
+		t.Fatalf("expected 2 pois, got %d", len(pois))
+	}
+	if pois[0].Type != FeatureType("attraction") || pois[1].Type != FeatureType("church") {
+		t.Fatalf("unexpected poi types: %+v", pois)
+	}
+	if pois[1].Lat != 40.0003 || pois[1].Lon != -73.0002 {
+		t.Fatalf("expected center coordinates for church, got %+v", pois[1])
+	}
+}
+
 func TestOverpassClient_FetchNearbyRoads(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := overpassResponse{

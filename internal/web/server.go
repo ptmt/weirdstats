@@ -13,6 +13,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -212,6 +213,10 @@ type rideSegmentFact struct {
 
 type coffeeStopFact struct {
 	Name string
+}
+
+type routeHighlightFact struct {
+	Names []string
 }
 
 // StaticHandler serves embedded static assets (leaflet, chart.js).
@@ -751,11 +756,17 @@ func (s *Server) ApplyActivityRules(w http.ResponseWriter, r *http.Request) {
 	baseHideFromHome := activity.HideFromHome
 	rideFact := rideSegmentFact{}
 	coffeeFact := coffeeStopFact{}
+	routeFact := routeHighlightFact{}
 	if isRideType(activity.Type) {
 		points, err := s.store.LoadActivityPoints(r.Context(), activityID)
 		if err != nil {
 			log.Printf("local activity points load failed (skipping ride fact): %v", err)
 		} else {
+			routeFact, err = detectRouteHighlightFact(r.Context(), points, s.overpass)
+			if err != nil {
+				log.Printf("local route highlight detection failed (skipping route highlights): %v", err)
+				routeFact = routeHighlightFact{}
+			}
 			rideFact = longestRideSegmentFact(activity.Type, points, s.stopOpts)
 			coffeeFact, err = detectCoffeeStopFact(r.Context(), activity.Type, points, s.overpass)
 			if err != nil {
@@ -777,6 +788,10 @@ func (s *Server) ApplyActivityRules(w http.ResponseWriter, r *http.Request) {
 					log.Printf("strava streams fetch failed (using cached ride fact): %v", err)
 				} else {
 					points := buildPointsFromStreams(latest.StartDate, streams)
+					routeFact, err = detectRouteHighlightFact(r.Context(), points, s.overpass)
+					if err != nil {
+						log.Printf("strava route highlight detection failed (using cached route highlights): %v", err)
+					}
 					rideFact = longestRideSegmentFact(latest.Type, points, s.stopOpts)
 					coffeeFact, err = detectCoffeeStopFact(r.Context(), latest.Type, points, s.overpass)
 					if err != nil {
@@ -786,12 +801,13 @@ func (s *Server) ApplyActivityRules(w http.ResponseWriter, r *http.Request) {
 			} else {
 				rideFact = rideSegmentFact{}
 				coffeeFact = coffeeStopFact{}
+				routeFact = routeHighlightFact{}
 			}
 		}
 	}
 
 	var descPtr *string
-	newDesc, descChanged := applyWeirdStatsDescription(baseDescription, statsSnapshot, rideFact, coffeeFact)
+	newDesc, descChanged := applyWeirdStatsDescription(baseDescription, statsSnapshot, rideFact, coffeeFact, routeFact)
 	if descChanged {
 		descPtr = &newDesc
 	}
@@ -927,8 +943,8 @@ func stopStatsFromStops(stops []storage.ActivityStop) stats.StopStats {
 const weirdStatsPrefix = "Weirdstats:"
 const weirdstatsTag = "#weirdstats"
 
-func applyWeirdStatsDescription(existing string, statsSnapshot stats.StopStats, rideFact rideSegmentFact, coffeeFact coffeeStopFact) (string, bool) {
-	line := buildWeirdStatsLine(statsSnapshot, rideFact, coffeeFact)
+func applyWeirdStatsDescription(existing string, statsSnapshot stats.StopStats, rideFact rideSegmentFact, coffeeFact coffeeStopFact, routeFact routeHighlightFact) (string, bool) {
+	line := buildWeirdStatsLine(statsSnapshot, rideFact, coffeeFact, routeFact)
 	if line == "" {
 		return existing, false
 	}
@@ -953,18 +969,22 @@ func applyWeirdStatsDescription(existing string, statsSnapshot stats.StopStats, 
 	return updated, updated != existing
 }
 
-func buildWeirdStatsLine(statsSnapshot stats.StopStats, rideFact rideSegmentFact, coffeeFact coffeeStopFact) string {
+func buildWeirdStatsLine(statsSnapshot stats.StopStats, rideFact rideSegmentFact, coffeeFact coffeeStopFact, routeFact routeHighlightFact) string {
 	ridePart := buildRideSegmentPart(rideFact)
 	coffeePart := buildCoffeeStopPart(coffeeFact)
-	if statsSnapshot.StopCount == 0 && statsSnapshot.TrafficLightStopCount == 0 && ridePart == "" && coffeePart == "" {
+	routePart := buildRouteHighlightPart(routeFact)
+	if statsSnapshot.StopCount == 0 && statsSnapshot.TrafficLightStopCount == 0 && ridePart == "" && coffeePart == "" && routePart == "" {
 		return ""
 	}
-	parts := make([]string, 0, 4)
+	parts := make([]string, 0, 5)
 	if ridePart != "" {
 		parts = append(parts, ridePart)
 	}
 	if coffeePart != "" {
 		parts = append(parts, coffeePart)
+	}
+	if routePart != "" {
+		parts = append(parts, routePart)
 	}
 	if statsSnapshot.StopCount > 0 {
 		part := fmt.Sprintf("%d stops", statsSnapshot.StopCount)
@@ -1002,6 +1022,33 @@ func buildCoffeeStopPart(fact coffeeStopFact) string {
 	return "Detected Coffee Stop: " + name
 }
 
+func buildRouteHighlightPart(fact routeHighlightFact) string {
+	names := make([]string, 0, len(fact.Names))
+	seen := make(map[string]struct{}, len(fact.Names))
+	for _, name := range fact.Names {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			continue
+		}
+		key := normalizeHighlightName(trimmed)
+		if key == "" {
+			key = trimmed
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		names = append(names, trimmed)
+		if len(names) == routeHighlightMaxCount {
+			break
+		}
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	return "Route highlights: " + strings.Join(names, ", ")
+}
+
 func appendWeirdstatsTag(text string) string {
 	trimmed := strings.TrimSpace(text)
 	trimmed = strings.TrimSpace(strings.TrimSuffix(trimmed, weirdstatsTag))
@@ -1025,7 +1072,8 @@ func isWeirdstatsManagedLine(line string) bool {
 	return strings.Contains(trimmed, "stops") ||
 		strings.Contains(trimmed, "at lights") ||
 		strings.Contains(trimmed, "Longest uninterrupted segment:") ||
-		strings.Contains(trimmed, "Detected Coffee Stop:")
+		strings.Contains(trimmed, "Detected Coffee Stop:") ||
+		strings.Contains(trimmed, "Route highlights:")
 }
 
 func buildPointsFromStreams(start time.Time, streams strava.StreamSet) []gps.Point {
@@ -1061,6 +1109,10 @@ const (
 	coffeeStopMinDuration         = 5 * time.Minute
 	coffeeStopSpeedThresholdMPS   = 0.5
 	coffeeStopSearchRadiusMeters  = 45
+	routeHighlightMaxDistanceM    = 200.0
+	routeHighlightBBoxPaddingM    = 200.0
+	routeHighlightMinScore        = 25.0
+	routeHighlightMaxCount        = 2
 )
 
 func longestRideSegmentFact(activityType string, points []gps.Point, _ gps.StopOptions) rideSegmentFact {
@@ -1191,6 +1243,249 @@ func rideSegmentFactForWindow(points []gps.Point, start, end time.Time, speedThr
 		fact.AvgPower = powerTotal / float64(powerCount)
 	}
 	return fact
+}
+
+func detectRouteHighlightFact(ctx context.Context, points []gps.Point, overpass *maps.OverpassClient) (routeHighlightFact, error) {
+	if len(points) < 2 || overpass == nil {
+		return routeHighlightFact{}, nil
+	}
+
+	bbox, ok := routeBBox(points, routeHighlightBBoxPaddingM)
+	if !ok {
+		return routeHighlightFact{}, nil
+	}
+
+	pois, err := overpass.FetchLandmarkPOIs(ctx, bbox)
+	if err != nil {
+		return routeHighlightFact{}, err
+	}
+
+	candidates := buildRouteHighlightCandidates(points, pois, routeHighlightMaxDistanceM)
+	if len(candidates) == 0 {
+		return routeHighlightFact{}, nil
+	}
+
+	names := make([]string, 0, routeHighlightMaxCount)
+	for _, candidate := range candidates {
+		names = append(names, candidate.name)
+		if len(names) == routeHighlightMaxCount {
+			break
+		}
+	}
+	if len(names) == 0 {
+		return routeHighlightFact{}, nil
+	}
+	return routeHighlightFact{Names: names}, nil
+}
+
+type routeHighlightCandidate struct {
+	name           string
+	score          float64
+	distanceMeters float64
+}
+
+func buildRouteHighlightCandidates(points []gps.Point, pois []maps.POI, maxDistanceMeters float64) []routeHighlightCandidate {
+	bestByName := make(map[string]routeHighlightCandidate)
+	for _, poi := range pois {
+		candidate, ok := routeHighlightCandidateForPOI(points, poi, maxDistanceMeters)
+		if !ok {
+			continue
+		}
+		key := normalizeHighlightName(candidate.name)
+		if current, exists := bestByName[key]; !exists || routeHighlightCandidateBetter(candidate, current) {
+			bestByName[key] = candidate
+		}
+	}
+
+	candidates := make([]routeHighlightCandidate, 0, len(bestByName))
+	for _, candidate := range bestByName {
+		candidates = append(candidates, candidate)
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return routeHighlightCandidateBetter(candidates[i], candidates[j])
+	})
+	return candidates
+}
+
+func routeHighlightCandidateForPOI(points []gps.Point, poi maps.POI, maxDistanceMeters float64) (routeHighlightCandidate, bool) {
+	name := strings.TrimSpace(poi.Name)
+	if name == "" {
+		return routeHighlightCandidate{}, false
+	}
+
+	distanceMeters := minDistanceToRouteMeters(poi.Lat, poi.Lon, points)
+	if distanceMeters > maxDistanceMeters {
+		return routeHighlightCandidate{}, false
+	}
+
+	score := routeHighlightScore(poi.Tags, distanceMeters, maxDistanceMeters)
+	if score < routeHighlightMinScore {
+		return routeHighlightCandidate{}, false
+	}
+
+	return routeHighlightCandidate{
+		name:           name,
+		score:          score,
+		distanceMeters: distanceMeters,
+	}, true
+}
+
+func routeHighlightCandidateBetter(candidate routeHighlightCandidate, current routeHighlightCandidate) bool {
+	if candidate.score != current.score {
+		return candidate.score > current.score
+	}
+	if candidate.distanceMeters != current.distanceMeters {
+		return candidate.distanceMeters < current.distanceMeters
+	}
+	return candidate.name < current.name
+}
+
+func routeHighlightScore(tags map[string]string, distanceMeters float64, maxDistanceMeters float64) float64 {
+	score := 0.0
+	if strings.TrimSpace(tags["wikidata"]) != "" {
+		score += 40
+	}
+	if strings.TrimSpace(tags["wikipedia"]) != "" {
+		score += 35
+	}
+	if strings.TrimSpace(tags["heritage"]) != "" {
+		score += 30
+	}
+
+	switch tags["tourism"] {
+	case "attraction":
+		score += 25
+	case "museum":
+		score += 20
+	case "viewpoint":
+		score += 16
+	case "artwork":
+		score += 14
+	}
+
+	switch tags["historic"] {
+	case "castle":
+		score += 24
+	case "monument":
+		score += 18
+	case "archaeological_site":
+		score += 18
+	case "ruins":
+		score += 16
+	case "memorial":
+		score += 14
+	}
+
+	switch tags["building"] {
+	case "cathedral":
+		score += 16
+	case "church":
+		score += 12
+	}
+
+	if tags["amenity"] == "place_of_worship" {
+		score += 8
+	}
+	if maxDistanceMeters > 0 && distanceMeters < maxDistanceMeters {
+		score += (maxDistanceMeters - distanceMeters) / 10
+	}
+	return score
+}
+
+func routeBBox(points []gps.Point, paddingMeters float64) (maps.BBox, bool) {
+	if len(points) == 0 {
+		return maps.BBox{}, false
+	}
+
+	minLat, maxLat := points[0].Lat, points[0].Lat
+	minLon, maxLon := points[0].Lon, points[0].Lon
+	latTotal := 0.0
+	for _, point := range points {
+		if point.Lat < minLat {
+			minLat = point.Lat
+		}
+		if point.Lat > maxLat {
+			maxLat = point.Lat
+		}
+		if point.Lon < minLon {
+			minLon = point.Lon
+		}
+		if point.Lon > maxLon {
+			maxLon = point.Lon
+		}
+		latTotal += point.Lat
+	}
+
+	avgLat := latTotal / float64(len(points))
+	latPadding := paddingMeters / 111320.0
+	lonScale := math.Cos(avgLat * math.Pi / 180)
+	if math.Abs(lonScale) < 1e-6 {
+		lonScale = 1e-6
+	}
+	lonPadding := paddingMeters / (111320.0 * lonScale)
+	return maps.BBox{
+		South: minLat - latPadding,
+		West:  minLon - lonPadding,
+		North: maxLat + latPadding,
+		East:  maxLon + lonPadding,
+	}, true
+}
+
+func minDistanceToRouteMeters(lat, lon float64, points []gps.Point) float64 {
+	if len(points) == 0 {
+		return math.Inf(1)
+	}
+	if len(points) == 1 {
+		return haversineMeters(lat, lon, points[0].Lat, points[0].Lon)
+	}
+
+	const earthRadius = 6371000.0
+	latRad := lat * math.Pi / 180
+	lonScale := math.Cos(latRad)
+	if math.Abs(lonScale) < 1e-6 {
+		lonScale = 1e-6
+	}
+
+	project := func(point gps.Point) (float64, float64) {
+		x := (point.Lon - lon) * math.Pi / 180 * earthRadius * lonScale
+		y := (point.Lat - lat) * math.Pi / 180 * earthRadius
+		return x, y
+	}
+
+	prevX, prevY := project(points[0])
+	best := math.Hypot(prevX, prevY)
+	for _, point := range points[1:] {
+		x, y := project(point)
+		distance := pointToSegmentDistanceMeters(0, 0, prevX, prevY, x, y)
+		if distance < best {
+			best = distance
+		}
+		prevX, prevY = x, y
+	}
+	return best
+}
+
+func pointToSegmentDistanceMeters(px, py, x1, y1, x2, y2 float64) float64 {
+	dx := x2 - x1
+	dy := y2 - y1
+	if dx == 0 && dy == 0 {
+		return math.Hypot(px-x1, py-y1)
+	}
+
+	t := ((px-x1)*dx + (py-y1)*dy) / (dx*dx + dy*dy)
+	if t < 0 {
+		t = 0
+	} else if t > 1 {
+		t = 1
+	}
+
+	projX := x1 + (t * dx)
+	projY := y1 + (t * dy)
+	return math.Hypot(px-projX, py-projY)
+}
+
+func normalizeHighlightName(name string) string {
+	return strings.Join(strings.Fields(strings.ToLower(strings.TrimSpace(name))), " ")
 }
 
 func detectCoffeeStopFact(ctx context.Context, activityType string, points []gps.Point, overpass *maps.OverpassClient) (coffeeStopFact, error) {

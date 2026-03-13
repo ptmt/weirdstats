@@ -27,7 +27,8 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 		AvgSpeedMPS:    30.0 / 3.6,
 	}
 	coffeeFact := coffeeStopFact{Name: "Bean Machine"}
-	line := "Longest uninterrupted segment: 48km - 200w - 30kmh · Detected Coffee Stop: Bean Machine · 3 stops (1m 35s total) · 2 at lights #weirdstats"
+	routeFact := routeHighlightFact{Names: []string{"Victory Column", "Memorial Church"}}
+	line := "Longest uninterrupted segment: 48km - 200w - 30kmh · Detected Coffee Stop: Bean Machine · Route highlights: Victory Column, Memorial Church · 3 stops (1m 35s total) · 2 at lights #weirdstats"
 
 	tests := []struct {
 		name       string
@@ -35,6 +36,7 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 		stats      stats.StopStats
 		rideFact   rideSegmentFact
 		coffeeFact coffeeStopFact
+		routeFact  routeHighlightFact
 		want       string
 		changed    bool
 	}{
@@ -44,6 +46,7 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 			stats:      snapshot,
 			rideFact:   rideFact,
 			coffeeFact: coffeeFact,
+			routeFact:  routeFact,
 			want:       line,
 			changed:    true,
 		},
@@ -53,6 +56,7 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 			stats:      snapshot,
 			rideFact:   rideFact,
 			coffeeFact: coffeeFact,
+			routeFact:  routeFact,
 			want:       "Morning ride with intervals\n\n" + line,
 			changed:    true,
 		},
@@ -62,6 +66,7 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 			stats:      snapshot,
 			rideFact:   rideFact,
 			coffeeFact: coffeeFact,
+			routeFact:  routeFact,
 			want:       "First paragraph.\n\nSecond paragraph.\n\n" + line,
 			changed:    true,
 		},
@@ -71,6 +76,7 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 			stats:      snapshot,
 			rideFact:   rideFact,
 			coffeeFact: coffeeFact,
+			routeFact:  routeFact,
 			want:       "Morning ride with intervals\n\n" + line,
 			changed:    false,
 		},
@@ -85,7 +91,7 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, changed := applyWeirdStatsDescription(tt.existing, tt.stats, tt.rideFact, tt.coffeeFact)
+			got, changed := applyWeirdStatsDescription(tt.existing, tt.stats, tt.rideFact, tt.coffeeFact, tt.routeFact)
 			if got != tt.want {
 				t.Fatalf("unexpected description\nwant: %q\n got: %q", tt.want, got)
 			}
@@ -103,7 +109,7 @@ func TestApplyWeirdStatsDescription_WithRideFactOnly(t *testing.T) {
 		AvgSpeedMPS:    29.8 / 3.6,
 	}
 
-	got, changed := applyWeirdStatsDescription("", stats.StopStats{}, rideFact, coffeeStopFact{})
+	got, changed := applyWeirdStatsDescription("", stats.StopStats{}, rideFact, coffeeStopFact{}, routeHighlightFact{})
 	want := "Longest uninterrupted segment: 48.3km - 199w - 29.8kmh #weirdstats"
 	if got != want {
 		t.Fatalf("unexpected description\nwant: %q\n got: %q", want, got)
@@ -123,7 +129,7 @@ func TestApplyWeirdStatsDescription_ReplacesHashtagManagedLine(t *testing.T) {
 	existing := "Morning ride\n\n3 stops (1m 35s total) · 2 at lights #weirdstats"
 	want := "Morning ride\n\n2 stops (42s total) · 1 at lights #weirdstats"
 
-	got, changed := applyWeirdStatsDescription(existing, snapshot, rideSegmentFact{}, coffeeStopFact{})
+	got, changed := applyWeirdStatsDescription(existing, snapshot, rideSegmentFact{}, coffeeStopFact{}, routeHighlightFact{})
 	if got != want {
 		t.Fatalf("unexpected description\nwant: %q\n got: %q", want, got)
 	}
@@ -139,20 +145,23 @@ func TestBuildWeirdStatsLine(t *testing.T) {
 		AvgSpeedMPS:    30.0 / 3.6,
 	}
 	coffeeFact := coffeeStopFact{Name: "Bean Machine"}
+	routeFact := routeHighlightFact{Names: []string{"Victory Column", "Memorial Church"}}
 
 	tests := []struct {
 		name       string
 		stats      stats.StopStats
 		rideFact   rideSegmentFact
 		coffeeFact coffeeStopFact
+		routeFact  routeHighlightFact
 		want       string
 	}{
 		{
-			name:       "ride fact first with coffee, stops and lights",
+			name:       "ride fact first with coffee, route highlights, stops and lights",
 			stats:      stats.StopStats{StopCount: 3, StopTotalSeconds: 95, TrafficLightStopCount: 2},
 			rideFact:   rideFact,
 			coffeeFact: coffeeFact,
-			want:       "Longest uninterrupted segment: 48km - 200w - 30kmh · Detected Coffee Stop: Bean Machine · 3 stops (1m 35s total) · 2 at lights",
+			routeFact:  routeFact,
+			want:       "Longest uninterrupted segment: 48km - 200w - 30kmh · Detected Coffee Stop: Bean Machine · Route highlights: Victory Column, Memorial Church · 3 stops (1m 35s total) · 2 at lights",
 		},
 		{
 			name:     "ride fact only",
@@ -163,6 +172,11 @@ func TestBuildWeirdStatsLine(t *testing.T) {
 			name:       "coffee fact only",
 			coffeeFact: coffeeFact,
 			want:       "Detected Coffee Stop: Bean Machine",
+		},
+		{
+			name:      "route highlights only",
+			routeFact: routeFact,
+			want:      "Route highlights: Victory Column, Memorial Church",
 		},
 		{
 			name:  "stops only",
@@ -182,7 +196,7 @@ func TestBuildWeirdStatsLine(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := buildWeirdStatsLine(tt.stats, tt.rideFact, tt.coffeeFact)
+			got := buildWeirdStatsLine(tt.stats, tt.rideFact, tt.coffeeFact, tt.routeFact)
 			if got != tt.want {
 				t.Fatalf("unexpected line\nwant: %q\n got: %q", tt.want, got)
 			}
@@ -251,6 +265,39 @@ func TestBuildCoffeeStopPart(t *testing.T) {
 	}
 }
 
+func TestBuildRouteHighlightPart(t *testing.T) {
+	tests := []struct {
+		name string
+		fact routeHighlightFact
+		want string
+	}{
+		{
+			name: "named highlights",
+			fact: routeHighlightFact{Names: []string{"Victory Column", "Memorial Church"}},
+			want: "Route highlights: Victory Column, Memorial Church",
+		},
+		{
+			name: "dedupes and trims",
+			fact: routeHighlightFact{Names: []string{" Victory Column ", "victory   column", "Memorial Church"}},
+			want: "Route highlights: Victory Column, Memorial Church",
+		},
+		{
+			name: "missing highlights",
+			fact: routeHighlightFact{},
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildRouteHighlightPart(tt.fact)
+			if got != tt.want {
+				t.Fatalf("unexpected route part\nwant: %q\n got: %q", tt.want, got)
+			}
+		})
+	}
+}
+
 func TestAppendWeirdstatsTag(t *testing.T) {
 	tests := []struct {
 		name string
@@ -302,7 +349,7 @@ func TestIsWeirdstatsManagedLine(t *testing.T) {
 		},
 		{
 			name: "new stats line",
-			line: "Longest uninterrupted segment: 48km - 200w - 30kmh · Detected Coffee Stop: Bean Machine · 2 stops (42s total) #weirdstats",
+			line: "Longest uninterrupted segment: 48km - 200w - 30kmh · Detected Coffee Stop: Bean Machine · Route highlights: Victory Column · 2 stops (42s total) #weirdstats",
 			want: true,
 		},
 		{
@@ -551,6 +598,147 @@ func TestDetectCoffeeStopFact_RequiresMovement(t *testing.T) {
 	}
 	if got.Name != "" {
 		t.Fatalf("expected no coffee stop, got %+v", got)
+	}
+}
+
+func TestMinDistanceToRouteMeters(t *testing.T) {
+	start := time.Date(2026, time.March, 1, 8, 0, 0, 0, time.UTC)
+	points := []gps.Point{
+		{Lat: 52.5200, Lon: 13.4040, Time: start},
+		{Lat: 52.5200, Lon: 13.4080, Time: start.Add(1 * time.Minute)},
+	}
+
+	onRoute := minDistanceToRouteMeters(52.5200, 13.4060, points)
+	if onRoute > 1 {
+		t.Fatalf("expected on-route point to be near zero, got %.2fm", onRoute)
+	}
+
+	nearRoute := minDistanceToRouteMeters(52.52135, 13.4060, points)
+	if nearRoute < 140 || nearRoute > 160 {
+		t.Fatalf("expected point about 150m from route, got %.2fm", nearRoute)
+	}
+}
+
+func TestBuildRouteHighlightCandidates(t *testing.T) {
+	start := time.Date(2026, time.March, 1, 8, 0, 0, 0, time.UTC)
+	points := []gps.Point{
+		{Lat: 52.5200, Lon: 13.4040, Time: start},
+		{Lat: 52.5200, Lon: 13.4080, Time: start.Add(1 * time.Minute)},
+	}
+
+	pois := []maps.POI{
+		{
+			Feature: maps.Feature{Name: "Brandenburg Gate"},
+			Lat:     52.5201,
+			Lon:     13.4055,
+			Tags: map[string]string{
+				"tourism":   "attraction",
+				"wikidata":  "Q82494",
+				"wikipedia": "en:Brandenburg Gate",
+			},
+		},
+		{
+			Feature: maps.Feature{Name: "Neighborhood Church"},
+			Lat:     52.5206,
+			Lon:     13.4062,
+			Tags: map[string]string{
+				"building": "church",
+			},
+		},
+		{
+			Feature: maps.Feature{Name: "Far Museum"},
+			Lat:     52.5230,
+			Lon:     13.4060,
+			Tags: map[string]string{
+				"tourism":   "museum",
+				"wikidata":  "Q1",
+				"wikipedia": "en:Far Museum",
+			},
+		},
+		{
+			Feature: maps.Feature{Name: "Brandenburg Gate"},
+			Lat:     52.5202,
+			Lon:     13.4056,
+			Tags: map[string]string{
+				"tourism": "attraction",
+			},
+		},
+	}
+
+	got := buildRouteHighlightCandidates(points, pois, routeHighlightMaxDistanceM)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 candidates, got %d", len(got))
+	}
+	if got[0].name != "Brandenburg Gate" {
+		t.Fatalf("expected Brandenburg Gate first, got %+v", got)
+	}
+	if got[1].name != "Neighborhood Church" {
+		t.Fatalf("expected Neighborhood Church second, got %+v", got)
+	}
+}
+
+func TestDetectRouteHighlightFact(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"elements": []map[string]any{
+				{
+					"type": "node",
+					"lat":  52.5201,
+					"lon":  13.4055,
+					"tags": map[string]any{
+						"name":      "Brandenburg Gate",
+						"tourism":   "attraction",
+						"wikidata":  "Q82494",
+						"wikipedia": "en:Brandenburg Gate",
+					},
+				},
+				{
+					"type": "node",
+					"lat":  52.5206,
+					"lon":  13.4062,
+					"tags": map[string]any{
+						"name":     "Neighborhood Church",
+						"building": "church",
+					},
+				},
+				{
+					"type": "node",
+					"lat":  52.5230,
+					"lon":  13.4060,
+					"tags": map[string]any{
+						"name":      "Far Museum",
+						"tourism":   "museum",
+						"wikidata":  "Q1",
+						"wikipedia": "en:Far Museum",
+					},
+				},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := &maps.OverpassClient{
+		BaseURL:      server.URL,
+		HTTPClient:   server.Client(),
+		DisableCache: true,
+	}
+
+	start := time.Date(2026, time.March, 1, 8, 0, 0, 0, time.UTC)
+	points := []gps.Point{
+		{Lat: 52.5200, Lon: 13.4040, Time: start},
+		{Lat: 52.5200, Lon: 13.4080, Time: start.Add(1 * time.Minute)},
+	}
+
+	got, err := detectRouteHighlightFact(context.Background(), points, client)
+	if err != nil {
+		t.Fatalf("detectRouteHighlightFact error: %v", err)
+	}
+	if len(got.Names) != 2 {
+		t.Fatalf("expected 2 route highlights, got %+v", got)
+	}
+	if got.Names[0] != "Brandenburg Gate" || got.Names[1] != "Neighborhood Church" {
+		t.Fatalf("unexpected route highlights: %+v", got)
 	}
 }
 
