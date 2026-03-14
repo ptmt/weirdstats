@@ -138,6 +138,37 @@ func TestApplyWeirdStatsDescription_ReplacesHashtagManagedLine(t *testing.T) {
 	}
 }
 
+func TestApplyWeirdStatsDescription_RemovesManagedLineWhenNoFactsRemain(t *testing.T) {
+	existing := "Morning ride\n\n2 stops (42s total) · 1 at lights #weirdstats"
+
+	got, changed := applyWeirdStatsDescription(existing, stats.StopStats{}, rideSegmentFact{}, coffeeStopFact{}, routeHighlightFact{})
+	if got != "Morning ride" {
+		t.Fatalf("unexpected description\nwant: %q\n got: %q", "Morning ride", got)
+	}
+	if !changed {
+		t.Fatalf("expected description to change")
+	}
+}
+
+func TestFilterWeirdStatsSnapshot(t *testing.T) {
+	snapshot := stats.StopStats{
+		StopCount:             3,
+		StopTotalSeconds:      95,
+		TrafficLightStopCount: 2,
+	}
+
+	got := filterWeirdStatsSnapshot(snapshot, map[string]bool{
+		weirdStatsFactStopSummary:       false,
+		weirdStatsFactTrafficLightStops: true,
+	})
+	if got.StopCount != 0 || got.StopTotalSeconds != 0 {
+		t.Fatalf("expected stop summary to be cleared, got %+v", got)
+	}
+	if got.TrafficLightStopCount != 2 {
+		t.Fatalf("expected traffic-light stops to remain, got %+v", got)
+	}
+}
+
 func TestBuildWeirdStatsLine(t *testing.T) {
 	rideFact := rideSegmentFact{
 		DistanceMeters: 48000,
