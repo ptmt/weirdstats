@@ -1,7 +1,6 @@
 {{define "content"}}
   <section class="hero-copy">
     <h2 class="section-title">Settings</h2>
-    <p class="muted">Tune which activities are hidden and keep your account tidy.</p>
     {{if .Message}}
       <div class="card">
         <strong>{{.Message}}</strong>
@@ -10,6 +9,42 @@
   </section>
 
   <section class="settings-stack">
+    <article class="card settings-section">
+      <div class="section-head">
+        <div>
+          <h3>Weirdstats facts</h3>
+          <p class="muted">Choose which extracted facts Weirdstats can write into activity descriptions for this account.</p>
+        </div>
+        <span class="pill">Per user</span>
+      </div>
+      <form method="post" action="/activities/settings" class="rule-builder">
+        <input type="hidden" name="action" value="update-facts" />
+        <div class="rule-list">
+          {{range .Facts}}
+            <div class="rule-row">
+              <div class="rule-main">
+                <div class="rule-title">
+                  <strong>{{.Label}}</strong>
+                  {{if .RideOnly}}<span class="pill muted">Ride only</span>{{end}}
+                </div>
+                <span class="muted">{{.Description}}</span>
+              </div>
+              <div class="rule-actions">
+                <label class="toggle">
+                  <input type="checkbox" name="fact_{{.ID}}" {{if .Enabled}}checked{{end}} />
+                  Enabled
+                </label>
+              </div>
+            </div>
+          {{end}}
+        </div>
+        <div class="settings-actions">
+          <button class="btn small" type="submit">Save fact settings</button>
+        </div>
+        <p class="muted">Changes apply the next time Weirdstats updates an activity description.</p>
+      </form>
+    </article>
+
     <article class="card settings-section">
       <div class="section-head">
         <div>

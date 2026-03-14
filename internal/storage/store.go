@@ -84,6 +84,13 @@ type HideRule struct {
 	UpdatedAt time.Time
 }
 
+type UserFactPreference struct {
+	UserID    int64
+	FactID    string
+	Enabled   bool
+	UpdatedAt time.Time
+}
+
 type ActivityWithStats struct {
 	Activity
 	StopCount             int
@@ -302,6 +309,13 @@ CREATE TABLE IF NOT EXISTS hide_rules (
 	enabled INTEGER NOT NULL,
 	created_at INTEGER NOT NULL,
 	updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS user_fact_preferences (
+	user_id INTEGER NOT NULL,
+	fact_id TEXT NOT NULL,
+	enabled INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL,
+	PRIMARY KEY (user_id, fact_id)
 );
 `
 	if _, err := s.db.ExecContext(ctx, schema); err != nil {
@@ -1042,8 +1056,87 @@ func (s *Store) DeleteHideRuleForUser(ctx context.Context, userID, ruleID int64)
 	_, err := s.db.ExecContext(ctx, `
 DELETE FROM hide_rules
 WHERE id = ? AND user_id = ?
-`, ruleID, userID)
+	`, ruleID, userID)
 	return err
+}
+
+func (s *Store) ListUserFactPreferences(ctx context.Context, userID int64) ([]UserFactPreference, error) {
+	if userID == 0 {
+		userID = 1
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT user_id, fact_id, enabled, updated_at
+FROM user_fact_preferences
+WHERE user_id = ?
+ORDER BY fact_id
+`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var prefs []UserFactPreference
+	for rows.Next() {
+		var pref UserFactPreference
+		var enabled int
+		var updatedAt int64
+		if err := rows.Scan(&pref.UserID, &pref.FactID, &enabled, &updatedAt); err != nil {
+			return nil, err
+		}
+		pref.Enabled = enabled != 0
+		pref.UpdatedAt = time.Unix(updatedAt, 0)
+		prefs = append(prefs, pref)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return prefs, nil
+}
+
+func (s *Store) ReplaceUserFactPreferences(ctx context.Context, userID int64, prefs []UserFactPreference) error {
+	if userID == 0 {
+		userID = 1
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	if _, err := tx.ExecContext(ctx, `
+DELETE FROM user_fact_preferences
+WHERE user_id = ?
+`, userID); err != nil {
+		return err
+	}
+
+	if len(prefs) == 0 {
+		return tx.Commit()
+	}
+
+	stmt, err := tx.PrepareContext(ctx, `
+INSERT INTO user_fact_preferences (user_id, fact_id, enabled, updated_at)
+VALUES (?, ?, ?, ?)
+`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	now := time.Now().Unix()
+	for _, pref := range prefs {
+		factID := strings.TrimSpace(pref.FactID)
+		if factID == "" {
+			return errors.New("fact id required")
+		}
+		if _, err := stmt.ExecContext(ctx, userID, factID, boolToInt(pref.Enabled), now); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
 }
 
 func (s *Store) DeleteUserData(ctx context.Context, userID int64) error {
@@ -1100,6 +1193,12 @@ WHERE user_id = ?
 `, userID); err != nil {
 		return err
 	}
+	if _, err := tx.ExecContext(ctx, `
+DELETE FROM user_fact_preferences
+WHERE user_id = ?
+`, userID); err != nil {
+		return err
+	}
 
 	return tx.Commit()
 }
@@ -1130,6 +1229,10 @@ func (s *Store) ReassignUserData(ctx context.Context, fromUserID, toUserID int64
 		},
 		{
 			query: `UPDATE hide_rules SET user_id = ? WHERE user_id = ?`,
+			args:  []interface{}{toUserID, fromUserID},
+		},
+		{
+			query: `UPDATE user_fact_preferences SET user_id = ? WHERE user_id = ?`,
 			args:  []interface{}{toUserID, fromUserID},
 		},
 		{

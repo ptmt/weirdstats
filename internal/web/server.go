@@ -158,6 +158,7 @@ type SettingsRule struct {
 
 type SettingsPageData struct {
 	PageData
+	Facts         []SettingsFact
 	Rules         []SettingsRule
 	RulesMetaJSON template.JS
 }
@@ -928,26 +929,41 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 		return err
 	}
 
+	factSettings, err := s.loadWeirdStatsFactSettings(ctx, activity.UserID)
+	if err != nil {
+		return err
+	}
+	rideFactEnabled := weirdStatsFactEnabled(factSettings, weirdStatsFactLongestSegment)
+	coffeeFactEnabled := weirdStatsFactEnabled(factSettings, weirdStatsFactCoffeeStop)
+	routeFactEnabled := weirdStatsFactEnabled(factSettings, weirdStatsFactRouteHighlights)
+	needsRideFacts := rideFactEnabled || coffeeFactEnabled || routeFactEnabled
+
 	baseDescription := activity.Description
 	baseHideFromHome := activity.HideFromHome
 	rideFact := rideSegmentFact{}
 	coffeeFact := coffeeStopFact{}
 	routeFact := routeHighlightFact{}
-	if isRideType(activity.Type) {
+	if needsRideFacts && isRideType(activity.Type) {
 		points, err := s.store.LoadActivityPoints(ctx, activityID)
 		if err != nil {
 			log.Printf("local activity points load failed (skipping ride fact): %v", err)
 		} else {
-			routeFact, err = detectRouteHighlightFact(ctx, points, s.overpass)
-			if err != nil {
-				log.Printf("local route highlight detection failed (skipping route highlights): %v", err)
-				routeFact = routeHighlightFact{}
+			if routeFactEnabled {
+				routeFact, err = detectRouteHighlightFact(ctx, points, s.overpass)
+				if err != nil {
+					log.Printf("local route highlight detection failed (skipping route highlights): %v", err)
+					routeFact = routeHighlightFact{}
+				}
 			}
-			rideFact = longestRideSegmentFact(activity.Type, points, s.stopOpts)
-			coffeeFact, err = detectCoffeeStopFact(ctx, activity.Type, points, s.overpass)
-			if err != nil {
-				log.Printf("local coffee stop detection failed (skipping coffee fact): %v", err)
-				coffeeFact = coffeeStopFact{}
+			if rideFactEnabled {
+				rideFact = longestRideSegmentFact(activity.Type, points, s.stopOpts)
+			}
+			if coffeeFactEnabled {
+				coffeeFact, err = detectCoffeeStopFact(ctx, activity.Type, points, s.overpass)
+				if err != nil {
+					log.Printf("local coffee stop detection failed (skipping coffee fact): %v", err)
+					coffeeFact = coffeeStopFact{}
+				}
 			}
 		}
 	}
@@ -960,20 +976,26 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 		} else {
 			baseDescription = latest.Description
 			baseHideFromHome = latest.HideFromHome
-			if isRideType(latest.Type) {
+			if needsRideFacts && isRideType(latest.Type) {
 				streams, err := client.GetStreams(ctx, activityID)
 				if err != nil {
 					log.Printf("strava streams fetch failed (using cached ride fact): %v", err)
 				} else {
 					points := buildPointsFromStreams(latest.StartDate, streams)
-					routeFact, err = detectRouteHighlightFact(ctx, points, s.overpass)
-					if err != nil {
-						log.Printf("strava route highlight detection failed (using cached route highlights): %v", err)
+					if routeFactEnabled {
+						routeFact, err = detectRouteHighlightFact(ctx, points, s.overpass)
+						if err != nil {
+							log.Printf("strava route highlight detection failed (using cached route highlights): %v", err)
+						}
 					}
-					rideFact = longestRideSegmentFact(latest.Type, points, s.stopOpts)
-					coffeeFact, err = detectCoffeeStopFact(ctx, latest.Type, points, s.overpass)
-					if err != nil {
-						log.Printf("strava coffee stop detection failed (using cached coffee fact): %v", err)
+					if rideFactEnabled {
+						rideFact = longestRideSegmentFact(latest.Type, points, s.stopOpts)
+					}
+					if coffeeFactEnabled {
+						coffeeFact, err = detectCoffeeStopFact(ctx, latest.Type, points, s.overpass)
+						if err != nil {
+							log.Printf("strava coffee stop detection failed (using cached coffee fact): %v", err)
+						}
 					}
 				}
 			} else {
@@ -987,7 +1009,7 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 	}
 
 	var descPtr *string
-	newDesc, descChanged := applyWeirdStatsDescription(baseDescription, statsSnapshot, rideFact, coffeeFact, routeFact)
+	newDesc, descChanged := applyWeirdStatsDescription(baseDescription, filterWeirdStatsSnapshot(statsSnapshot, factSettings), rideFact, coffeeFact, routeFact)
 	if descChanged {
 		descPtr = &newDesc
 	}
@@ -1120,21 +1142,26 @@ const weirdstatsTag = "#weirdstats"
 
 func applyWeirdStatsDescription(existing string, statsSnapshot stats.StopStats, rideFact rideSegmentFact, coffeeFact coffeeStopFact, routeFact routeHighlightFact) (string, bool) {
 	line := buildWeirdStatsLine(statsSnapshot, rideFact, coffeeFact, routeFact)
-	if line == "" {
-		return existing, false
-	}
-
 	normalized := strings.ReplaceAll(existing, "\r\n", "\n")
 	lines := strings.Split(normalized, "\n")
 	filtered := make([]string, 0, len(lines))
+	hadManagedLine := false
 	for _, l := range lines {
 		if isWeirdstatsManagedLine(l) {
+			hadManagedLine = true
 			continue
 		}
 		filtered = append(filtered, l)
 	}
 
 	base := strings.TrimRight(strings.Join(filtered, "\n"), "\n")
+	if line == "" {
+		if !hadManagedLine {
+			return existing, false
+		}
+		return base, base != existing
+	}
+
 	updated := line
 	if strings.TrimSpace(base) != "" {
 		updated = base + "\n\n" + line
@@ -1958,6 +1985,11 @@ func (s *Server) Settings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	registry := rules.DefaultRegistry()
+	factSettings, err := s.loadWeirdStatsFactSettings(r.Context(), userID)
+	if err != nil {
+		http.Error(w, "failed to load fact settings", http.StatusInternalServerError)
+		return
+	}
 	ruleRows, err := s.store.ListHideRules(r.Context(), userID)
 	if err != nil {
 		http.Error(w, "failed to load rules", http.StatusInternalServerError)
@@ -1991,10 +2023,11 @@ func (s *Server) Settings(w http.ResponseWriter, r *http.Request) {
 			Title:      "Settings",
 			Page:       "settings",
 			Message:    r.URL.Query().Get("msg"),
-			FooterText: "Rules are stored locally and applied when the processing pipeline runs.",
+			FooterText: "Rules and fact preferences are stored locally and applied when Weirdstats updates activities.",
 			Strava:     s.getStravaInfo(r.Context(), userID),
 			UserCount:  s.userCount(r.Context()),
 		},
+		Facts:         buildSettingsFacts(factSettings),
 		Rules:         viewRules,
 		RulesMetaJSON: template.JS(string(metaJSON)),
 	}
@@ -2271,7 +2304,7 @@ func (s *Server) StravaCallback(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	http.Redirect(w, r, appendMessage(next, "strava connected"), http.StatusFound)
+	http.Redirect(w, r, next, http.StatusFound)
 }
 
 func compactErrMessage(err error) string {
@@ -2306,6 +2339,16 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request, user
 	}
 	action := strings.TrimSpace(r.FormValue("action"))
 	switch action {
+	case "update-facts":
+		settings := defaultWeirdStatsFactSettings()
+		for _, def := range weirdStatsFactDefinitions {
+			settings[def.ID] = r.FormValue("fact_"+def.ID) == "on"
+		}
+		if err := s.store.ReplaceUserFactPreferences(r.Context(), userID, buildUserFactPreferences(settings)); err != nil {
+			http.Redirect(w, r, "/activities/settings?msg=fact+update+failed", http.StatusFound)
+			return
+		}
+		http.Redirect(w, r, "/activities/settings?msg=facts+updated", http.StatusFound)
 	case "add-rule":
 		name := strings.TrimSpace(r.FormValue("name"))
 		condition := strings.TrimSpace(r.FormValue("condition"))
