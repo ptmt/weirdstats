@@ -799,3 +799,48 @@ func TestBuildRoutePreviewPathRejectsSinglePoint(t *testing.T) {
 		t.Fatalf("expected single-point route to be rejected")
 	}
 }
+
+func TestBuildContributionDataForYear_UsesMondayWeekStart(t *testing.T) {
+	ctx := context.Background()
+	store, err := storage.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+
+	if err := store.InitSchema(ctx); err != nil {
+		t.Fatalf("init schema: %v", err)
+	}
+
+	server := &Server{store: store}
+
+	oldLocal := time.Local
+	time.Local = time.UTC
+	defer func() {
+		time.Local = oldLocal
+	}()
+
+	data := server.buildContributionDataForYear(ctx, 2026, time.Date(2027, time.January, 15, 0, 0, 0, 0, time.UTC))
+	if len(data.Days) != data.Weeks*7 {
+		t.Fatalf("unexpected grid size: got %d days for %d weeks", len(data.Days), data.Weeks)
+	}
+
+	wantFirstWeek := []string{
+		"2025-12-29",
+		"2025-12-30",
+		"2025-12-31",
+		"2026-01-01",
+		"2026-01-02",
+		"2026-01-03",
+		"2026-01-04",
+	}
+	for i, want := range wantFirstWeek {
+		if got := data.Days[i].Date; got != want {
+			t.Fatalf("unexpected first week day at index %d: want %s got %s", i, want, got)
+		}
+	}
+
+	if got := data.Days[len(data.Days)-1].Date; got != "2027-01-03" {
+		t.Fatalf("unexpected last grid day: want 2027-01-03 got %s", got)
+	}
+}

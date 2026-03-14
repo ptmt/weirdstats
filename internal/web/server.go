@@ -2493,11 +2493,11 @@ func (s *Server) buildContributionDataForYear(ctx context.Context, year int, now
 		rangeEnd = time.Date(year, now.Month(), now.Day(), 0, 0, 0, 0, loc)
 	}
 	startGrid := start
-	for startGrid.Weekday() != time.Sunday {
+	for startGrid.Weekday() != time.Monday {
 		startGrid = startGrid.AddDate(0, 0, -1)
 	}
 	endGrid := end
-	for endGrid.Weekday() != time.Saturday {
+	for endGrid.Weekday() != time.Sunday {
 		endGrid = endGrid.AddDate(0, 0, 1)
 	}
 
