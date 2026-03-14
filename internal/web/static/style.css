@@ -37,7 +37,9 @@
   /* Button shadows */
   --btn-shadow: 0 4px 24px rgba(168, 85, 247, 0.35);
   --btn-shadow-hover: 0 8px 32px rgba(168, 85, 247, 0.5);
-  --btn-text: #ffffff;
+  --btn-text: #f8fbff;
+  --btn-text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 0 12px rgba(10, 10, 15, 0.18);
+  --btn-gradient: linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, rgba(10, 10, 15, 0.18) 100%), var(--gradient-holo);
 
   /* Contribution wall */
   --contrib-0: rgba(255, 255, 255, 0.03);
@@ -89,7 +91,9 @@
   /* Button specific - brighter in light mode */
   --btn-shadow: 0 4px 20px rgba(168, 85, 247, 0.3);
   --btn-shadow-hover: 0 8px 28px rgba(168, 85, 247, 0.4);
-  --btn-text: #0a0a0f;
+  --btn-text: #ffffff;
+  --btn-text-shadow: 0 1px 2px rgba(10, 10, 15, 0.45), 0 0 10px rgba(10, 10, 15, 0.14);
+  --btn-gradient: linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, rgba(10, 10, 15, 0.12) 100%), var(--gradient-holo);
 
   /* Contribution wall */
   --contrib-0: rgba(0, 0, 0, 0.05);
@@ -240,8 +244,9 @@ a {
 }
 
 .nav-links a.active {
-  background: var(--gradient-holo);
-  color: #0a0a0f;
+  background: var(--btn-gradient);
+  color: var(--btn-text);
+  text-shadow: var(--btn-text-shadow);
   font-weight: 600;
 }
 
@@ -253,12 +258,12 @@ a {
   font-weight: 400;
   letter-spacing: 1.5px;
   text-transform: uppercase;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  text-shadow: var(--btn-text-shadow);
 }
 
 .nav-links a.btn:hover {
   color: var(--btn-text);
-  background: var(--gradient-holo);
+  background: var(--btn-gradient);
   border: none;
 }
 
@@ -339,8 +344,9 @@ a {
   letter-spacing: 1.5px;
   text-transform: uppercase;
   border: none;
-  background: var(--gradient-holo);
+  background: var(--btn-gradient);
   color: var(--btn-text);
+  text-shadow: var(--btn-text-shadow);
   cursor: pointer;
   transition: all 0.25s ease;
   box-shadow: var(--btn-shadow);
@@ -493,8 +499,9 @@ a {
 .pill.primary {
   padding: 10px 16px;
   font-size: 13px;
-  background: var(--gradient-holo);
-  color: #0a0a0f;
+  background: var(--btn-gradient);
+  color: var(--btn-text);
+  text-shadow: var(--btn-text-shadow);
   border: none;
 }
 
@@ -518,8 +525,9 @@ a {
 }
 
 .stat-tag.primary {
-  background: var(--gradient-holo);
-  color: #0a0a0f;
+  background: var(--btn-gradient);
+  color: var(--btn-text);
+  text-shadow: var(--btn-text-shadow);
 }
 
 .stat-tag.secondary {
