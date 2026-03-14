@@ -107,10 +107,14 @@
       <h3>Strava connection</h3>
       <p class="muted">Manage your Strava account connection. Reconnect if you're having permission issues.</p>
       <div class="settings-actions">
-        <a class="btn secondary" href="/connect/strava?force=1">Reconnect Strava</a>
+        <a class="btn secondary" href="/connect/strava?force=1&next=/activities/settings">Reconnect Strava</a>
         <form method="post" action="/activities/settings">
-          <input type="hidden" name="action" value="sign-out" />
-          <button class="btn secondary" type="submit">Sign out</button>
+          <input type="hidden" name="action" value="log-out" />
+          <button class="btn secondary" type="submit">Log out of this browser</button>
+        </form>
+        <form method="post" action="/activities/settings">
+          <input type="hidden" name="action" value="disconnect-strava" />
+          <button class="btn secondary" type="submit">Disconnect Strava</button>
         </form>
       </div>
     </article>

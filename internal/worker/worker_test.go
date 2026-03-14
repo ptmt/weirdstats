@@ -55,7 +55,7 @@ func TestWorkerProcessesQueue(t *testing.T) {
 		t.Fatalf("insert activity: %v", err)
 	}
 
-	if err := jobs.EnqueueProcessActivity(ctx, store, activityID); err != nil {
+	if err := jobs.EnqueueProcessActivity(ctx, store, activityID, 1); err != nil {
 		t.Fatalf("enqueue activity: %v", err)
 	}
 

@@ -28,7 +28,7 @@ func TestRunnerHandleApplyActivityRules(t *testing.T) {
 		t.Fatalf("init schema: %v", err)
 	}
 
-	if err := EnqueueApplyActivityRules(ctx, store, 42); err != nil {
+	if err := EnqueueApplyActivityRules(ctx, store, 42, 1); err != nil {
 		t.Fatalf("enqueue apply activity: %v", err)
 	}
 

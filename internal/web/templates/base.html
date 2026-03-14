@@ -44,7 +44,7 @@
             <a href="/admin/"{{if eq .Page "admin"}} class="active"{{end}}>Admin</a>
             <span class="pill">{{if .Strava.AthleteName}}{{.Strava.AthleteName}}{{else}}Strava #{{.Strava.AthleteID}}{{end}}</span>
           {{else}}
-            <a class="btn" href="/connect/strava">Connect Strava</a>
+            <a class="btn" href="/connect/strava?next=/activities/">{{if gt .UserCount 0}}Sign In{{else}}Connect Strava{{end}}</a>
           {{end}}
           <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle theme">
             <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

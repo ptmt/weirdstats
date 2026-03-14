@@ -58,7 +58,14 @@ func main() {
 			BaseURL:      cfg.StravaAuthBaseURL,
 		}
 	}
-	ingestor := &ingest.Ingestor{Store: store, Strava: stravaClient}
+	stravaFactory := &strava.ClientFactory{
+		Store:        store,
+		BaseURL:      cfg.StravaBaseURL,
+		AuthBaseURL:  cfg.StravaAuthBaseURL,
+		ClientID:     cfg.StravaClientID,
+		ClientSecret: cfg.StravaClientSecret,
+	}
+	ingestor := &ingest.Ingestor{Store: store, Strava: stravaClient, Clients: stravaFactory}
 	overpassClient := &maps.OverpassClient{
 		BaseURL:    cfg.OverpassURL,
 		MirrorURLs: cfg.OverpassURLs,
@@ -77,7 +84,7 @@ func main() {
 	rulesProcessor := &processor.RulesProcessor{
 		Store:    store,
 		Registry: rules.DefaultRegistry(),
-		Strava:   stravaClient,
+		Clients:  stravaFactory,
 	}
 	pipeline := &processor.PipelineProcessor{Ingest: ingestor, Stats: statsProcessor, Rules: rulesProcessor}
 	queueWorker := &worker.Worker{Store: store, Processor: pipeline}
@@ -95,6 +102,8 @@ func main() {
 		AuthBaseURL:     cfg.StravaAuthBaseURL,
 		RedirectURL:     cfg.StravaRedirectURL,
 		InitialSyncDays: cfg.StravaInitialSyncDays,
+		Clients:         stravaFactory,
+		SessionSecret:   cfg.SessionSecret,
 	})
 	if err != nil {
 		log.Fatalf("load templates: %v", err)

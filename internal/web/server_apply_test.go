@@ -820,7 +820,7 @@ func TestBuildContributionDataForYear_UsesMondayWeekStart(t *testing.T) {
 		time.Local = oldLocal
 	}()
 
-	data := server.buildContributionDataForYear(ctx, 2026, time.Date(2027, time.January, 15, 0, 0, 0, 0, time.UTC))
+	data := server.buildContributionDataForYear(ctx, 1, 2026, time.Date(2027, time.January, 15, 0, 0, 0, 0, time.UTC))
 	if len(data.Days) != data.Weeks*7 {
 		t.Fatalf("unexpected grid size: got %d days for %d weeks", len(data.Days), data.Weeks)
 	}

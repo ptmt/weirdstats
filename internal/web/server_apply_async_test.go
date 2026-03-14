@@ -50,6 +50,13 @@ func TestApplyActivityRules_EnqueuesJob(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/activity/%d/apply", activityID), nil)
+	sessionRec := httptest.NewRecorder()
+	if err := server.setSession(sessionRec, req, 1); err != nil {
+		t.Fatalf("set session: %v", err)
+	}
+	for _, cookie := range sessionRec.Result().Cookies() {
+		req.AddCookie(cookie)
+	}
 	rec := httptest.NewRecorder()
 
 	server.ApplyActivityRules(rec, req)

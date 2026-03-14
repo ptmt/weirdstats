@@ -18,6 +18,7 @@ type RulesProcessor struct {
 	Store    *storage.Store
 	Registry rules.Registry
 	Strava   ActivityUpdater
+	Clients  *strava.ClientFactory
 }
 
 func (p *RulesProcessor) Process(ctx context.Context, activityID int64) error {
@@ -88,12 +89,18 @@ func (p *RulesProcessor) Process(ctx context.Context, activityID int64) error {
 		return err
 	}
 
-	if !hide || activity.HideFromHome || p.Strava == nil {
+	if !hide || activity.HideFromHome {
+		return nil
+	}
+
+	updater, err := p.activityUpdater(ctx, activity.UserID)
+	if err != nil {
+		log.Printf("rules processor: strava updater unavailable for user %d: %v", activity.UserID, err)
 		return nil
 	}
 
 	hideFromHome := true
-	if _, err := p.Strava.UpdateActivity(ctx, activityID, strava.UpdateActivityRequest{
+	if _, err := updater.UpdateActivity(ctx, activityID, strava.UpdateActivityRequest{
 		HideFromHome: &hideFromHome,
 	}); err != nil {
 		// Keep processing moving even if Strava update fails; activity can be retried manually.
@@ -102,4 +109,14 @@ func (p *RulesProcessor) Process(ctx context.Context, activityID int64) error {
 	}
 
 	return p.Store.UpdateActivityHideFromHome(ctx, activityID, true)
+}
+
+func (p *RulesProcessor) activityUpdater(ctx context.Context, userID int64) (ActivityUpdater, error) {
+	if p.Strava != nil {
+		return p.Strava, nil
+	}
+	if p.Clients == nil {
+		return nil, sql.ErrNoRows
+	}
+	return p.Clients.ClientForUser(ctx, userID)
 }

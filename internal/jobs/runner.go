@@ -45,6 +45,7 @@ type SyncLatestCursor struct {
 
 type ProcessActivityPayload struct {
 	ActivityID int64 `json:"activity_id"`
+	UserID     int64 `json:"user_id,omitempty"`
 }
 
 type ActivityProcessor interface {
@@ -153,19 +154,23 @@ func (r *Runner) handleSyncSince(ctx context.Context, job storage.Job) error {
 		return r.Store.MarkJobCompleted(ctx, job.ID, string(cursorJSON))
 	}
 
-	if r.Ingestor == nil || r.Ingestor.Strava == nil {
+	if r.Ingestor == nil {
 		return r.Store.MarkJobFailed(ctx, job.ID, job.Cursor, "strava client not configured")
+	}
+	client, err := r.Ingestor.ClientForUser(ctx, payload.UserID)
+	if err != nil {
+		return r.Store.MarkJobFailed(ctx, job.ID, job.Cursor, err.Error())
 	}
 
 	after := time.Unix(cursor.WindowStartUnix, 0)
 	before := time.Unix(cursor.WindowEndUnix, 0)
-	activities, err := r.Ingestor.Strava.ListActivities(ctx, after, before, cursor.Page, perPage)
+	activities, err := client.ListActivities(ctx, after, before, cursor.Page, perPage)
 	if err != nil {
 		return r.markJobRetry(ctx, job, cursor, err)
 	}
 
 	for _, activity := range activities {
-		if err := EnqueueProcessActivity(ctx, r.Store, activity.ID); err != nil {
+		if err := EnqueueProcessActivity(ctx, r.Store, activity.ID, payload.UserID); err != nil {
 			return r.markJobRetry(ctx, job, cursor, err)
 		}
 		cursor.Enqueued++
@@ -196,7 +201,14 @@ func (r *Runner) handleSyncLatest(ctx context.Context, job storage.Job) error {
 	if r.Ingestor == nil {
 		return r.Store.MarkJobFailed(ctx, job.ID, job.Cursor, "ingestor not configured")
 	}
-	count, err := r.Ingestor.SyncLatestActivity(ctx)
+	payload, err := parseSyncLatestPayload(job.Payload)
+	if err != nil {
+		return r.Store.MarkJobFailed(ctx, job.ID, job.Cursor, fmt.Sprintf("invalid payload: %v", err))
+	}
+	if payload.UserID == 0 {
+		return r.Store.MarkJobFailed(ctx, job.ID, job.Cursor, "missing user id")
+	}
+	count, err := r.Ingestor.SyncLatestActivity(ctx, payload.UserID)
 	if err != nil {
 		return r.markJobRetry(ctx, job, SyncSinceCursor{}, err)
 	}
@@ -216,6 +228,9 @@ func (r *Runner) handleProcessActivity(ctx context.Context, job storage.Job) err
 	if r.Processor == nil {
 		return r.Store.MarkJobFailed(ctx, job.ID, job.Cursor, "processor not configured")
 	}
+	if payload.UserID != 0 {
+		ctx = ingest.ContextWithUserID(ctx, payload.UserID)
+	}
 	if err := r.Processor.Process(ctx, payload.ActivityID); err != nil {
 		return r.markJobRetry(ctx, job, SyncSinceCursor{}, err)
 	}
@@ -232,6 +247,9 @@ func (r *Runner) handleApplyActivityRules(ctx context.Context, job storage.Job) 
 	}
 	if r.Applier == nil {
 		return r.Store.MarkJobFailed(ctx, job.ID, job.Cursor, "applier not configured")
+	}
+	if payload.UserID != 0 {
+		ctx = ingest.ContextWithUserID(ctx, payload.UserID)
 	}
 	if err := r.Applier.Apply(ctx, payload.ActivityID); err != nil {
 		return r.markJobRetry(ctx, job, SyncSinceCursor{}, err)
@@ -283,6 +301,17 @@ func parseProcessActivityPayload(raw string) (ProcessActivityPayload, error) {
 	var payload ProcessActivityPayload
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
 		return ProcessActivityPayload{}, err
+	}
+	return payload, nil
+}
+
+func parseSyncLatestPayload(raw string) (SyncLatestPayload, error) {
+	if raw == "" {
+		return SyncLatestPayload{}, fmt.Errorf("empty payload")
+	}
+	var payload SyncLatestPayload
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return SyncLatestPayload{}, err
 	}
 	return payload, nil
 }

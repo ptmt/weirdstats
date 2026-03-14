@@ -17,8 +17,8 @@
           <a class="btn" href="/activities/">View Activities</a>
           <a class="btn secondary" href="/activities/settings">Settings</a>
         {{else}}
-          <a class="btn" href="/connect/strava">Connect Strava</a>
-          <a class="btn secondary" href="/activities/">Preview activities</a>
+          <a class="btn" href="/connect/strava?next=/activities/">{{if gt .UserCount 0}}Sign in with Strava{{else}}Connect Strava{{end}}</a>
+          <a class="btn secondary" href="/activities/">View activities</a>
         {{end}}
       </div>
     </div>
@@ -56,9 +56,9 @@
       <p class="muted">Your Strava account is connected. Head to your activities to see your stats.</p>
       <a class="btn" href="/activities/">View Activities</a>
     {{else}}
-      <h2 class="section-title">Ready to connect?</h2>
-      <p class="muted">Hook up Strava to start capturing your activity stats and apply your rules automatically.</p>
-      <a class="btn" href="/connect/strava">Connect Strava</a>
+      <h2 class="section-title">{{if gt .UserCount 0}}Sign in to continue{{else}}Ready to connect?{{end}}</h2>
+      <p class="muted">{{if gt .UserCount 0}}Use your own Strava account to access only your activities and settings.{{else}}Hook up Strava to start capturing your activity stats and apply your rules automatically.{{end}}</p>
+      <a class="btn" href="/connect/strava?next=/activities/">{{if gt .UserCount 0}}Sign in with Strava{{else}}Connect Strava{{end}}</a>
     {{end}}
   </section>
 

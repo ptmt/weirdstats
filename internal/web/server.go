@@ -2,8 +2,12 @@ package web
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"embed"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -38,14 +42,22 @@ var staticFS embed.FS
 //go:embed static/*
 var StaticFS embed.FS
 
+const (
+	sessionCookieName    = "weirdstats_session"
+	oauthStateCookieName = "weirdstats_oauth_state"
+	oauthNextCookieName  = "weirdstats_oauth_next"
+	sessionDuration      = 30 * 24 * time.Hour
+)
+
 type Server struct {
-	store     *storage.Store
-	ingestor  *ingest.Ingestor
-	mapAPI    maps.API
-	overpass  *maps.OverpassClient
-	stopOpts  gps.StopOptions
-	templates map[string]*template.Template
-	strava    StravaConfig
+	store         *storage.Store
+	ingestor      *ingest.Ingestor
+	mapAPI        maps.API
+	overpass      *maps.OverpassClient
+	stopOpts      gps.StopOptions
+	templates     map[string]*template.Template
+	strava        StravaConfig
+	sessionSecret []byte
 }
 
 type ActivityView struct {
@@ -203,6 +215,8 @@ type StravaConfig struct {
 	AuthBaseURL     string
 	RedirectURL     string
 	InitialSyncDays int
+	Clients         *strava.ClientFactory
+	SessionSecret   string
 }
 
 type rideSegmentFact struct {
@@ -229,6 +243,11 @@ func StaticHandler() http.Handler {
 }
 
 func NewServer(store *storage.Store, ingestor *ingest.Ingestor, mapAPI maps.API, overpass *maps.OverpassClient, stopOpts gps.StopOptions, stravaConfig StravaConfig) (*Server, error) {
+	sessionSecret, err := sessionSecretBytes(stravaConfig.SessionSecret)
+	if err != nil {
+		return nil, err
+	}
+
 	funcs := template.FuncMap{
 		"boolLabel": func(v bool) string {
 			if v {
@@ -293,12 +312,13 @@ func NewServer(store *storage.Store, ingestor *ingest.Ingestor, mapAPI maps.API,
 		return nil, err
 	}
 	return &Server{
-		store:    store,
-		ingestor: ingestor,
-		mapAPI:   mapAPI,
-		overpass: overpass,
-		stopOpts: stopOpts,
-		strava:   stravaConfig,
+		store:         store,
+		ingestor:      ingestor,
+		mapAPI:        mapAPI,
+		overpass:      overpass,
+		stopOpts:      stopOpts,
+		strava:        stravaConfig,
+		sessionSecret: sessionSecret,
 		templates: map[string]*template.Template{
 			"landing":  landing,
 			"profile":  profile,
@@ -309,8 +329,22 @@ func NewServer(store *storage.Store, ingestor *ingest.Ingestor, mapAPI maps.API,
 	}, nil
 }
 
-func (s *Server) getStravaInfo(ctx context.Context) StravaInfo {
-	token, err := s.store.GetStravaToken(ctx, 1)
+func sessionSecretBytes(secret string) ([]byte, error) {
+	if secret != "" {
+		return []byte(secret), nil
+	}
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return nil, err
+	}
+	return buf, nil
+}
+
+func (s *Server) getStravaInfo(ctx context.Context, userID int64) StravaInfo {
+	if userID == 0 {
+		return StravaInfo{}
+	}
+	token, err := s.store.GetStravaToken(ctx, userID)
 	if err != nil {
 		return StravaInfo{}
 	}
@@ -330,26 +364,163 @@ func (s *Server) userCount(ctx context.Context) int {
 }
 
 func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) bool {
-	_, err := s.store.GetStravaToken(r.Context(), 1)
-	if err != nil {
-		http.Error(w, "Unauthorized - Please connect Strava first", http.StatusUnauthorized)
-		return false
-	}
-	return true
+	_, ok := s.requireUserID(w, r)
+	return ok
 }
 
-func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
-	token, err := s.store.GetStravaToken(r.Context(), 1)
+func (s *Server) requireUserID(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	userID, ok := s.currentUserID(r.Context(), r)
+	if !ok {
+		http.Redirect(w, r, "/connect/strava?next="+url.QueryEscape(sanitizedNextPath(r.URL.RequestURI(), "/activities/")), http.StatusFound)
+		return 0, false
+	}
+	return userID, true
+}
+
+func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	return s.requireUserID(w, r)
+}
+
+func (s *Server) currentUserID(ctx context.Context, r *http.Request) (int64, bool) {
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil || cookie.Value == "" {
+		return 0, false
+	}
+	parts := strings.Split(cookie.Value, ".")
+	if len(parts) != 2 {
+		return 0, false
+	}
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return 0, false
+	}
+	sigBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return 0, false
+	}
+	if !hmac.Equal(sigBytes, s.sign(payloadBytes)) {
+		return 0, false
+	}
+	var payload struct {
+		UserID  int64 `json:"user_id"`
+		Expires int64 `json:"expires"`
+	}
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		return 0, false
+	}
+	if payload.UserID == 0 || payload.Expires <= time.Now().Unix() {
+		return 0, false
+	}
+	if _, err := s.store.GetStravaToken(ctx, payload.UserID); err != nil {
+		return 0, false
+	}
+	return payload.UserID, true
+}
+
+func (s *Server) setSession(w http.ResponseWriter, r *http.Request, userID int64) error {
+	payload, err := json.Marshal(struct {
+		UserID  int64 `json:"user_id"`
+		Expires int64 `json:"expires"`
+	}{
+		UserID:  userID,
+		Expires: time.Now().Add(sessionDuration).Unix(),
+	})
+	if err != nil {
+		return err
+	}
+	value := base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(s.sign(payload))
+	setCookie(w, r, sessionCookieName, value, int(sessionDuration.Seconds()))
+	return nil
+}
+
+func (s *Server) clearSession(w http.ResponseWriter, r *http.Request) {
+	setCookie(w, r, sessionCookieName, "", -1)
+}
+
+func (s *Server) sign(payload []byte) []byte {
+	mac := hmac.New(sha256.New, s.sessionSecret)
+	_, _ = mac.Write(payload)
+	return mac.Sum(nil)
+}
+
+func sanitizedNextPath(next, fallback string) string {
+	trimmed := strings.TrimSpace(next)
+	if trimmed == "" {
+		return fallback
+	}
+	if !strings.HasPrefix(trimmed, "/") || strings.HasPrefix(trimmed, "//") {
+		return fallback
+	}
+	return trimmed
+}
+
+func requestIsSecure(r *http.Request) bool {
+	if r == nil {
 		return false
 	}
-	// For now, user 1 is always admin. In future, check against admin athlete IDs.
-	if token.UserID != 1 {
-		http.Error(w, "Forbidden - Admin access required", http.StatusForbidden)
-		return false
+	if r.TLS != nil {
+		return true
 	}
-	return true
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
+
+func setCookie(w http.ResponseWriter, r *http.Request, name, value string, maxAge int) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     name,
+		Value:    value,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   requestIsSecure(r),
+		MaxAge:   maxAge,
+	})
+}
+
+func randomToken(n int) (string, error) {
+	if n <= 0 {
+		n = 32
+	}
+	buf := make([]byte, n)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
+func clearCookie(w http.ResponseWriter, r *http.Request, name string) {
+	setCookie(w, r, name, "", -1)
+}
+
+func appendMessage(path, msg string) string {
+	if msg == "" {
+		return path
+	}
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	return path + sep + "msg=" + url.QueryEscape(msg)
+}
+
+func readCookieValue(r *http.Request, name string) string {
+	cookie, err := r.Cookie(name)
+	if err != nil {
+		return ""
+	}
+	return cookie.Value
+}
+
+func (s *Server) stravaClientForUser(ctx context.Context, userID int64) (*strava.Client, error) {
+	if s.strava.Clients != nil {
+		return s.strava.Clients.ClientForUser(ctx, userID)
+	}
+	if s.ingestor != nil && s.ingestor.Clients != nil {
+		return s.ingestor.Clients.ClientForUser(ctx, userID)
+	}
+	if s.ingestor != nil && s.ingestor.Strava != nil {
+		return s.ingestor.Strava, nil
+	}
+	return nil, fmt.Errorf("strava client not configured")
 }
 
 func (s *Server) Landing(w http.ResponseWriter, r *http.Request) {
@@ -357,13 +528,14 @@ func (s *Server) Landing(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	userID, _ := s.currentUserID(r.Context(), r)
 	data := LandingPageData{
 		PageData: PageData{
 			Title:      "weirdstats",
 			Page:       "home",
 			Message:    r.URL.Query().Get("msg"),
 			FooterText: "Built for myself, friends, and random strangers. Not for scale, not for profit.",
-			Strava:     s.getStravaInfo(r.Context()),
+			Strava:     s.getStravaInfo(r.Context(), userID),
 			UserCount:  s.userCount(r.Context()),
 		},
 	}
@@ -423,10 +595,11 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if !s.requireAuth(w, r) {
+	userID, ok := s.requireUserID(w, r)
+	if !ok {
 		return
 	}
-	activities, err := s.store.ListActivitiesWithStats(r.Context(), 1, 100)
+	activities, err := s.store.ListActivitiesWithStats(r.Context(), userID, 100)
 	if err != nil {
 		http.Error(w, "failed to load activities", http.StatusInternalServerError)
 		return
@@ -485,7 +658,7 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 		views = append(views, view)
 	}
 	now := time.Now()
-	years, err := s.store.ListActivityYears(r.Context(), 1)
+	years, err := s.store.ListActivityYears(r.Context(), userID)
 	if err != nil {
 		log.Printf("contrib years load failed: %v", err)
 	}
@@ -500,7 +673,7 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 	}
 	var contribs []ContributionData
 	for _, year := range orderedYears {
-		contribs = append(contribs, s.buildContributionDataForYear(r.Context(), year, now))
+		contribs = append(contribs, s.buildContributionDataForYear(r.Context(), userID, year, now))
 	}
 	data := ProfilePageData{
 		PageData: PageData{
@@ -508,7 +681,7 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 			Page:       "activities",
 			Message:    r.URL.Query().Get("msg"),
 			FooterText: "Tip: the worker runs in the background and fills in stats after ingest.",
-			Strava:     s.getStravaInfo(r.Context()),
+			Strava:     s.getStravaInfo(r.Context(), userID),
 			UserCount:  s.userCount(r.Context()),
 		},
 		Activities:    views,
@@ -520,7 +693,8 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAuth(w, r) {
+	userID, ok := s.requireUserID(w, r)
+	if !ok {
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/activity/")
@@ -541,13 +715,9 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	activity, err := s.store.GetActivity(r.Context(), activityID)
+	activity, err := s.store.GetActivityForUser(r.Context(), userID, activityID)
 	if err != nil {
 		http.Error(w, "activity not found", http.StatusNotFound)
-		return
-	}
-	if activity.UserID != 1 {
-		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	points, err := s.store.LoadActivityPoints(r.Context(), activityID)
@@ -644,7 +814,7 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 			Page:       "activity",
 			Message:    r.URL.Query().Get("msg"),
 			FooterText: footerText,
-			Strava:     s.getStravaInfo(r.Context()),
+			Strava:     s.getStravaInfo(r.Context(), userID),
 			UserCount:  s.userCount(r.Context()),
 		},
 		Activity:        view,
@@ -678,7 +848,8 @@ func (s *Server) Activity(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) RefreshActivity(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAuth(w, r) {
+	userID, ok := s.requireUserID(w, r)
+	if !ok {
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -694,16 +865,11 @@ func (s *Server) RefreshActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	activity, err := s.store.GetActivity(r.Context(), activityID)
-	if err != nil {
+	if _, err := s.store.GetActivityForUser(r.Context(), userID, activityID); err != nil {
 		http.Error(w, "activity not found", http.StatusNotFound)
 		return
 	}
-	if activity.UserID != 1 {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-	if err := jobs.EnqueueProcessActivity(r.Context(), s.store, activityID); err != nil {
+	if err := jobs.EnqueueProcessActivity(r.Context(), s.store, activityID, userID); err != nil {
 		http.Error(w, "failed to enqueue activity", http.StatusInternalServerError)
 		return
 	}
@@ -716,7 +882,8 @@ func (s *Server) RefreshActivity(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) ApplyActivityRules(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAuth(w, r) {
+	userID, ok := s.requireUserID(w, r)
+	if !ok {
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -732,16 +899,11 @@ func (s *Server) ApplyActivityRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	activity, err := s.store.GetActivity(r.Context(), activityID)
-	if err != nil {
+	if _, err := s.store.GetActivityForUser(r.Context(), userID, activityID); err != nil {
 		http.Error(w, "activity not found", http.StatusNotFound)
 		return
 	}
-	if activity.UserID != 1 {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-	if err := jobs.EnqueueApplyActivityRules(r.Context(), s.store, activityID); err != nil {
+	if err := jobs.EnqueueApplyActivityRules(r.Context(), s.store, activityID, userID); err != nil {
 		http.Error(w, "failed to enqueue activity apply", http.StatusInternalServerError)
 		return
 	}
@@ -756,9 +918,6 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 	activity, err := s.store.GetActivity(ctx, activityID)
 	if err != nil {
 		return err
-	}
-	if activity.UserID != 1 {
-		return fmt.Errorf("forbidden")
 	}
 
 	hide, statsSnapshot, err := s.evaluateHideRules(ctx, activity)
@@ -792,15 +951,17 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 			}
 		}
 	}
-	if s.ingestor != nil && s.ingestor.Strava != nil {
-		latest, err := s.ingestor.Strava.GetActivity(ctx, activityID)
+
+	client, clientErr := s.stravaClientForUser(ctx, activity.UserID)
+	if clientErr == nil {
+		latest, err := client.GetActivity(ctx, activityID)
 		if err != nil {
 			log.Printf("strava activity fetch failed (using cached description): %v", err)
 		} else {
 			baseDescription = latest.Description
 			baseHideFromHome = latest.HideFromHome
 			if isRideType(latest.Type) {
-				streams, err := s.ingestor.Strava.GetStreams(ctx, activityID)
+				streams, err := client.GetStreams(ctx, activityID)
 				if err != nil {
 					log.Printf("strava streams fetch failed (using cached ride fact): %v", err)
 				} else {
@@ -821,6 +982,8 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 				routeFact = routeHighlightFact{}
 			}
 		}
+	} else if s.ingestor != nil {
+		log.Printf("strava client unavailable for user %d (using cached description): %v", activity.UserID, clientErr)
 	}
 
 	var descPtr *string
@@ -838,11 +1001,11 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 	if descPtr == nil && hidePtr == nil {
 		return nil
 	}
-	if s.ingestor == nil || s.ingestor.Strava == nil {
-		return fmt.Errorf("strava client not configured")
+	if clientErr != nil {
+		return fmt.Errorf("strava client not configured: %w", clientErr)
 	}
 
-	if _, err := s.ingestor.Strava.UpdateActivity(ctx, activityID, strava.UpdateActivityRequest{
+	if _, err := client.UpdateActivity(ctx, activityID, strava.UpdateActivityRequest{
 		Description:  descPtr,
 		HideFromHome: hidePtr,
 	}); err != nil {
@@ -1785,16 +1948,17 @@ func (s *Server) Settings(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if !s.requireAuth(w, r) {
+	userID, ok := s.requireUserID(w, r)
+	if !ok {
 		return
 	}
 	if r.Method == http.MethodPost {
-		s.handleSettingsPost(w, r)
+		s.handleSettingsPost(w, r, userID)
 		return
 	}
 
 	registry := rules.DefaultRegistry()
-	ruleRows, err := s.store.ListHideRules(r.Context(), 1)
+	ruleRows, err := s.store.ListHideRules(r.Context(), userID)
 	if err != nil {
 		http.Error(w, "failed to load rules", http.StatusInternalServerError)
 		return
@@ -1828,7 +1992,7 @@ func (s *Server) Settings(w http.ResponseWriter, r *http.Request) {
 			Page:       "settings",
 			Message:    r.URL.Query().Get("msg"),
 			FooterText: "Rules are stored locally and applied when the processing pipeline runs.",
-			Strava:     s.getStravaInfo(r.Context()),
+			Strava:     s.getStravaInfo(r.Context(), userID),
 			UserCount:  s.userCount(r.Context()),
 		},
 		Rules:         viewRules,
@@ -1848,17 +2012,18 @@ func (s *Server) Admin(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/", http.StatusFound)
 		return
 	}
-	if !s.requireAdmin(w, r) {
+	userID, ok := s.requireAdmin(w, r)
+	if !ok {
 		return
 	}
 	if r.Method == http.MethodPost {
-		s.handleAdminPost(w, r)
+		s.handleAdminPost(w, r, userID)
 		return
 	}
 
 	queueCount, _ := s.store.CountQueue(r.Context())
-	jobsView := s.buildJobViews(r.Context())
-	activityJobsView := s.buildActivityJobViews(r.Context())
+	jobsView := s.buildJobViews(r.Context(), userID)
+	activityJobsView := s.buildActivityJobViews(r.Context(), userID)
 
 	data := AdminPageData{
 		PageData: PageData{
@@ -1866,7 +2031,7 @@ func (s *Server) Admin(w http.ResponseWriter, r *http.Request) {
 			Page:       "admin",
 			Message:    r.URL.Query().Get("msg"),
 			FooterText: "Admin actions are logged and may take time to complete.",
-			Strava:     s.getStravaInfo(r.Context()),
+			Strava:     s.getStravaInfo(r.Context(), userID),
 			UserCount:  s.userCount(r.Context()),
 		},
 		QueueCount:   queueCount,
@@ -1878,10 +2043,7 @@ func (s *Server) Admin(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleAdminPost(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
-		return
-	}
+func (s *Server) handleAdminPost(w http.ResponseWriter, r *http.Request, userID int64) {
 	if err := r.ParseForm(); err != nil {
 		http.Redirect(w, r, "/admin/?msg=invalid+form", http.StatusFound)
 		return
@@ -1893,7 +2055,7 @@ func (s *Server) handleAdminPost(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/admin/?msg=sync+not+configured", http.StatusFound)
 			return
 		}
-		if err := s.enqueueLatestJob(r.Context()); err != nil {
+		if err := s.enqueueLatestJob(r.Context(), userID); err != nil {
 			http.Redirect(w, r, "/admin/?msg=sync+enqueue+failed", http.StatusFound)
 			return
 		}
@@ -1904,7 +2066,7 @@ func (s *Server) handleAdminPost(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		oneMonthAgo := time.Now().AddDate(0, -1, 0)
-		if err := s.enqueueSyncJob(r.Context(), oneMonthAgo); err != nil {
+		if err := s.enqueueSyncJob(r.Context(), userID, oneMonthAgo); err != nil {
 			http.Redirect(w, r, "/admin/?msg=sync+enqueue+failed", http.StatusFound)
 			return
 		}
@@ -1915,7 +2077,7 @@ func (s *Server) handleAdminPost(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		oneYearAgo := time.Now().AddDate(-1, 0, 0)
-		if err := s.enqueueSyncJob(r.Context(), oneYearAgo); err != nil {
+		if err := s.enqueueSyncJob(r.Context(), userID, oneYearAgo); err != nil {
 			http.Redirect(w, r, "/admin/?msg=sync+enqueue+failed", http.StatusFound)
 			return
 		}
@@ -1925,7 +2087,7 @@ func (s *Server) handleAdminPost(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/admin/?msg=sync+not+configured", http.StatusFound)
 			return
 		}
-		if err := s.enqueueSyncJobWindow(r.Context(), time.Unix(0, 0), 365); err != nil {
+		if err := s.enqueueSyncJobWindow(r.Context(), userID, time.Unix(0, 0), 365); err != nil {
 			http.Redirect(w, r, "/admin/?msg=sync+enqueue+failed", http.StatusFound)
 			return
 		}
@@ -1952,11 +2114,7 @@ func (s *Server) handleAdminPost(w http.ResponseWriter, r *http.Request) {
 		msg := fmt.Sprintf("overpass ok: %d features in test bbox", len(pois))
 		http.Redirect(w, r, "/admin/?msg="+url.QueryEscape(msg), http.StatusFound)
 	case "clear-jobs":
-		if err := s.store.DeleteJobs(r.Context()); err != nil {
-			http.Redirect(w, r, "/admin/?msg=jobs+clear+failed", http.StatusFound)
-			return
-		}
-		http.Redirect(w, r, "/admin/?msg=jobs+cleared", http.StatusFound)
+		http.Redirect(w, r, "/admin/?msg=job+clearing+disabled+for+multi-user+safety", http.StatusFound)
 	default:
 		http.Redirect(w, r, "/admin/?msg=unknown+action", http.StatusFound)
 	}
@@ -1995,6 +2153,15 @@ func (s *Server) ConnectStrava(w http.ResponseWriter, r *http.Request) {
 	params.Set("client_id", s.strava.ClientID)
 	params.Set("redirect_uri", redirectURL)
 	params.Set("response_type", "code")
+	state, err := randomToken(32)
+	if err != nil {
+		http.Error(w, "failed to initialize oauth state", http.StatusInternalServerError)
+		return
+	}
+	next := sanitizedNextPath(r.URL.Query().Get("next"), "/activities/")
+	setCookie(w, r, oauthStateCookieName, state, 10*60)
+	setCookie(w, r, oauthNextCookieName, base64.RawURLEncoding.EncodeToString([]byte(next)), 10*60)
+	params.Set("state", state)
 	if r.URL.Query().Get("force") == "1" {
 		params.Set("approval_prompt", "force")
 	} else {
@@ -2010,8 +2177,20 @@ func (s *Server) StravaCallback(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	expectedState := readCookieValue(r, oauthStateCookieName)
+	nextEncoded := readCookieValue(r, oauthNextCookieName)
+	clearCookie(w, r, oauthStateCookieName)
+	clearCookie(w, r, oauthNextCookieName)
+	next := "/activities/"
+	if nextBytes, err := base64.RawURLEncoding.DecodeString(nextEncoded); err == nil {
+		next = sanitizedNextPath(string(nextBytes), next)
+	}
+	if expectedState == "" || r.URL.Query().Get("state") != expectedState {
+		http.Redirect(w, r, appendMessage("/", "invalid oauth state"), http.StatusFound)
+		return
+	}
 	if errParam := r.URL.Query().Get("error"); errParam != "" {
-		http.Redirect(w, r, "/activities/settings?msg=strava+authorization+failed", http.StatusFound)
+		http.Redirect(w, r, appendMessage("/", "strava authorization failed"), http.StatusFound)
 		return
 	}
 	code := r.URL.Query().Get("code")
@@ -2025,27 +2204,40 @@ func (s *Server) StravaCallback(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		log.Printf("strava oauth exchange failed: %v", err)
-		http.Redirect(w, r, "/activities/settings?msg=strava+authorization+failed", http.StatusFound)
+		http.Redirect(w, r, appendMessage("/", "strava authorization failed"), http.StatusFound)
 		return
 	}
-	existing, err := s.store.GetStravaToken(r.Context(), 1)
+	userID := token.Athlete.ID
+	if userID == 0 {
+		http.Redirect(w, r, appendMessage("/", "strava token save failed"), http.StatusFound)
+		return
+	}
+	_, err = s.store.GetStravaToken(r.Context(), userID)
 	firstConnect := false
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			log.Printf("strava token lookup failed: %v", err)
 		}
 		firstConnect = true
-	} else if existing.AthleteID == 0 && existing.AthleteName == "" {
-		firstConnect = true
 	}
 	athleteName := token.Athlete.FirstName
 	if token.Athlete.LastName != "" {
 		athleteName += " " + token.Athlete.LastName
 	}
+	if userID != 1 {
+		legacy, err := s.store.GetStravaToken(r.Context(), 1)
+		if err == nil && (legacy.AthleteID == 0 || legacy.AthleteID == userID) {
+			if err := s.store.ReassignUserData(r.Context(), 1, userID); err != nil {
+				log.Printf("legacy user migration failed: %v", err)
+				http.Redirect(w, r, appendMessage("/", "strava token save failed"), http.StatusFound)
+				return
+			}
+		}
+	}
 	log.Printf("Saving token: expires_at=%d (%v), athlete=%d %s",
 		token.ExpiresAt, time.Unix(token.ExpiresAt, 0), token.Athlete.ID, athleteName)
 	if err := s.store.UpsertStravaToken(r.Context(), storage.StravaToken{
-		UserID:       1,
+		UserID:       userID,
 		AccessToken:  token.AccessToken,
 		RefreshToken: token.RefreshToken,
 		ExpiresAt:    time.Unix(token.ExpiresAt, 0),
@@ -2053,7 +2245,16 @@ func (s *Server) StravaCallback(w http.ResponseWriter, r *http.Request) {
 		AthleteName:  athleteName,
 	}); err != nil {
 		log.Printf("strava token save failed: %v", err)
-		http.Redirect(w, r, "/activities/settings?msg=strava+token+save+failed", http.StatusFound)
+		http.Redirect(w, r, appendMessage("/", "strava token save failed"), http.StatusFound)
+		return
+	}
+	if userID != 1 {
+		if legacy, err := s.store.GetStravaToken(r.Context(), 1); err == nil && (legacy.AthleteID == 0 || legacy.AthleteID == userID) {
+			_ = s.store.DeleteStravaToken(r.Context(), 1)
+		}
+	}
+	if err := s.setSession(w, r, userID); err != nil {
+		http.Redirect(w, r, appendMessage("/", "session creation failed"), http.StatusFound)
 		return
 	}
 	if firstConnect {
@@ -2065,12 +2266,12 @@ func (s *Server) StravaCallback(w http.ResponseWriter, r *http.Request) {
 			days := s.strava.InitialSyncDays
 			log.Printf("strava connected; starting initial sync (%d days)", days)
 			after := time.Now().AddDate(0, 0, -days)
-			if err := s.enqueueSyncJob(r.Context(), after); err != nil {
+			if err := s.enqueueSyncJob(r.Context(), userID, after); err != nil {
 				log.Printf("initial sync enqueue failed: %v", err)
 			}
 		}
 	}
-	http.Redirect(w, r, "/activities/?msg=strava+connected", http.StatusFound)
+	http.Redirect(w, r, appendMessage(next, "strava connected"), http.StatusFound)
 }
 
 func compactErrMessage(err error) string {
@@ -2098,7 +2299,7 @@ func compactForLog(raw string, max int) string {
 	return msg
 }
 
-func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request, userID int64) {
 	if err := r.ParseForm(); err != nil {
 		http.Redirect(w, r, "/activities/settings?msg=invalid+form", http.StatusFound)
 		return
@@ -2134,7 +2335,7 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 		}
 		condition = string(normalized)
 		if _, err := s.store.CreateHideRule(r.Context(), storage.HideRule{
-			UserID:    1,
+			UserID:    userID,
 			Name:      name,
 			Condition: condition,
 			Enabled:   enabled,
@@ -2152,7 +2353,7 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/activities/settings?msg=invalid+rule", http.StatusFound)
 			return
 		}
-		if err := s.store.UpdateHideRuleEnabled(r.Context(), ruleID, enabled); err != nil {
+		if err := s.store.UpdateHideRuleEnabledForUser(r.Context(), userID, ruleID, enabled); err != nil {
 			http.Redirect(w, r, "/activities/settings?msg=rule+update+failed", http.StatusFound)
 			return
 		}
@@ -2164,37 +2365,42 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/activities/settings?msg=invalid+rule", http.StatusFound)
 			return
 		}
-		if err := s.store.DeleteHideRule(r.Context(), ruleID); err != nil {
+		if err := s.store.DeleteHideRuleForUser(r.Context(), userID, ruleID); err != nil {
 			http.Redirect(w, r, "/activities/settings?msg=rule+delete+failed", http.StatusFound)
 			return
 		}
 		http.Redirect(w, r, "/activities/settings?msg=rule+deleted", http.StatusFound)
-	case "sign-out":
-		if err := s.store.DeleteStravaToken(r.Context(), 1); err != nil {
-			http.Redirect(w, r, "/activities/settings?msg=sign+out+failed", http.StatusFound)
+	case "log-out":
+		s.clearSession(w, r)
+		http.Redirect(w, r, "/?msg=signed+out", http.StatusFound)
+	case "disconnect-strava":
+		if err := s.store.DeleteStravaToken(r.Context(), userID); err != nil {
+			http.Redirect(w, r, "/activities/settings?msg=disconnect+failed", http.StatusFound)
 			return
 		}
-		http.Redirect(w, r, "/?msg=signed+out", http.StatusFound)
+		s.clearSession(w, r)
+		http.Redirect(w, r, "/?msg=strava+disconnected", http.StatusFound)
 	case "delete-account":
 		if strings.TrimSpace(r.FormValue("confirm")) != "delete" {
 			http.Redirect(w, r, "/activities/settings?msg=confirm+delete+account", http.StatusFound)
 			return
 		}
-		if err := s.store.DeleteUserData(r.Context(), 1); err != nil {
+		if err := s.store.DeleteUserData(r.Context(), userID); err != nil {
 			http.Redirect(w, r, "/activities/settings?msg=delete+failed", http.StatusFound)
 			return
 		}
+		s.clearSession(w, r)
 		http.Redirect(w, r, "/?msg=account+deleted", http.StatusFound)
 	default:
 		http.Redirect(w, r, "/activities/settings?msg=unknown+action", http.StatusFound)
 	}
 }
 
-func (s *Server) enqueueSyncJob(ctx context.Context, after time.Time) error {
-	return s.enqueueSyncJobWindow(ctx, after, 1)
+func (s *Server) enqueueSyncJob(ctx context.Context, userID int64, after time.Time) error {
+	return s.enqueueSyncJobWindow(ctx, userID, after, 1)
 }
 
-func (s *Server) enqueueSyncJobWindow(ctx context.Context, after time.Time, windowDays int) error {
+func (s *Server) enqueueSyncJobWindow(ctx context.Context, userID int64, after time.Time, windowDays int) error {
 	if s.store == nil {
 		return fmt.Errorf("store not configured")
 	}
@@ -2202,7 +2408,7 @@ func (s *Server) enqueueSyncJobWindow(ctx context.Context, after time.Time, wind
 		windowDays = 1
 	}
 	payload := jobs.SyncSincePayload{
-		UserID:     1,
+		UserID:     userID,
 		AfterUnix:  after.Unix(),
 		PerPage:    100,
 		WindowDays: windowDays,
@@ -2226,11 +2432,11 @@ func (s *Server) enqueueSyncJobWindow(ctx context.Context, after time.Time, wind
 	return err
 }
 
-func (s *Server) enqueueLatestJob(ctx context.Context) error {
+func (s *Server) enqueueLatestJob(ctx context.Context, userID int64) error {
 	if s.store == nil {
 		return fmt.Errorf("store not configured")
 	}
-	payload := jobs.SyncLatestPayload{UserID: 1}
+	payload := jobs.SyncLatestPayload{UserID: userID}
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -2249,27 +2455,30 @@ func (s *Server) enqueueLatestJob(ctx context.Context) error {
 	return err
 }
 
-func (s *Server) buildJobViews(ctx context.Context) []JobView {
+func (s *Server) buildJobViews(ctx context.Context, userID int64) []JobView {
 	jobsList, err := s.store.ListJobsExcludingType(ctx, jobs.JobTypeProcessActivity, 20)
 	if err != nil {
 		log.Printf("jobs load failed: %v", err)
 		return nil
 	}
-	return buildJobViewsFromList(jobsList)
+	return s.buildJobViewsFromList(ctx, jobsList, userID)
 }
 
-func (s *Server) buildActivityJobViews(ctx context.Context) []JobView {
+func (s *Server) buildActivityJobViews(ctx context.Context, userID int64) []JobView {
 	jobsList, err := s.store.ListJobsByType(ctx, jobs.JobTypeProcessActivity, 20)
 	if err != nil {
 		log.Printf("activity jobs load failed: %v", err)
 		return nil
 	}
-	return buildJobViewsFromList(jobsList)
+	return s.buildJobViewsFromList(ctx, jobsList, userID)
 }
 
-func buildJobViewsFromList(jobsList []storage.Job) []JobView {
+func (s *Server) buildJobViewsFromList(ctx context.Context, jobsList []storage.Job, userID int64) []JobView {
 	var views []JobView
 	for _, job := range jobsList {
+		if !s.jobBelongsToUser(ctx, job, userID) {
+			continue
+		}
 		view := JobView{
 			ID:            job.ID,
 			TypeLabel:     jobTypeLabel(job),
@@ -2285,6 +2494,38 @@ func buildJobViewsFromList(jobsList []storage.Job) []JobView {
 		views = append(views, view)
 	}
 	return views
+}
+
+func (s *Server) jobBelongsToUser(ctx context.Context, job storage.Job, userID int64) bool {
+	switch job.Type {
+	case jobs.JobTypeSyncLatest:
+		var payload jobs.SyncLatestPayload
+		if err := json.Unmarshal([]byte(job.Payload), &payload); err != nil {
+			return false
+		}
+		return payload.UserID == userID
+	case jobs.JobTypeSyncActivitiesSince:
+		var payload jobs.SyncSincePayload
+		if err := json.Unmarshal([]byte(job.Payload), &payload); err != nil {
+			return false
+		}
+		return payload.UserID == userID
+	case jobs.JobTypeProcessActivity, jobs.JobTypeApplyActivityRules:
+		var payload jobs.ProcessActivityPayload
+		if err := json.Unmarshal([]byte(job.Payload), &payload); err != nil {
+			return false
+		}
+		if payload.UserID != 0 {
+			return payload.UserID == userID
+		}
+		activity, err := s.store.GetActivity(ctx, payload.ActivityID)
+		if err != nil {
+			return false
+		}
+		return activity.UserID == userID
+	default:
+		return false
+	}
 }
 
 func jobTypeLabel(job storage.Job) string {
@@ -2386,7 +2627,8 @@ type PointDownload struct {
 }
 
 func (s *Server) DownloadActivity(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAuth(w, r) {
+	userID, ok := s.requireUserID(w, r)
+	if !ok {
 		return
 	}
 
@@ -2398,15 +2640,9 @@ func (s *Server) DownloadActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	activity, err := s.store.GetActivity(r.Context(), activityID)
+	activity, err := s.store.GetActivityForUser(r.Context(), userID, activityID)
 	if err != nil {
 		http.Error(w, "activity not found", http.StatusNotFound)
-		return
-	}
-
-	// Verify user owns this activity
-	if activity.UserID != 1 {
-		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
@@ -2480,11 +2716,11 @@ func formatDistance(meters float64) string {
 	return fmt.Sprintf("%.2f km", km)
 }
 
-func (s *Server) buildContributionData(ctx context.Context, now time.Time) ContributionData {
-	return s.buildContributionDataForYear(ctx, now.Year(), now)
+func (s *Server) buildContributionData(ctx context.Context, userID int64, now time.Time) ContributionData {
+	return s.buildContributionDataForYear(ctx, userID, now.Year(), now)
 }
 
-func (s *Server) buildContributionDataForYear(ctx context.Context, year int, now time.Time) ContributionData {
+func (s *Server) buildContributionDataForYear(ctx context.Context, userID int64, year int, now time.Time) ContributionData {
 	loc := time.Local
 	start := time.Date(year, time.January, 1, 0, 0, 0, 0, loc)
 	end := time.Date(year, time.December, 31, 0, 0, 0, 0, loc)
@@ -2501,7 +2737,7 @@ func (s *Server) buildContributionDataForYear(ctx context.Context, year int, now
 		endGrid = endGrid.AddDate(0, 0, 1)
 	}
 
-	activities, err := s.store.ListActivityTimes(ctx, 1, startGrid, rangeEnd.AddDate(0, 0, 1))
+	activities, err := s.store.ListActivityTimes(ctx, userID, startGrid, rangeEnd.AddDate(0, 0, 1))
 	if err != nil {
 		log.Printf("contrib load failed: %v", err)
 	}

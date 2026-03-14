@@ -13,6 +13,7 @@ type Config struct {
 	BaseURL                   string
 	DatabasePath              string
 	ServerAddr                string
+	SessionSecret             string
 	StravaAccessToken         string
 	StravaAccessExpiry        int64
 	StravaRefreshToken        string
@@ -53,6 +54,7 @@ func Load(path string) (Config, error) {
 	cfg.DatabasePath = getenv("DATABASE_PATH", "weirdstats.db")
 	cfg.ServerAddr = getenv("SERVER_ADDR", cfg.ServerAddr)
 	cfg.BaseURL = strings.TrimRight(os.Getenv("BASE_URL"), "/")
+	cfg.SessionSecret = os.Getenv("SESSION_SECRET")
 	cfg.StravaAccessToken = os.Getenv("STRAVA_ACCESS_TOKEN")
 	cfg.StravaRefreshToken = os.Getenv("STRAVA_REFRESH_TOKEN")
 	cfg.StravaClientID = os.Getenv("STRAVA_CLIENT_ID")

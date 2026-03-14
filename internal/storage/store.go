@@ -424,13 +424,14 @@ VALUES (?, ?, ?, ?, ?, ?)
 	return activityID, nil
 }
 
-func (s *Store) EnqueueActivity(ctx context.Context, activityID int64) error {
+func (s *Store) EnqueueActivity(ctx context.Context, activityID, userID int64) error {
 	if activityID == 0 {
 		return errors.New("activity id required")
 	}
 	payload, err := json.Marshal(struct {
 		ActivityID int64 `json:"activity_id"`
-	}{ActivityID: activityID})
+		UserID     int64 `json:"user_id,omitempty"`
+	}{ActivityID: activityID, UserID: userID})
 	if err != nil {
 		return err
 	}
@@ -901,6 +902,26 @@ WHERE user_id = ?
 	return token, nil
 }
 
+func (s *Store) GetStravaTokenByAthleteID(ctx context.Context, athleteID int64) (StravaToken, error) {
+	if athleteID == 0 {
+		return StravaToken{}, errors.New("athlete id required")
+	}
+	row := s.db.QueryRowContext(ctx, `
+SELECT user_id, access_token, refresh_token, expires_at, updated_at, athlete_id, athlete_name
+FROM strava_tokens
+WHERE athlete_id = ?
+`, athleteID)
+	var token StravaToken
+	var expiresAt int64
+	var updatedAt int64
+	if err := row.Scan(&token.UserID, &token.AccessToken, &token.RefreshToken, &expiresAt, &updatedAt, &token.AthleteID, &token.AthleteName); err != nil {
+		return StravaToken{}, err
+	}
+	token.ExpiresAt = time.Unix(expiresAt, 0)
+	token.UpdatedAt = time.Unix(updatedAt, 0)
+	return token, nil
+}
+
 func (s *Store) DeleteStravaToken(ctx context.Context, userID int64) error {
 	if userID == 0 {
 		userID = 1
@@ -985,6 +1006,21 @@ WHERE id = ?
 	return err
 }
 
+func (s *Store) UpdateHideRuleEnabledForUser(ctx context.Context, userID, ruleID int64, enabled bool) error {
+	if userID == 0 {
+		return errors.New("user id required")
+	}
+	if ruleID == 0 {
+		return errors.New("rule id required")
+	}
+	_, err := s.db.ExecContext(ctx, `
+UPDATE hide_rules
+SET enabled = ?, updated_at = ?
+WHERE id = ? AND user_id = ?
+`, boolToInt(enabled), time.Now().Unix(), ruleID, userID)
+	return err
+}
+
 func (s *Store) DeleteHideRule(ctx context.Context, ruleID int64) error {
 	if ruleID == 0 {
 		return errors.New("rule id required")
@@ -993,6 +1029,20 @@ func (s *Store) DeleteHideRule(ctx context.Context, ruleID int64) error {
 DELETE FROM hide_rules
 WHERE id = ?
 `, ruleID)
+	return err
+}
+
+func (s *Store) DeleteHideRuleForUser(ctx context.Context, userID, ruleID int64) error {
+	if userID == 0 {
+		return errors.New("user id required")
+	}
+	if ruleID == 0 {
+		return errors.New("rule id required")
+	}
+	_, err := s.db.ExecContext(ctx, `
+DELETE FROM hide_rules
+WHERE id = ? AND user_id = ?
+`, ruleID, userID)
 	return err
 }
 
@@ -1049,6 +1099,47 @@ DELETE FROM hide_rules
 WHERE user_id = ?
 `, userID); err != nil {
 		return err
+	}
+
+	return tx.Commit()
+}
+
+func (s *Store) ReassignUserData(ctx context.Context, fromUserID, toUserID int64) error {
+	if fromUserID == 0 || toUserID == 0 {
+		return errors.New("both user ids required")
+	}
+	if fromUserID == toUserID {
+		return nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	for _, stmt := range []struct {
+		query string
+		args  []interface{}
+	}{
+		{
+			query: `UPDATE activities SET user_id = ? WHERE user_id = ?`,
+			args:  []interface{}{toUserID, fromUserID},
+		},
+		{
+			query: `UPDATE hide_rules SET user_id = ? WHERE user_id = ?`,
+			args:  []interface{}{toUserID, fromUserID},
+		},
+		{
+			query: `UPDATE webhook_events SET owner_id = ? WHERE owner_id = ?`,
+			args:  []interface{}{toUserID, fromUserID},
+		},
+	} {
+		if _, err := tx.ExecContext(ctx, stmt.query, stmt.args...); err != nil {
+			return err
+		}
 	}
 
 	return tx.Commit()
@@ -1443,6 +1534,49 @@ SELECT id, user_id, type, name, start_time, description, distance, moving_time, 
 FROM activities
 WHERE id = ?
 `, activityID)
+	var activity Activity
+	var startTime int64
+	var isPrivate int
+	var hideFromHome int
+	var hiddenByRule int
+	var updatedAt int64
+	if err := row.Scan(
+		&activity.ID,
+		&activity.UserID,
+		&activity.Type,
+		&activity.Name,
+		&startTime,
+		&activity.Description,
+		&activity.Distance,
+		&activity.MovingTime,
+		&activity.AveragePower,
+		&activity.AverageHeartRate,
+		&activity.Visibility,
+		&isPrivate,
+		&hideFromHome,
+		&hiddenByRule,
+		&activity.PhotoURL,
+		&updatedAt,
+	); err != nil {
+		return Activity{}, err
+	}
+	activity.StartTime = time.Unix(startTime, 0)
+	activity.IsPrivate = isPrivate != 0
+	activity.HideFromHome = hideFromHome != 0
+	activity.HiddenByRule = hiddenByRule != 0
+	activity.UpdatedAt = time.Unix(updatedAt, 0)
+	return activity, nil
+}
+
+func (s *Store) GetActivityForUser(ctx context.Context, userID, activityID int64) (Activity, error) {
+	if userID == 0 {
+		return Activity{}, errors.New("user id required")
+	}
+	row := s.db.QueryRowContext(ctx, `
+SELECT id, user_id, type, name, start_time, description, distance, moving_time, average_power, average_heartrate, visibility, is_private, hide_from_home, hidden_by_rule, photo_url, updated_at
+FROM activities
+WHERE id = ? AND user_id = ?
+`, activityID, userID)
 	var activity Activity
 	var startTime int64
 	var isPrivate int

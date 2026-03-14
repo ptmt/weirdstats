@@ -9,18 +9,18 @@ import (
 	"weirdstats/internal/storage"
 )
 
-func EnqueueProcessActivity(ctx context.Context, store *storage.Store, activityID int64) error {
+func EnqueueProcessActivity(ctx context.Context, store *storage.Store, activityID, userID int64) error {
 	if store == nil {
 		return fmt.Errorf("job store not configured")
 	}
-	return store.EnqueueActivity(ctx, activityID)
+	return store.EnqueueActivity(ctx, activityID, userID)
 }
 
-func EnqueueApplyActivityRules(ctx context.Context, store *storage.Store, activityID int64) error {
+func EnqueueApplyActivityRules(ctx context.Context, store *storage.Store, activityID, userID int64) error {
 	if store == nil {
 		return fmt.Errorf("job store not configured")
 	}
-	payload := ProcessActivityPayload{ActivityID: activityID}
+	payload := ProcessActivityPayload{ActivityID: activityID, UserID: userID}
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return err

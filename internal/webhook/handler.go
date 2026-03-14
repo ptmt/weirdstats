@@ -89,7 +89,7 @@ func (h *Handler) recordEvent(ctx context.Context, event Event, payload string) 
 	}
 
 	if event.ObjectType == "activity" && (event.AspectType == "create" || event.AspectType == "update") {
-		if err := jobs.EnqueueProcessActivity(ctx, h.Store, event.ObjectID); err != nil {
+		if err := jobs.EnqueueProcessActivity(ctx, h.Store, event.ObjectID, event.OwnerID); err != nil {
 			return err
 		}
 	}

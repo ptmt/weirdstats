@@ -12,18 +12,30 @@ import (
 )
 
 type Ingestor struct {
-	Store  *storage.Store
-	Strava *strava.Client
+	Store   *storage.Store
+	Strava  *strava.Client
+	Clients *strava.ClientFactory
 }
 
 func (i *Ingestor) EnsureActivity(ctx context.Context, activityID int64) error {
+	userID := UserIDFromContext(ctx)
 	exists, err := i.Store.HasActivity(ctx, activityID)
 	if err != nil {
 		return err
 	}
 
+	if exists {
+		activity, err := i.Store.GetActivity(ctx, activityID)
+		if err != nil {
+			return err
+		}
+		userID = activity.UserID
+	} else if userID == 0 {
+		return fmt.Errorf("activity %d user unknown", activityID)
+	}
+
 	if !exists {
-		return i.fetchAndUpsert(ctx, activityID)
+		return i.fetchAndUpsert(ctx, userID, activityID)
 	}
 
 	count, err := i.Store.CountActivityPoints(ctx, activityID)
@@ -31,23 +43,24 @@ func (i *Ingestor) EnsureActivity(ctx context.Context, activityID int64) error {
 		return err
 	}
 	if count == 0 {
-		return i.fetchAndUpsert(ctx, activityID)
+		return i.fetchAndUpsert(ctx, userID, activityID)
 	}
 
 	return nil
 }
 
-func (i *Ingestor) fetchAndUpsert(ctx context.Context, activityID int64) error {
-	if i.Strava == nil {
-		return fmt.Errorf("strava client not configured")
-	}
-
-	activity, err := i.Strava.GetActivity(ctx, activityID)
+func (i *Ingestor) fetchAndUpsert(ctx context.Context, userID, activityID int64) error {
+	client, err := i.clientForUser(ctx, userID)
 	if err != nil {
 		return err
 	}
 
-	streams, err := i.Strava.GetStreams(ctx, activityID)
+	activity, err := client.GetActivity(ctx, activityID)
+	if err != nil {
+		return err
+	}
+
+	streams, err := client.GetStreams(ctx, activityID)
 	if err != nil {
 		return err
 	}
@@ -62,7 +75,7 @@ func (i *Ingestor) fetchAndUpsert(ctx context.Context, activityID int64) error {
 
 	_, err = i.Store.UpsertActivity(ctx, storage.Activity{
 		ID:               activity.ID,
-		UserID:           1,
+		UserID:           userID,
 		Type:             activity.Type,
 		Name:             activity.Name,
 		StartTime:        activity.StartDate,
@@ -79,12 +92,13 @@ func (i *Ingestor) fetchAndUpsert(ctx context.Context, activityID int64) error {
 	return err
 }
 
-func (i *Ingestor) SyncLatestActivity(ctx context.Context) (int, error) {
-	if i.Strava == nil {
-		return 0, fmt.Errorf("strava client not configured")
+func (i *Ingestor) SyncLatestActivity(ctx context.Context, userID int64) (int, error) {
+	client, err := i.clientForUser(ctx, userID)
+	if err != nil {
+		return 0, err
 	}
 
-	activities, err := i.Strava.ListActivities(ctx, time.Time{}, time.Time{}, 1, 1)
+	activities, err := client.ListActivities(ctx, time.Time{}, time.Time{}, 1, 1)
 	if err != nil {
 		return 0, err
 	}
@@ -93,20 +107,21 @@ func (i *Ingestor) SyncLatestActivity(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 
-	if err := i.fetchAndUpsert(ctx, activities[0].ID); err != nil {
+	if err := i.fetchAndUpsert(ctx, userID, activities[0].ID); err != nil {
 		return 0, err
 	}
 
-	if err := i.Store.EnqueueActivity(ctx, activities[0].ID); err != nil {
+	if err := i.Store.EnqueueActivity(ctx, activities[0].ID, userID); err != nil {
 		return 0, err
 	}
 
 	return 1, nil
 }
 
-func (i *Ingestor) SyncActivitiesSince(ctx context.Context, after time.Time) (int, error) {
-	if i.Strava == nil {
-		return 0, fmt.Errorf("strava client not configured")
+func (i *Ingestor) SyncActivitiesSince(ctx context.Context, userID int64, after time.Time) (int, error) {
+	client, err := i.clientForUser(ctx, userID)
+	if err != nil {
+		return 0, err
 	}
 
 	var allActivities []strava.ActivitySummary
@@ -114,7 +129,7 @@ func (i *Ingestor) SyncActivitiesSince(ctx context.Context, after time.Time) (in
 	perPage := 100
 
 	for {
-		activities, err := i.Strava.ListActivities(ctx, after, time.Time{}, page, perPage)
+		activities, err := client.ListActivities(ctx, after, time.Time{}, page, perPage)
 		if err != nil {
 			return 0, err
 		}
@@ -133,11 +148,11 @@ func (i *Ingestor) SyncActivitiesSince(ctx context.Context, after time.Time) (in
 
 	synced := 0
 	for _, activity := range allActivities {
-		if err := i.fetchAndUpsert(ctx, activity.ID); err != nil {
+		if err := i.fetchAndUpsert(ctx, userID, activity.ID); err != nil {
 			return synced, fmt.Errorf("activity %d: %w", activity.ID, err)
 		}
 
-		if err := i.Store.EnqueueActivity(ctx, activity.ID); err != nil {
+		if err := i.Store.EnqueueActivity(ctx, activity.ID, userID); err != nil {
 			return synced, fmt.Errorf("enqueue %d: %w", activity.ID, err)
 		}
 
@@ -145,6 +160,40 @@ func (i *Ingestor) SyncActivitiesSince(ctx context.Context, after time.Time) (in
 	}
 
 	return synced, nil
+}
+
+type userIDContextKey struct{}
+
+func ContextWithUserID(ctx context.Context, userID int64) context.Context {
+	if userID == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, userIDContextKey{}, userID)
+}
+
+func UserIDFromContext(ctx context.Context) int64 {
+	if ctx == nil {
+		return 0
+	}
+	userID, _ := ctx.Value(userIDContextKey{}).(int64)
+	return userID
+}
+
+func (i *Ingestor) clientForUser(ctx context.Context, userID int64) (*strava.Client, error) {
+	if userID == 0 {
+		return nil, fmt.Errorf("strava user id required")
+	}
+	if i.Clients != nil {
+		return i.Clients.ClientForUser(ctx, userID)
+	}
+	if i.Strava != nil {
+		return i.Strava, nil
+	}
+	return nil, fmt.Errorf("strava client not configured")
+}
+
+func (i *Ingestor) ClientForUser(ctx context.Context, userID int64) (*strava.Client, error) {
+	return i.clientForUser(ctx, userID)
 }
 
 func buildPoints(start time.Time, streams strava.StreamSet) ([]gps.Point, error) {
