@@ -59,7 +59,7 @@ func TestSettings_ShowsFactPreferences(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 	body := rec.Body.String()
-	for _, text := range []string{"Weirdstats facts", "Stop summary", "Traffic-light stops", "Longest uninterrupted segment", "Coffee stop", "Route highlights"} {
+	for _, text := range []string{"Weirdstats facts", "Stop summary", "Traffic-light stops", "Longest uninterrupted segment", "Coffee stop", "Route highlights", "Road crossings"} {
 		if !strings.Contains(body, text) {
 			t.Fatalf("expected %q in settings page", text)
 		}
@@ -69,6 +69,9 @@ func TestSettings_ShowsFactPreferences(t *testing.T) {
 	}
 	if !strings.Contains(body, `name="fact_route_highlights" checked`) {
 		t.Fatalf("expected route highlights toggle to be enabled")
+	}
+	if !strings.Contains(body, `name="fact_road_crossings" checked`) {
+		t.Fatalf("expected road crossings toggle to default to enabled")
 	}
 }
 
@@ -138,5 +141,8 @@ func TestSettings_UpdateFacts(t *testing.T) {
 	}
 	if !settings[weirdStatsFactRouteHighlights] {
 		t.Fatalf("expected route highlights enabled")
+	}
+	if settings[weirdStatsFactRoadCrossings] {
+		t.Fatalf("expected road crossings disabled")
 	}
 }

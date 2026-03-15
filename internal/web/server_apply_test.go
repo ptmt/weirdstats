@@ -28,7 +28,8 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 	}
 	coffeeFact := coffeeStopFact{Name: "Bean Machine"}
 	routeFact := routeHighlightFact{Names: []string{"Victory Column", "Memorial Church"}}
-	line := "Longest uninterrupted segment: 48km - 200w - 30kmh · Detected Coffee Stop: Bean Machine · Route highlights: Victory Column, Memorial Church · 3 stops (1m 35s total) · 2 at lights #weirdstats"
+	roadFact := roadCrossingFact{Count: 2, Roads: []string{"Unter den Linden", "Friedrichstrasse"}}
+	line := "Longest uninterrupted segment: 48km - 200w - 30kmh · Detected Coffee Stop: Bean Machine · Route highlights: Victory Column, Memorial Church · 2 road crossings: Unter den Linden, Friedrichstrasse · 3 stops (1m 35s total) · 2 at lights #weirdstats"
 
 	tests := []struct {
 		name       string
@@ -37,6 +38,7 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 		rideFact   rideSegmentFact
 		coffeeFact coffeeStopFact
 		routeFact  routeHighlightFact
+		roadFact   roadCrossingFact
 		want       string
 		changed    bool
 	}{
@@ -47,6 +49,7 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 			rideFact:   rideFact,
 			coffeeFact: coffeeFact,
 			routeFact:  routeFact,
+			roadFact:   roadFact,
 			want:       line,
 			changed:    true,
 		},
@@ -57,6 +60,7 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 			rideFact:   rideFact,
 			coffeeFact: coffeeFact,
 			routeFact:  routeFact,
+			roadFact:   roadFact,
 			want:       "Morning ride with intervals\n\n" + line,
 			changed:    true,
 		},
@@ -67,6 +71,7 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 			rideFact:   rideFact,
 			coffeeFact: coffeeFact,
 			routeFact:  routeFact,
+			roadFact:   roadFact,
 			want:       "First paragraph.\n\nSecond paragraph.\n\n" + line,
 			changed:    true,
 		},
@@ -77,6 +82,7 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 			rideFact:   rideFact,
 			coffeeFact: coffeeFact,
 			routeFact:  routeFact,
+			roadFact:   roadFact,
 			want:       "Morning ride with intervals\n\n" + line,
 			changed:    false,
 		},
@@ -91,7 +97,7 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, changed := applyWeirdStatsDescription(tt.existing, tt.stats, tt.rideFact, tt.coffeeFact, tt.routeFact)
+			got, changed := applyWeirdStatsDescription(tt.existing, tt.stats, tt.rideFact, tt.coffeeFact, tt.routeFact, tt.roadFact)
 			if got != tt.want {
 				t.Fatalf("unexpected description\nwant: %q\n got: %q", tt.want, got)
 			}
@@ -109,7 +115,7 @@ func TestApplyWeirdStatsDescription_WithRideFactOnly(t *testing.T) {
 		AvgSpeedMPS:    29.8 / 3.6,
 	}
 
-	got, changed := applyWeirdStatsDescription("", stats.StopStats{}, rideFact, coffeeStopFact{}, routeHighlightFact{})
+	got, changed := applyWeirdStatsDescription("", stats.StopStats{}, rideFact, coffeeStopFact{}, routeHighlightFact{}, roadCrossingFact{})
 	want := "Longest uninterrupted segment: 48.3km - 199w - 29.8kmh #weirdstats"
 	if got != want {
 		t.Fatalf("unexpected description\nwant: %q\n got: %q", want, got)
@@ -129,7 +135,7 @@ func TestApplyWeirdStatsDescription_ReplacesHashtagManagedLine(t *testing.T) {
 	existing := "Morning ride\n\n3 stops (1m 35s total) · 2 at lights #weirdstats"
 	want := "Morning ride\n\n2 stops (42s total) · 1 at lights #weirdstats"
 
-	got, changed := applyWeirdStatsDescription(existing, snapshot, rideSegmentFact{}, coffeeStopFact{}, routeHighlightFact{})
+	got, changed := applyWeirdStatsDescription(existing, snapshot, rideSegmentFact{}, coffeeStopFact{}, routeHighlightFact{}, roadCrossingFact{})
 	if got != want {
 		t.Fatalf("unexpected description\nwant: %q\n got: %q", want, got)
 	}
@@ -141,7 +147,7 @@ func TestApplyWeirdStatsDescription_ReplacesHashtagManagedLine(t *testing.T) {
 func TestApplyWeirdStatsDescription_RemovesManagedLineWhenNoFactsRemain(t *testing.T) {
 	existing := "Morning ride\n\n2 stops (42s total) · 1 at lights #weirdstats"
 
-	got, changed := applyWeirdStatsDescription(existing, stats.StopStats{}, rideSegmentFact{}, coffeeStopFact{}, routeHighlightFact{})
+	got, changed := applyWeirdStatsDescription(existing, stats.StopStats{}, rideSegmentFact{}, coffeeStopFact{}, routeHighlightFact{}, roadCrossingFact{})
 	if got != "Morning ride" {
 		t.Fatalf("unexpected description\nwant: %q\n got: %q", "Morning ride", got)
 	}
@@ -177,6 +183,7 @@ func TestBuildWeirdStatsLine(t *testing.T) {
 	}
 	coffeeFact := coffeeStopFact{Name: "Bean Machine"}
 	routeFact := routeHighlightFact{Names: []string{"Victory Column", "Memorial Church"}}
+	roadFact := roadCrossingFact{Count: 2, Roads: []string{"Unter den Linden", "Friedrichstrasse"}}
 
 	tests := []struct {
 		name       string
@@ -184,6 +191,7 @@ func TestBuildWeirdStatsLine(t *testing.T) {
 		rideFact   rideSegmentFact
 		coffeeFact coffeeStopFact
 		routeFact  routeHighlightFact
+		roadFact   roadCrossingFact
 		want       string
 	}{
 		{
@@ -192,7 +200,8 @@ func TestBuildWeirdStatsLine(t *testing.T) {
 			rideFact:   rideFact,
 			coffeeFact: coffeeFact,
 			routeFact:  routeFact,
-			want:       "Longest uninterrupted segment: 48km - 200w - 30kmh · Detected Coffee Stop: Bean Machine · Route highlights: Victory Column, Memorial Church · 3 stops (1m 35s total) · 2 at lights",
+			roadFact:   roadFact,
+			want:       "Longest uninterrupted segment: 48km - 200w - 30kmh · Detected Coffee Stop: Bean Machine · Route highlights: Victory Column, Memorial Church · 2 road crossings: Unter den Linden, Friedrichstrasse · 3 stops (1m 35s total) · 2 at lights",
 		},
 		{
 			name:     "ride fact only",
@@ -208,6 +217,11 @@ func TestBuildWeirdStatsLine(t *testing.T) {
 			name:      "route highlights only",
 			routeFact: routeFact,
 			want:      "Route highlights: Victory Column, Memorial Church",
+		},
+		{
+			name:     "road crossings only",
+			roadFact: roadFact,
+			want:     "2 road crossings: Unter den Linden, Friedrichstrasse",
 		},
 		{
 			name:  "stops only",
@@ -227,7 +241,7 @@ func TestBuildWeirdStatsLine(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := buildWeirdStatsLine(tt.stats, tt.rideFact, tt.coffeeFact, tt.routeFact)
+			got := buildWeirdStatsLine(tt.stats, tt.rideFact, tt.coffeeFact, tt.routeFact, tt.roadFact)
 			if got != tt.want {
 				t.Fatalf("unexpected line\nwant: %q\n got: %q", tt.want, got)
 			}
@@ -329,6 +343,64 @@ func TestBuildRouteHighlightPart(t *testing.T) {
 	}
 }
 
+func TestBuildRoadCrossingPart(t *testing.T) {
+	tests := []struct {
+		name string
+		fact roadCrossingFact
+		want string
+	}{
+		{
+			name: "named crossings",
+			fact: roadCrossingFact{Count: 2, Roads: []string{"Unter den Linden", "Friedrichstrasse"}},
+			want: "2 road crossings: Unter den Linden, Friedrichstrasse",
+		},
+		{
+			name: "single named crossing",
+			fact: roadCrossingFact{Count: 1, Roads: []string{"Unter den Linden"}},
+			want: "Road crossing: Unter den Linden",
+		},
+		{
+			name: "count only",
+			fact: roadCrossingFact{Count: 2},
+			want: "2 road crossings",
+		},
+		{
+			name: "missing crossings",
+			fact: roadCrossingFact{},
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildRoadCrossingPart(tt.fact)
+			if got != tt.want {
+				t.Fatalf("unexpected road crossing part\nwant: %q\n got: %q", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestBuildRoadCrossingFact(t *testing.T) {
+	stops := []storage.ActivityStop{
+		{HasRoadCrossing: true, CrossingRoad: " Unter den Linden "},
+		{HasRoadCrossing: false, CrossingRoad: "Ignored"},
+		{HasRoadCrossing: true, CrossingRoad: "unter   den linden"},
+		{HasRoadCrossing: true, CrossingRoad: "Friedrichstrasse"},
+	}
+
+	got := buildRoadCrossingFact(stops)
+	if got.Count != 3 {
+		t.Fatalf("expected 3 road crossings, got %+v", got)
+	}
+	if len(got.Roads) != 2 {
+		t.Fatalf("expected 2 unique road names, got %+v", got)
+	}
+	if got.Roads[0] != "Unter den Linden" || got.Roads[1] != "Friedrichstrasse" {
+		t.Fatalf("unexpected road names: %+v", got.Roads)
+	}
+}
+
 func TestAppendWeirdstatsTag(t *testing.T) {
 	tests := []struct {
 		name string
@@ -380,7 +452,7 @@ func TestIsWeirdstatsManagedLine(t *testing.T) {
 		},
 		{
 			name: "new stats line",
-			line: "Longest uninterrupted segment: 48km - 200w - 30kmh · Detected Coffee Stop: Bean Machine · Route highlights: Victory Column · 2 stops (42s total) #weirdstats",
+			line: "Longest uninterrupted segment: 48km - 200w - 30kmh · Detected Coffee Stop: Bean Machine · Route highlights: Victory Column · 2 road crossings: Unter den Linden, Friedrichstrasse · 2 stops (42s total) #weirdstats",
 			want: true,
 		},
 		{

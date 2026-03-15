@@ -234,6 +234,11 @@ type routeHighlightFact struct {
 	Names []string
 }
 
+type roadCrossingFact struct {
+	Count int
+	Roads []string
+}
+
 // StaticHandler serves embedded static assets (leaflet, chart.js).
 func StaticHandler() http.Handler {
 	sub, err := fs.Sub(staticFS, "static")
@@ -936,6 +941,7 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 	rideFactEnabled := weirdStatsFactEnabled(factSettings, weirdStatsFactLongestSegment)
 	coffeeFactEnabled := weirdStatsFactEnabled(factSettings, weirdStatsFactCoffeeStop)
 	routeFactEnabled := weirdStatsFactEnabled(factSettings, weirdStatsFactRouteHighlights)
+	roadCrossingFactEnabled := weirdStatsFactEnabled(factSettings, weirdStatsFactRoadCrossings)
 	needsRideFacts := rideFactEnabled || coffeeFactEnabled || routeFactEnabled
 
 	baseDescription := activity.Description
@@ -943,6 +949,15 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 	rideFact := rideSegmentFact{}
 	coffeeFact := coffeeStopFact{}
 	routeFact := routeHighlightFact{}
+	roadFact := roadCrossingFact{}
+	if roadCrossingFactEnabled {
+		stops, err := s.store.LoadActivityStops(ctx, activityID)
+		if err != nil {
+			log.Printf("activity stops load failed (skipping road crossing fact): %v", err)
+		} else {
+			roadFact = buildRoadCrossingFact(stops)
+		}
+	}
 	if needsRideFacts && isRideType(activity.Type) {
 		points, err := s.store.LoadActivityPoints(ctx, activityID)
 		if err != nil {
@@ -1009,7 +1024,7 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 	}
 
 	var descPtr *string
-	newDesc, descChanged := applyWeirdStatsDescription(baseDescription, filterWeirdStatsSnapshot(statsSnapshot, factSettings), rideFact, coffeeFact, routeFact)
+	newDesc, descChanged := applyWeirdStatsDescription(baseDescription, filterWeirdStatsSnapshot(statsSnapshot, factSettings), rideFact, coffeeFact, routeFact, roadFact)
 	if descChanged {
 		descPtr = &newDesc
 	}
@@ -1140,8 +1155,8 @@ func stopStatsFromStops(stops []storage.ActivityStop) stats.StopStats {
 const weirdStatsPrefix = "Weirdstats:"
 const weirdstatsTag = "#weirdstats"
 
-func applyWeirdStatsDescription(existing string, statsSnapshot stats.StopStats, rideFact rideSegmentFact, coffeeFact coffeeStopFact, routeFact routeHighlightFact) (string, bool) {
-	line := buildWeirdStatsLine(statsSnapshot, rideFact, coffeeFact, routeFact)
+func applyWeirdStatsDescription(existing string, statsSnapshot stats.StopStats, rideFact rideSegmentFact, coffeeFact coffeeStopFact, routeFact routeHighlightFact, roadFact roadCrossingFact) (string, bool) {
+	line := buildWeirdStatsLine(statsSnapshot, rideFact, coffeeFact, routeFact, roadFact)
 	normalized := strings.ReplaceAll(existing, "\r\n", "\n")
 	lines := strings.Split(normalized, "\n")
 	filtered := make([]string, 0, len(lines))
@@ -1171,14 +1186,15 @@ func applyWeirdStatsDescription(existing string, statsSnapshot stats.StopStats, 
 	return updated, updated != existing
 }
 
-func buildWeirdStatsLine(statsSnapshot stats.StopStats, rideFact rideSegmentFact, coffeeFact coffeeStopFact, routeFact routeHighlightFact) string {
+func buildWeirdStatsLine(statsSnapshot stats.StopStats, rideFact rideSegmentFact, coffeeFact coffeeStopFact, routeFact routeHighlightFact, roadFact roadCrossingFact) string {
 	ridePart := buildRideSegmentPart(rideFact)
 	coffeePart := buildCoffeeStopPart(coffeeFact)
 	routePart := buildRouteHighlightPart(routeFact)
-	if statsSnapshot.StopCount == 0 && statsSnapshot.TrafficLightStopCount == 0 && ridePart == "" && coffeePart == "" && routePart == "" {
+	roadPart := buildRoadCrossingPart(roadFact)
+	if statsSnapshot.StopCount == 0 && statsSnapshot.TrafficLightStopCount == 0 && ridePart == "" && coffeePart == "" && routePart == "" && roadPart == "" {
 		return ""
 	}
-	parts := make([]string, 0, 5)
+	parts := make([]string, 0, 6)
 	if ridePart != "" {
 		parts = append(parts, ridePart)
 	}
@@ -1187,6 +1203,9 @@ func buildWeirdStatsLine(statsSnapshot stats.StopStats, rideFact rideSegmentFact
 	}
 	if routePart != "" {
 		parts = append(parts, routePart)
+	}
+	if roadPart != "" {
+		parts = append(parts, roadPart)
 	}
 	if statsSnapshot.StopCount > 0 {
 		part := fmt.Sprintf("%d stops", statsSnapshot.StopCount)
@@ -1251,6 +1270,59 @@ func buildRouteHighlightPart(fact routeHighlightFact) string {
 	return "Route highlights: " + strings.Join(names, ", ")
 }
 
+func buildRoadCrossingPart(fact roadCrossingFact) string {
+	if fact.Count <= 0 {
+		return ""
+	}
+	roads := uniqueCrossingRoadNames(fact.Roads)
+	if fact.Count == 1 {
+		if len(roads) > 0 {
+			return "Road crossing: " + roads[0]
+		}
+		return "1 road crossing"
+	}
+	if len(roads) > 0 {
+		return fmt.Sprintf("%d road crossings: %s", fact.Count, strings.Join(roads, ", "))
+	}
+	return fmt.Sprintf("%d road crossings", fact.Count)
+}
+
+func buildRoadCrossingFact(stops []storage.ActivityStop) roadCrossingFact {
+	fact := roadCrossingFact{}
+	for _, stop := range stops {
+		if !stop.HasRoadCrossing {
+			continue
+		}
+		fact.Count++
+		if name := strings.TrimSpace(stop.CrossingRoad); name != "" {
+			fact.Roads = append(fact.Roads, name)
+		}
+	}
+	fact.Roads = uniqueCrossingRoadNames(fact.Roads)
+	if len(fact.Roads) > roadCrossingFactMaxNames {
+		fact.Roads = fact.Roads[:roadCrossingFactMaxNames]
+	}
+	return fact
+}
+
+func uniqueCrossingRoadNames(names []string) []string {
+	seen := make(map[string]struct{}, len(names))
+	result := make([]string, 0, len(names))
+	for _, name := range names {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			continue
+		}
+		key := strings.ToLower(strings.Join(strings.Fields(trimmed), " "))
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, trimmed)
+	}
+	return result
+}
+
 func appendWeirdstatsTag(text string) string {
 	trimmed := strings.TrimSpace(text)
 	trimmed = strings.TrimSpace(strings.TrimSuffix(trimmed, weirdstatsTag))
@@ -1275,7 +1347,9 @@ func isWeirdstatsManagedLine(line string) bool {
 		strings.Contains(trimmed, "at lights") ||
 		strings.Contains(trimmed, "Longest uninterrupted segment:") ||
 		strings.Contains(trimmed, "Detected Coffee Stop:") ||
-		strings.Contains(trimmed, "Route highlights:")
+		strings.Contains(trimmed, "Route highlights:") ||
+		strings.Contains(trimmed, "Road crossing:") ||
+		strings.Contains(trimmed, "road crossings")
 }
 
 func buildPointsFromStreams(start time.Time, streams strava.StreamSet) []gps.Point {
@@ -1315,6 +1389,7 @@ const (
 	routeHighlightBBoxPaddingM    = 200.0
 	routeHighlightMinScore        = 25.0
 	routeHighlightMaxCount        = 2
+	roadCrossingFactMaxNames      = 2
 )
 
 func longestRideSegmentFact(activityType string, points []gps.Point, _ gps.StopOptions) rideSegmentFact {

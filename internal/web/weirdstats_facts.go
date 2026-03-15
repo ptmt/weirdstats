@@ -13,6 +13,7 @@ const (
 	weirdStatsFactLongestSegment    = "longest_segment"
 	weirdStatsFactCoffeeStop        = "coffee_stop"
 	weirdStatsFactRouteHighlights   = "route_highlights"
+	weirdStatsFactRoadCrossings     = "road_crossings"
 )
 
 type SettingsFact struct {
@@ -64,6 +65,12 @@ var weirdStatsFactDefinitions = []weirdStatsFactDefinition{
 		Description:    "Write notable landmarks detected near the route.",
 		DefaultEnabled: true,
 		RideOnly:       true,
+	},
+	{
+		ID:             weirdStatsFactRoadCrossings,
+		Label:          "Road crossings",
+		Description:    "Write detected road crossings after stops, including road names when available.",
+		DefaultEnabled: true,
 	},
 }
 
