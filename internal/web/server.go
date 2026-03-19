@@ -110,6 +110,22 @@ type StopView struct {
 	CrossingRoad    string  `json:"crossing_road,omitempty"`
 }
 
+type ActivityFactPoint struct {
+	Lat   float64 `json:"lat"`
+	Lon   float64 `json:"lon"`
+	Label string  `json:"label,omitempty"`
+}
+
+type ActivityMapFactView struct {
+	ID      string              `json:"id"`
+	Kind    string              `json:"kind"`
+	Title   string              `json:"title"`
+	Summary string              `json:"summary"`
+	Color   string              `json:"color"`
+	Points  []ActivityFactPoint `json:"points,omitempty"`
+	Path    []routePreviewPoint `json:"path,omitempty"`
+}
+
 type routePreviewPoint struct {
 	Lat float64 `json:"lat"`
 	Lon float64 `json:"lon"`
@@ -117,12 +133,14 @@ type routePreviewPoint struct {
 
 type ActivityDetailData struct {
 	PageData
-	Activity        ActivityView
-	Stops           []StopView
-	RoutePointsJSON template.JS
-	StopsJSON       template.JS
-	SpeedSeriesJSON template.JS
-	SpeedThreshold  float64
+	Activity          ActivityView
+	Stops             []StopView
+	DetectedFacts     []ActivityMapFactView
+	RoutePointsJSON   template.JS
+	StopsJSON         template.JS
+	DetectedFactsJSON template.JS
+	SpeedSeriesJSON   template.JS
+	SpeedThreshold    float64
 }
 
 type StravaInfo struct {
@@ -226,19 +244,42 @@ type rideSegmentFact struct {
 	DistanceMeters float64
 	AvgPower       float64
 	AvgSpeedMPS    float64
+	StartIndex     int
+	EndIndex       int
+	StartLat       float64
+	StartLon       float64
+	EndLat         float64
+	EndLon         float64
 }
 
 type coffeeStopFact struct {
+	Name        string
+	Lat         float64
+	Lon         float64
+	HasLocation bool
+}
+
+type routeHighlightLocation struct {
 	Name string
+	Lat  float64
+	Lon  float64
 }
 
 type routeHighlightFact struct {
-	Names []string
+	Names     []string
+	Locations []routeHighlightLocation
+}
+
+type roadCrossingLocation struct {
+	Lat  float64
+	Lon  float64
+	Road string
 }
 
 type roadCrossingFact struct {
-	Count int
-	Roads []string
+	Count     int
+	Roads     []string
+	Locations []roadCrossingLocation
 }
 
 // StaticHandler serves embedded static assets (leaflet, chart.js).
@@ -756,6 +797,28 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	rideFact := rideSegmentFact{}
+	coffeeFact := coffeeStopFact{}
+	routeFact := routeHighlightFact{}
+	roadFact := buildRoadCrossingFact(storedStops)
+	if isRideType(activity.Type) && len(points) > 1 {
+		rideFact = longestRideSegmentFact(activity.Type, points, s.stopOpts)
+		if s.overpass != nil {
+			var detectErr error
+			coffeeFact, detectErr = detectCoffeeStopFact(r.Context(), activity.Type, points, s.overpass)
+			if detectErr != nil {
+				log.Printf("detail coffee stop detection failed for activity %d: %v", activityID, detectErr)
+				coffeeFact = coffeeStopFact{}
+			}
+			routeFact, detectErr = detectRouteHighlightFact(r.Context(), points, s.overpass)
+			if detectErr != nil {
+				log.Printf("detail route highlight detection failed for activity %d: %v", activityID, detectErr)
+				routeFact = routeHighlightFact{}
+			}
+		}
+	}
+	detectedFacts := buildActivityMapFacts(stopViews, points, rideFact, coffeeFact, routeFact, roadFact)
+
 	type mapPoint struct {
 		Lat float64 `json:"lat"`
 		Lon float64 `json:"lon"`
@@ -767,6 +830,7 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 
 	pointsJSON, _ := json.Marshal(routePoints)
 	stopsJSON, _ := json.Marshal(stopViews)
+	detectedFactsJSON, _ := json.Marshal(detectedFacts)
 	type speedPoint struct {
 		T float64 `json:"t"`
 		S float64 `json:"s"`
@@ -793,19 +857,20 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	view := ActivityView{
-		ID:             activity.ID,
-		Name:           activity.Name,
-		Type:           activity.Type,
-		StartTime:      activity.StartTime.Format("Jan 2, 2006 15:04"),
-		Distance:       formatDistance(activity.Distance),
-		Duration:       formatDuration(activity.MovingTime),
-		HasStats:       len(stopViews) > 0,
-		StopCount:      len(stopViews),
-		StopTotal:      formatDuration(totalStopSeconds(stopViews)),
-		LightStops:     countLightStops(stopViews),
-		RoadCrossings:  countRoadCrossings(stopViews),
-		RecalculatedAt: recalculatedAt,
-		FetchedAt:      formatTimestamp(activity.UpdatedAt),
+		ID:                activity.ID,
+		Name:              activity.Name,
+		Type:              activity.Type,
+		StartTime:         activity.StartTime.Format("Jan 2, 2006 15:04"),
+		Distance:          formatDistance(activity.Distance),
+		Duration:          formatDuration(activity.MovingTime),
+		HasStats:          len(stopViews) > 0,
+		StopCount:         len(stopViews),
+		StopTotal:         formatDuration(totalStopSeconds(stopViews)),
+		LightStops:        countLightStops(stopViews),
+		DetectedFactCount: len(detectedFacts),
+		RoadCrossings:     countRoadCrossings(stopViews),
+		RecalculatedAt:    recalculatedAt,
+		FetchedAt:         formatTimestamp(activity.UpdatedAt),
 	}
 	enrichActivityView(&view, activity)
 
@@ -828,12 +893,14 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 			Strava:     s.getStravaInfo(r.Context(), userID),
 			UserCount:  s.userCount(r.Context()),
 		},
-		Activity:        view,
-		Stops:           stopViews,
-		RoutePointsJSON: template.JS(pointsJSON),
-		StopsJSON:       template.JS(stopsJSON),
-		SpeedSeriesJSON: template.JS(speedJSON),
-		SpeedThreshold:  s.stopOpts.SpeedThreshold,
+		Activity:          view,
+		Stops:             stopViews,
+		DetectedFacts:     detectedFacts,
+		RoutePointsJSON:   template.JS(pointsJSON),
+		StopsJSON:         template.JS(stopsJSON),
+		DetectedFactsJSON: template.JS(detectedFactsJSON),
+		SpeedSeriesJSON:   template.JS(speedJSON),
+		SpeedThreshold:    s.stopOpts.SpeedThreshold,
 	}
 
 	if err := s.templates["activity"].ExecuteTemplate(w, "base", data); err != nil {
@@ -1299,6 +1366,11 @@ func buildRoadCrossingFact(stops []storage.ActivityStop) roadCrossingFact {
 			continue
 		}
 		fact.Count++
+		fact.Locations = append(fact.Locations, roadCrossingLocation{
+			Lat:  stop.Lat,
+			Lon:  stop.Lon,
+			Road: strings.TrimSpace(stop.CrossingRoad),
+		})
 		if name := strings.TrimSpace(stop.CrossingRoad); name != "" {
 			fact.Roads = append(fact.Roads, name)
 		}
@@ -1529,10 +1601,16 @@ func rideSegmentFactForWindow(points []gps.Point, start, end time.Time, speedThr
 		powerCount int
 	)
 
-	for _, point := range points {
+	firstIdx := -1
+	lastIdx := -1
+	for idx, point := range points {
 		if point.Time.Before(start) || point.Time.After(end) {
 			continue
 		}
+		if firstIdx == -1 {
+			firstIdx = idx
+		}
+		lastIdx = idx
 		if havePrev {
 			distanceM += haversineMeters(prev.Lat, prev.Lon, point.Lat, point.Lon)
 		}
@@ -1557,6 +1635,12 @@ func rideSegmentFactForWindow(points []gps.Point, start, end time.Time, speedThr
 	fact := rideSegmentFact{
 		DistanceMeters: distanceM,
 		AvgSpeedMPS:    speedTotal / float64(speedCount),
+		StartIndex:     firstIdx,
+		EndIndex:       lastIdx,
+		StartLat:       points[firstIdx].Lat,
+		StartLon:       points[firstIdx].Lon,
+		EndLat:         points[lastIdx].Lat,
+		EndLon:         points[lastIdx].Lon,
 	}
 	if powerCount > 0 {
 		fact.AvgPower = powerTotal / float64(powerCount)
@@ -1585,8 +1669,14 @@ func detectRouteHighlightFact(ctx context.Context, points []gps.Point, overpass 
 	}
 
 	names := make([]string, 0, routeHighlightMaxCount)
+	locations := make([]routeHighlightLocation, 0, routeHighlightMaxCount)
 	for _, candidate := range candidates {
 		names = append(names, candidate.name)
+		locations = append(locations, routeHighlightLocation{
+			Name: candidate.name,
+			Lat:  candidate.lat,
+			Lon:  candidate.lon,
+		})
 		if len(names) == routeHighlightMaxCount {
 			break
 		}
@@ -1594,13 +1684,18 @@ func detectRouteHighlightFact(ctx context.Context, points []gps.Point, overpass 
 	if len(names) == 0 {
 		return routeHighlightFact{}, nil
 	}
-	return routeHighlightFact{Names: names}, nil
+	return routeHighlightFact{
+		Names:     names,
+		Locations: locations,
+	}, nil
 }
 
 type routeHighlightCandidate struct {
 	name           string
 	score          float64
 	distanceMeters float64
+	lat            float64
+	lon            float64
 }
 
 func buildRouteHighlightCandidates(points []gps.Point, pois []maps.POI, maxDistanceMeters float64) []routeHighlightCandidate {
@@ -1646,6 +1741,8 @@ func routeHighlightCandidateForPOI(points []gps.Point, poi maps.POI, maxDistance
 		name:           name,
 		score:          score,
 		distanceMeters: distanceMeters,
+		lat:            poi.Lat,
+		lon:            poi.Lon,
 	}, true
 }
 
@@ -1840,6 +1937,8 @@ func detectCoffeeStopFact(ctx context.Context, activityType string, points []gps
 			pauseStart:     window.start,
 			isCafe:         poi.Type == maps.FeatureCafe,
 			hasName:        strings.TrimSpace(poi.Name) != "",
+			lat:            poi.Lat,
+			lon:            poi.Lon,
 			valid:          true,
 		}
 		if candidate.betterThan(best) {
@@ -1850,7 +1949,12 @@ func detectCoffeeStopFact(ctx context.Context, activityType string, points []gps
 	if !best.valid {
 		return coffeeStopFact{}, nil
 	}
-	return coffeeStopFact{Name: best.name}, nil
+	return coffeeStopFact{
+		Name:        best.name,
+		Lat:         best.lat,
+		Lon:         best.lon,
+		HasLocation: true,
+	}, nil
 }
 
 type coffeeStopCandidate struct {
@@ -1860,6 +1964,8 @@ type coffeeStopCandidate struct {
 	pauseStart     time.Time
 	isCafe         bool
 	hasName        bool
+	lat            float64
+	lon            float64
 	valid          bool
 }
 
@@ -2046,6 +2152,169 @@ func formatCompactNumber(value float64, precision int) string {
 		text = strings.TrimSuffix(text, ".")
 	}
 	return text
+}
+
+func buildActivityMapFacts(stopViews []StopView, points []gps.Point, rideFact rideSegmentFact, coffeeFact coffeeStopFact, routeFact routeHighlightFact, roadFact roadCrossingFact) []ActivityMapFactView {
+	facts := make([]ActivityMapFactView, 0, 6)
+
+	if summary := trimFactPrefix(buildRideSegmentPart(rideFact), "Longest uninterrupted segment: "); summary != "" {
+		fact := ActivityMapFactView{
+			ID:      weirdStatsFactLongestSegment,
+			Kind:    "segment",
+			Title:   "Longest uninterrupted segment",
+			Summary: summary,
+			Color:   "#22c55e",
+			Points: []ActivityFactPoint{
+				{Lat: rideFact.StartLat, Lon: rideFact.StartLon, Label: "Segment start"},
+				{Lat: rideFact.EndLat, Lon: rideFact.EndLon, Label: "Segment end"},
+			},
+			Path: rideSegmentPathPoints(points, rideFact),
+		}
+		facts = append(facts, fact)
+	}
+
+	if summary := trimFactPrefix(buildCoffeeStopPart(coffeeFact), "Detected Coffee Stop: "); summary != "" && coffeeFact.HasLocation {
+		facts = append(facts, ActivityMapFactView{
+			ID:      weirdStatsFactCoffeeStop,
+			Kind:    "point",
+			Title:   "Coffee stop",
+			Summary: summary,
+			Color:   "#f59e0b",
+			Points: []ActivityFactPoint{
+				{Lat: coffeeFact.Lat, Lon: coffeeFact.Lon, Label: summary},
+			},
+		})
+	}
+
+	if summary := trimFactPrefix(buildRouteHighlightPart(routeFact), "Route highlights: "); summary != "" && len(routeFact.Locations) > 0 {
+		facts = append(facts, ActivityMapFactView{
+			ID:      weirdStatsFactRouteHighlights,
+			Kind:    "collection",
+			Title:   "Route highlights",
+			Summary: summary,
+			Color:   "#06b6d4",
+			Points:  routeHighlightFactPoints(routeFact.Locations),
+		})
+	}
+
+	if summary := buildRoadCrossingPart(roadFact); summary != "" && len(roadFact.Locations) > 0 {
+		facts = append(facts, ActivityMapFactView{
+			ID:      weirdStatsFactRoadCrossings,
+			Kind:    "collection",
+			Title:   "Road crossings",
+			Summary: summary,
+			Color:   "#3b82f6",
+			Points:  roadCrossingFactPoints(roadFact.Locations),
+		})
+	}
+
+	if len(stopViews) > 0 {
+		summary := fmt.Sprintf("%d stops", len(stopViews))
+		if total := totalStopSeconds(stopViews); total > 0 {
+			summary += " · " + formatDuration(total) + " total"
+		}
+		facts = append(facts, ActivityMapFactView{
+			ID:      weirdStatsFactStopSummary,
+			Kind:    "collection",
+			Title:   "Stop summary",
+			Summary: summary,
+			Color:   "#ec4899",
+			Points:  stopFactPoints(stopViews),
+		})
+	}
+
+	lightStops := filterStopViews(stopViews, func(stop StopView) bool {
+		return stop.HasTrafficLight
+	})
+	if len(lightStops) > 0 {
+		facts = append(facts, ActivityMapFactView{
+			ID:      weirdStatsFactTrafficLightStops,
+			Kind:    "collection",
+			Title:   "Traffic-light stops",
+			Summary: fmt.Sprintf("%d detected near traffic signals", len(lightStops)),
+			Color:   "#ef4444",
+			Points:  stopFactPoints(lightStops),
+		})
+	}
+
+	return facts
+}
+
+func trimFactPrefix(part, prefix string) string {
+	if part == "" {
+		return ""
+	}
+	return strings.TrimSpace(strings.TrimPrefix(part, prefix))
+}
+
+func rideSegmentPathPoints(points []gps.Point, fact rideSegmentFact) []routePreviewPoint {
+	if fact.StartIndex < 0 || fact.EndIndex >= len(points) || fact.StartIndex >= fact.EndIndex {
+		return nil
+	}
+	path := make([]routePreviewPoint, 0, fact.EndIndex-fact.StartIndex+1)
+	for _, point := range points[fact.StartIndex : fact.EndIndex+1] {
+		path = append(path, routePreviewPoint{Lat: point.Lat, Lon: point.Lon})
+	}
+	return path
+}
+
+func stopFactPoints(stops []StopView) []ActivityFactPoint {
+	points := make([]ActivityFactPoint, 0, len(stops))
+	for _, stop := range stops {
+		label := stop.Duration
+		if stop.HasTrafficLight {
+			label += " · traffic light"
+		} else if stop.HasRoadCrossing {
+			label += " · road crossing"
+		}
+		if stop.CrossingRoad != "" {
+			label += " · " + stop.CrossingRoad
+		}
+		points = append(points, ActivityFactPoint{
+			Lat:   stop.Lat,
+			Lon:   stop.Lon,
+			Label: label,
+		})
+	}
+	return points
+}
+
+func roadCrossingFactPoints(locations []roadCrossingLocation) []ActivityFactPoint {
+	points := make([]ActivityFactPoint, 0, len(locations))
+	for _, location := range locations {
+		label := "Road crossing"
+		if location.Road != "" {
+			label = location.Road
+		}
+		points = append(points, ActivityFactPoint{
+			Lat:   location.Lat,
+			Lon:   location.Lon,
+			Label: label,
+		})
+	}
+	return points
+}
+
+func routeHighlightFactPoints(locations []routeHighlightLocation) []ActivityFactPoint {
+	points := make([]ActivityFactPoint, 0, len(locations))
+	for _, location := range locations {
+		points = append(points, ActivityFactPoint{
+			Lat:   location.Lat,
+			Lon:   location.Lon,
+			Label: location.Name,
+		})
+	}
+	return points
+}
+
+func filterStopViews(stops []StopView, keep func(StopView) bool) []StopView {
+	filtered := make([]StopView, 0, len(stops))
+	for _, stop := range stops {
+		if keep(stop) {
+			filtered = append(filtered, stop)
+		}
+	}
+	return filtered
 }
 
 func isRideType(activityType string) bool {

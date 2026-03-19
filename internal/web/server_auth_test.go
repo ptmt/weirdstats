@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -163,5 +164,80 @@ func TestActivities_ShowsStravaDescriptionAndDetectedFactCount(t *testing.T) {
 	}
 	if strings.Contains(body, "2 stops (42s total) · 1 at lights #weirdstats") {
 		t.Fatalf("expected managed weirdstats line to be hidden from description")
+	}
+}
+
+func TestActivityDetail_ShowsMapLinkedFacts(t *testing.T) {
+	ctx := context.Background()
+	store, err := storage.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+
+	if err := store.InitSchema(ctx); err != nil {
+		t.Fatalf("init schema: %v", err)
+	}
+	if err := store.UpsertStravaToken(ctx, storage.StravaToken{
+		UserID:      505,
+		AccessToken: "token",
+		AthleteID:   505,
+		AthleteName: "Erin Example",
+	}); err != nil {
+		t.Fatalf("upsert token: %v", err)
+	}
+
+	start := time.Date(2026, time.March, 17, 8, 0, 0, 0, time.UTC)
+	activityID, err := store.InsertActivity(ctx, storage.Activity{
+		UserID:      505,
+		Type:        "Ride",
+		Name:        "Focused Detail Ride",
+		StartTime:   start,
+		Description: "",
+	}, []gps.Point{
+		{Lat: 52.5200, Lon: 13.4040, Time: start, Speed: 8},
+		{Lat: 52.5204, Lon: 13.4048, Time: start.Add(1 * time.Minute), Speed: 8},
+		{Lat: 52.5208, Lon: 13.4056, Time: start.Add(2 * time.Minute), Speed: 8},
+	})
+	if err != nil {
+		t.Fatalf("insert activity: %v", err)
+	}
+	if err := store.ReplaceActivityStops(ctx, activityID, []storage.ActivityStop{
+		{Seq: 0, Lat: 52.5204, Lon: 13.4048, StartSeconds: 60, DurationSeconds: 45, HasTrafficLight: true},
+	}, time.Now()); err != nil {
+		t.Fatalf("replace stops: %v", err)
+	}
+
+	server, err := NewServer(store, nil, nil, nil, gps.StopOptions{SpeedThreshold: 0.5}, StravaConfig{})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/activity/"+strconv.FormatInt(activityID, 10), nil)
+	sessionRec := httptest.NewRecorder()
+	if err := server.setSession(sessionRec, req, 505); err != nil {
+		t.Fatalf("set session: %v", err)
+	}
+	for _, cookie := range sessionRec.Result().Cookies() {
+		req.AddCookie(cookie)
+	}
+	rec := httptest.NewRecorder()
+
+	server.ActivityDetail(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		"Route &amp; detected facts",
+		"data-focus-fact=\"longest_segment\"",
+		"data-focus-fact=\"stop_summary\"",
+		"data-focus-fact=\"traffic_light_stops\"",
+		"The map is the primary view.",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected %q in detail response", want)
+		}
 	}
 }

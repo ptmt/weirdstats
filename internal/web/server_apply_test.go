@@ -383,10 +383,10 @@ func TestBuildRoadCrossingPart(t *testing.T) {
 
 func TestBuildRoadCrossingFact(t *testing.T) {
 	stops := []storage.ActivityStop{
-		{HasRoadCrossing: true, CrossingRoad: " Unter den Linden "},
+		{Lat: 52.5200, Lon: 13.4050, HasRoadCrossing: true, CrossingRoad: " Unter den Linden "},
 		{HasRoadCrossing: false, CrossingRoad: "Ignored"},
-		{HasRoadCrossing: true, CrossingRoad: "unter   den linden"},
-		{HasRoadCrossing: true, CrossingRoad: "Friedrichstrasse"},
+		{Lat: 52.5201, Lon: 13.4051, HasRoadCrossing: true, CrossingRoad: "unter   den linden"},
+		{Lat: 52.5202, Lon: 13.4052, HasRoadCrossing: true, CrossingRoad: "Friedrichstrasse"},
 	}
 
 	got := buildRoadCrossingFact(stops)
@@ -398,6 +398,9 @@ func TestBuildRoadCrossingFact(t *testing.T) {
 	}
 	if got.Roads[0] != "Unter den Linden" || got.Roads[1] != "Friedrichstrasse" {
 		t.Fatalf("unexpected road names: %+v", got.Roads)
+	}
+	if len(got.Locations) != 3 {
+		t.Fatalf("expected 3 crossing locations, got %+v", got.Locations)
 	}
 }
 
@@ -537,6 +540,12 @@ func TestLongestRideSegmentFact(t *testing.T) {
 	}
 	if got.AvgSpeedMPS != 15 {
 		t.Fatalf("expected 15 m/s average speed, got %.2f", got.AvgSpeedMPS)
+	}
+	if got.StartIndex != 4 || got.EndIndex != 6 {
+		t.Fatalf("expected segment indices 4..6, got %+v", got)
+	}
+	if got.StartLat != points[4].Lat || got.EndLat != points[6].Lat {
+		t.Fatalf("expected segment endpoints to match route points, got %+v", got)
 	}
 }
 
@@ -699,6 +708,12 @@ func TestDetectCoffeeStopFact(t *testing.T) {
 	if got.Name != "Bean Machine" {
 		t.Fatalf("expected Bean Machine, got %+v", got)
 	}
+	if !got.HasLocation {
+		t.Fatalf("expected coffee stop location, got %+v", got)
+	}
+	if got.Lat < 52.5202 || got.Lat > 52.5204 || got.Lon < 13.4049 || got.Lon > 13.4051 {
+		t.Fatalf("expected coffee stop coordinates near cafe, got %+v", got)
+	}
 }
 
 func TestDetectCoffeeStopFact_IgnoresShortPause(t *testing.T) {
@@ -818,6 +833,9 @@ func TestBuildRouteHighlightCandidates(t *testing.T) {
 	if got[1].name != "Neighborhood Church" {
 		t.Fatalf("expected Neighborhood Church second, got %+v", got)
 	}
+	if got[0].lat == 0 || got[0].lon == 0 {
+		t.Fatalf("expected highlight candidate coordinates, got %+v", got[0])
+	}
 }
 
 func TestDetectRouteHighlightFact(t *testing.T) {
@@ -882,6 +900,67 @@ func TestDetectRouteHighlightFact(t *testing.T) {
 	}
 	if got.Names[0] != "Brandenburg Gate" || got.Names[1] != "Neighborhood Church" {
 		t.Fatalf("unexpected route highlights: %+v", got)
+	}
+	if len(got.Locations) != 2 {
+		t.Fatalf("expected 2 route highlight locations, got %+v", got)
+	}
+	if got.Locations[0].Lat == 0 || got.Locations[0].Lon == 0 {
+		t.Fatalf("expected route highlight coordinates, got %+v", got.Locations[0])
+	}
+}
+
+func TestBuildActivityMapFacts(t *testing.T) {
+	start := time.Date(2026, time.March, 1, 8, 0, 0, 0, time.UTC)
+	points := []gps.Point{
+		{Lat: 52.5200, Lon: 13.4040, Time: start, Speed: 9},
+		{Lat: 52.5201, Lon: 13.4045, Time: start.Add(1 * time.Minute), Speed: 9},
+		{Lat: 52.5202, Lon: 13.4050, Time: start.Add(2 * time.Minute), Speed: 9},
+	}
+	stopViews := []StopView{
+		{Lat: 52.5201, Lon: 13.4045, Duration: "45s"},
+		{Lat: 52.5202, Lon: 13.4050, Duration: "30s", HasTrafficLight: true},
+	}
+	rideFact := rideSegmentFact{
+		DistanceMeters: 1200,
+		AvgPower:       210,
+		AvgSpeedMPS:    10,
+		StartIndex:     0,
+		EndIndex:       2,
+		StartLat:       points[0].Lat,
+		StartLon:       points[0].Lon,
+		EndLat:         points[2].Lat,
+		EndLon:         points[2].Lon,
+	}
+	coffeeFact := coffeeStopFact{Name: "Bean Machine", Lat: 52.52025, Lon: 13.40505, HasLocation: true}
+	routeFact := routeHighlightFact{
+		Names: []string{"Victory Column"},
+		Locations: []routeHighlightLocation{
+			{Name: "Victory Column", Lat: 52.5203, Lon: 13.4051},
+		},
+	}
+	roadFact := roadCrossingFact{
+		Count: 1,
+		Roads: []string{"Unter den Linden"},
+		Locations: []roadCrossingLocation{
+			{Lat: 52.5202, Lon: 13.4050, Road: "Unter den Linden"},
+		},
+	}
+
+	got := buildActivityMapFacts(stopViews, points, rideFact, coffeeFact, routeFact, roadFact)
+	if len(got) != 6 {
+		t.Fatalf("expected 6 map facts, got %+v", got)
+	}
+	if got[0].ID != weirdStatsFactLongestSegment || len(got[0].Path) != 3 {
+		t.Fatalf("expected longest segment fact with route path, got %+v", got[0])
+	}
+	if got[1].ID != weirdStatsFactCoffeeStop || len(got[1].Points) != 1 {
+		t.Fatalf("expected coffee stop point fact, got %+v", got[1])
+	}
+	if got[4].ID != weirdStatsFactStopSummary || len(got[4].Points) != 2 {
+		t.Fatalf("expected stop summary to include both stop points, got %+v", got[4])
+	}
+	if got[5].ID != weirdStatsFactTrafficLightStops || len(got[5].Points) != 1 {
+		t.Fatalf("expected traffic-light fact to include matching stop points, got %+v", got[5])
 	}
 }
 
