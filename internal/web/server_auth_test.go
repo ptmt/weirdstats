@@ -101,3 +101,67 @@ func TestActivities_ShowsOnlyCurrentUserActivities(t *testing.T) {
 		t.Fatalf("expected Bob activity in response")
 	}
 }
+
+func TestActivities_ShowsStravaDescriptionAndDetectedFactCount(t *testing.T) {
+	ctx := context.Background()
+	store, err := storage.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+
+	if err := store.InitSchema(ctx); err != nil {
+		t.Fatalf("init schema: %v", err)
+	}
+	if err := store.UpsertStravaToken(ctx, storage.StravaToken{
+		UserID:      404,
+		AccessToken: "token",
+		AthleteID:   404,
+		AthleteName: "Dora Example",
+	}); err != nil {
+		t.Fatalf("upsert token: %v", err)
+	}
+
+	start := time.Date(2026, time.March, 16, 8, 0, 0, 0, time.UTC)
+	_, err = store.InsertActivity(ctx, storage.Activity{
+		UserID:      404,
+		Type:        "Ride",
+		Name:        "Lunch Loop",
+		StartTime:   start,
+		Description: "Met up with Sam at the cafe.\n\n2 stops (42s total) · 1 at lights #weirdstats",
+	}, []gps.Point{{Lat: 52.52, Lon: 13.405, Time: start, Speed: 6}})
+	if err != nil {
+		t.Fatalf("insert activity: %v", err)
+	}
+
+	server, err := NewServer(store, nil, nil, nil, gps.StopOptions{}, StravaConfig{})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/activities/", nil)
+	sessionRec := httptest.NewRecorder()
+	if err := server.setSession(sessionRec, req, 404); err != nil {
+		t.Fatalf("set session: %v", err)
+	}
+	for _, cookie := range sessionRec.Result().Cookies() {
+		req.AddCookie(cookie)
+	}
+	rec := httptest.NewRecorder()
+
+	server.Activities(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "Met up with Sam at the cafe.") {
+		t.Fatalf("expected plain Strava description in response")
+	}
+	if !strings.Contains(body, "2 detected facts") {
+		t.Fatalf("expected detected fact count in response")
+	}
+	if strings.Contains(body, "2 stops (42s total) · 1 at lights #weirdstats") {
+		t.Fatalf("expected managed weirdstats line to be hidden from description")
+	}
+}

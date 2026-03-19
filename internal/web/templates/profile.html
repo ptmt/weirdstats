@@ -133,7 +133,7 @@
               </div>
             </div>
           </div>
-          {{if .Description}}<div class="muted activity-description">{{.Description}}</div>{{end}}
+          {{if .StravaDescription}}<div class="muted activity-description">{{.StravaDescription}}</div>{{end}}
           {{if .PhotoURL}}
           <div class="activity-photo">
             <img src="{{.PhotoURL}}" alt="Activity photo" loading="lazy">
@@ -147,6 +147,7 @@
             </div>
             <div class="activity-card-stats-col">
               <div class="activity-substats">
+                {{if .DetectedFactCount}}<span class="stat-tag secondary">{{.DetectedFactCount}} detected fact{{if ne .DetectedFactCount 1}}s{{end}}</span>{{end}}
                 {{if .StopCount}}<span class="stat-tag secondary">{{.StopCount}} stops ({{.StopTotal}})</span>{{end}}
                 {{if .LightStops}}<span class="stat-tag secondary">{{.LightStops}} at lights</span>{{end}}
               </div>

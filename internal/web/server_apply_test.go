@@ -434,6 +434,46 @@ func TestAppendWeirdstatsTag(t *testing.T) {
 	}
 }
 
+func TestSplitStoredActivityDescription(t *testing.T) {
+	tests := []struct {
+		name        string
+		description string
+		wantText    string
+		wantCount   int
+	}{
+		{
+			name:        "keeps strava text and counts managed facts",
+			description: "Met up with Sam at the cafe.\n\n2 stops (42s total) · 1 at lights #weirdstats",
+			wantText:    "Met up with Sam at the cafe.",
+			wantCount:   2,
+		},
+		{
+			name:        "counts legacy managed line",
+			description: "Weirdstats: 2 stops (42s total)",
+			wantText:    "",
+			wantCount:   1,
+		},
+		{
+			name:        "ignores normal descriptions",
+			description: "Just a normal description",
+			wantText:    "Just a normal description",
+			wantCount:   0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotText, gotCount := splitStoredActivityDescription(tt.description)
+			if gotText != tt.wantText {
+				t.Fatalf("unexpected description text\nwant: %q\n got: %q", tt.wantText, gotText)
+			}
+			if gotCount != tt.wantCount {
+				t.Fatalf("unexpected detected fact count: want %d got %d", tt.wantCount, gotCount)
+			}
+		})
+	}
+}
+
 func TestIsWeirdstatsManagedLine(t *testing.T) {
 	tests := []struct {
 		name string

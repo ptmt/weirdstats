@@ -61,40 +61,42 @@ type Server struct {
 }
 
 type ActivityView struct {
-	ID               int64
-	Name             string
-	Type             string
-	TypeLabel        string
-	TypeClass        string
-	StartTime        string
-	Description      string
-	Distance         string
-	DistanceValue    string
-	DistanceUnit     string
-	Duration         string
-	PaceLabel        string
-	PaceValue        string
-	PaceUnit         string
-	PowerValue       string
-	PowerUnit        string
-	HasPower         bool
-	HasStats         bool
-	StopCount        int
-	StopTotal        string
-	LightStops       int
-	RoadCrossings    int
-	RecalculatedAt   string
-	FetchedAt        string
-	IsHidden         bool
-	FeedMuted        bool
-	PhotoURL         string
-	HasRoutePreview  bool
-	RoutePath        string
-	RouteStartX      float64
-	RouteStartY      float64
-	RouteEndX        float64
-	RouteEndY        float64
-	RoutePreviewJSON template.JS
+	ID                int64
+	Name              string
+	Type              string
+	TypeLabel         string
+	TypeClass         string
+	StartTime         string
+	Description       string
+	StravaDescription string
+	Distance          string
+	DistanceValue     string
+	DistanceUnit      string
+	Duration          string
+	PaceLabel         string
+	PaceValue         string
+	PaceUnit          string
+	PowerValue        string
+	PowerUnit         string
+	HasPower          bool
+	HasStats          bool
+	StopCount         int
+	StopTotal         string
+	LightStops        int
+	DetectedFactCount int
+	RoadCrossings     int
+	RecalculatedAt    string
+	FetchedAt         string
+	IsHidden          bool
+	FeedMuted         bool
+	PhotoURL          string
+	HasRoutePreview   bool
+	RoutePath         string
+	RouteStartX       float64
+	RouteStartY       float64
+	RouteEndX         float64
+	RouteEndY         float64
+	RoutePreviewJSON  template.JS
 }
 
 type StopView struct {
@@ -621,19 +623,22 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 		routePointsByActivity = map[int64][]storage.ActivityRoutePoint{}
 	}
 	for _, activity := range activities {
+		stravaDescription, detectedFactCount := splitStoredActivityDescription(activity.Description)
 		view := ActivityView{
-			ID:          activity.ID,
-			Name:        activity.Name,
-			Type:        activity.Type,
-			StartTime:   activity.StartTime.Format("Jan 2, 2006 15:04"),
-			Description: activity.Description,
-			Distance:    formatDistance(activity.Distance),
-			Duration:    formatDuration(activity.MovingTime),
-			HasStats:    activity.HasStats,
-			StopCount:   activity.StopCount,
-			StopTotal:   formatDuration(activity.StopTotalSeconds),
-			LightStops:  activity.TrafficLightStopCount,
-			PhotoURL:    activity.PhotoURL,
+			ID:                activity.ID,
+			Name:              activity.Name,
+			Type:              activity.Type,
+			StartTime:         activity.StartTime.Format("Jan 2, 2006 15:04"),
+			Description:       activity.Description,
+			StravaDescription: stravaDescription,
+			Distance:          formatDistance(activity.Distance),
+			Duration:          formatDuration(activity.MovingTime),
+			HasStats:          activity.HasStats,
+			StopCount:         activity.StopCount,
+			StopTotal:         formatDuration(activity.StopTotalSeconds),
+			LightStops:        activity.TrafficLightStopCount,
+			DetectedFactCount: detectedFactCount,
+			PhotoURL:          activity.PhotoURL,
 		}
 		enrichActivityView(&view, activity.Activity)
 		routePoints := routePointsByActivity[activity.ID]
@@ -1330,6 +1335,43 @@ func appendWeirdstatsTag(text string) string {
 		return weirdstatsTag
 	}
 	return trimmed + " " + weirdstatsTag
+}
+
+func splitStoredActivityDescription(description string) (string, int) {
+	normalized := strings.ReplaceAll(description, "\r\n", "\n")
+	lines := strings.Split(normalized, "\n")
+	baseLines := make([]string, 0, len(lines))
+	detectedFactCount := 0
+	for _, line := range lines {
+		if isWeirdstatsManagedLine(line) {
+			detectedFactCount += countDetectedFactsInLine(line)
+			continue
+		}
+		baseLines = append(baseLines, line)
+	}
+	return strings.TrimSpace(strings.Join(baseLines, "\n")), detectedFactCount
+}
+
+func countDetectedFactsInLine(line string) int {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" || strings.EqualFold(trimmed, weirdstatsTag) {
+		return 0
+	}
+	if strings.HasPrefix(trimmed, weirdStatsPrefix) {
+		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, weirdStatsPrefix))
+	}
+	trimmed = strings.TrimSpace(strings.ReplaceAll(trimmed, weirdstatsTag, ""))
+	if trimmed == "" {
+		return 0
+	}
+	parts := strings.Split(trimmed, " · ")
+	count := 0
+	for _, part := range parts {
+		if strings.TrimSpace(part) != "" {
+			count++
+		}
+	}
+	return count
 }
 
 func isWeirdstatsManagedLine(line string) bool {
