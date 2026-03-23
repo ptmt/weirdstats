@@ -153,17 +153,22 @@ func TestFilterWeirdStatsSnapshot(t *testing.T) {
 		StopCount:             3,
 		StopTotalSeconds:      95,
 		TrafficLightStopCount: 2,
+		RoadCrossingCount:     4,
 	}
 
 	got := filterWeirdStatsSnapshot(snapshot, map[string]bool{
 		weirdStatsFactStopSummary:       false,
 		weirdStatsFactTrafficLightStops: true,
+		weirdStatsFactRoadCrossings:     false,
 	})
 	if got.StopCount != 0 || got.StopTotalSeconds != 0 {
 		t.Fatalf("expected stop summary to be cleared, got %+v", got)
 	}
 	if got.TrafficLightStopCount != 2 {
 		t.Fatalf("expected traffic-light stops to remain, got %+v", got)
+	}
+	if got.RoadCrossingCount != 0 {
+		t.Fatalf("expected road crossings to be cleared, got %+v", got)
 	}
 }
 
@@ -214,6 +219,11 @@ func TestBuildWeirdStatsLine(t *testing.T) {
 			name:     "road crossings only",
 			roadFact: roadFact,
 			want:     "2 road crossings: Unter den Linden, Friedrichstrasse",
+		},
+		{
+			name:  "road crossings from official stats fallback",
+			stats: stats.StopStats{RoadCrossingCount: 2},
+			want:  "2 road crossings",
 		},
 		{
 			name:  "stops only",
@@ -509,9 +519,9 @@ func TestIsWeirdstatsManagedLine(t *testing.T) {
 
 func TestStopStatsFromStops(t *testing.T) {
 	stops := []storage.ActivityStop{
-		{DurationSeconds: 20, HasTrafficLight: true},
+		{DurationSeconds: 20, HasTrafficLight: true, HasRoadCrossing: true},
 		{DurationSeconds: 35, HasTrafficLight: false},
-		{DurationSeconds: 15, HasTrafficLight: true},
+		{DurationSeconds: 15, HasTrafficLight: true, HasRoadCrossing: true},
 	}
 
 	got := stopStatsFromStops(stops)
@@ -523,5 +533,8 @@ func TestStopStatsFromStops(t *testing.T) {
 	}
 	if got.TrafficLightStopCount != 2 {
 		t.Fatalf("expected 2 traffic-light stops, got %d", got.TrafficLightStopCount)
+	}
+	if got.RoadCrossingCount != 2 {
+		t.Fatalf("expected 2 road crossings, got %d", got.RoadCrossingCount)
 	}
 }

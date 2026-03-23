@@ -88,4 +88,7 @@ func TestWorkerProcessesQueue(t *testing.T) {
 	if stats.TrafficLightStopCount != 1 {
 		t.Fatalf("expected traffic light stop count 1, got %d", stats.TrafficLightStopCount)
 	}
+	if stats.RoadCrossingCount != 0 {
+		t.Fatalf("expected road crossing count 0, got %d", stats.RoadCrossingCount)
+	}
 }

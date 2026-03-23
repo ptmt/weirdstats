@@ -150,6 +150,7 @@
                 {{if .DetectedFactCount}}<span class="stat-tag secondary">{{.DetectedFactCount}} detected fact{{if ne .DetectedFactCount 1}}s{{end}}</span>{{end}}
                 {{if .StopCount}}<span class="stat-tag secondary">{{.StopCount}} stops ({{.StopTotal}})</span>{{end}}
                 {{if .LightStops}}<span class="stat-tag secondary">{{.LightStops}} at lights</span>{{end}}
+                {{if .RoadCrossings}}<span class="stat-tag secondary">{{.RoadCrossings}} crossings</span>{{end}}
               </div>
               <div class="activity-metrics">
                 <div class="metric">

@@ -31,6 +31,7 @@ type StatsSource struct {
 	StopCount             int
 	StopTotalSeconds      int
 	TrafficLightStopCount int
+	RoadCrossingCount     int
 }
 
 type Metric struct {

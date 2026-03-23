@@ -72,6 +72,7 @@ func (p *StopStatsProcessor) Process(ctx context.Context, activityID int64) erro
 				if len(roads) > 0 {
 					result := gps.DetectRoadCrossing(points, stopEndIdx, roads)
 					if result.Crossed {
+						stats.RoadCrossingCount++
 						hasCrossing = true
 						crossingRoad = result.RoadName
 					}

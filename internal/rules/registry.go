@@ -98,6 +98,17 @@ func DefaultRegistry() Registry {
 				return Value{Type: ValueNumber, Num: float64(ctx.Stats.TrafficLightStopCount)}, nil
 			},
 		},
+		"road_crossing_count": {
+			ID:          "road_crossing_count",
+			Label:       "Road crossings",
+			Description: "Detected road crossings after stops",
+			Unit:        "",
+			Example:     "2",
+			Type:        ValueNumber,
+			Resolve: func(ctx Context) (Value, error) {
+				return Value{Type: ValueNumber, Num: float64(ctx.Stats.RoadCrossingCount)}, nil
+			},
+		},
 	}
 }
 

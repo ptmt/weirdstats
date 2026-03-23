@@ -60,6 +60,7 @@ func (p *RulesProcessor) Process(ctx context.Context, activityID int64) error {
 			StopCount:             stats.StopCount,
 			StopTotalSeconds:      stats.StopTotalSeconds,
 			TrafficLightStopCount: stats.TrafficLightStopCount,
+			RoadCrossingCount:     stats.RoadCrossingCount,
 		},
 	}
 

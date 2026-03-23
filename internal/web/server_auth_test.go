@@ -126,7 +126,7 @@ func TestActivities_ShowsStravaDescriptionAndDetectedFactCount(t *testing.T) {
 	}
 
 	start := time.Date(2026, time.March, 16, 8, 0, 0, 0, time.UTC)
-	_, err = store.InsertActivity(ctx, storage.Activity{
+	activityID, err := store.InsertActivity(ctx, storage.Activity{
 		UserID:      404,
 		Type:        "Ride",
 		Name:        "Lunch Loop",
@@ -135,6 +135,15 @@ func TestActivities_ShowsStravaDescriptionAndDetectedFactCount(t *testing.T) {
 	}, []gps.Point{{Lat: 52.52, Lon: 13.405, Time: start, Speed: 6}})
 	if err != nil {
 		t.Fatalf("insert activity: %v", err)
+	}
+	if err := store.UpsertActivityStats(ctx, activityID, stats.StopStats{
+		StopCount:             2,
+		StopTotalSeconds:      42,
+		TrafficLightStopCount: 1,
+		RoadCrossingCount:     2,
+		UpdatedAt:             time.Now(),
+	}); err != nil {
+		t.Fatalf("upsert stats: %v", err)
 	}
 
 	server, err := NewServer(store, nil, nil, nil, gps.StopOptions{}, StravaConfig{})
@@ -163,6 +172,9 @@ func TestActivities_ShowsStravaDescriptionAndDetectedFactCount(t *testing.T) {
 	}
 	if !strings.Contains(body, "2 detected facts") {
 		t.Fatalf("expected detected fact count in response")
+	}
+	if !strings.Contains(body, "2 crossings") {
+		t.Fatalf("expected official road crossing stat in response")
 	}
 	if strings.Contains(body, "2 stops (42s total) · 1 at lights #weirdstats") {
 		t.Fatalf("expected managed weirdstats line to be hidden from description")

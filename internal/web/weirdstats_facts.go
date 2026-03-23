@@ -151,5 +151,8 @@ func filterWeirdStatsSnapshot(snapshot stats.StopStats, settings map[string]bool
 	if !weirdStatsFactEnabled(settings, weirdStatsFactTrafficLightStops) {
 		snapshot.TrafficLightStopCount = 0
 	}
+	if !weirdStatsFactEnabled(settings, weirdStatsFactRoadCrossings) {
+		snapshot.RoadCrossingCount = 0
+	}
 	return snapshot
 }

@@ -64,6 +64,7 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 			StopCount:         activity.StopCount,
 			StopTotal:         formatDuration(activity.StopTotalSeconds),
 			LightStops:        activity.TrafficLightStopCount,
+			RoadCrossings:     activity.RoadCrossingCount,
 			DetectedFactCount: detectedFactCount,
 			PhotoURL:          activity.PhotoURL,
 		}
@@ -231,10 +232,12 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 	stopCount := len(stopViews)
 	stopTotalSeconds := totalStopSeconds(stopViews)
 	lightStops := countLightStops(stopViews)
+	roadCrossings := countRoadCrossings(stopViews)
 	if statsPresent {
 		stopCount = statsSnapshot.StopCount
 		stopTotalSeconds = statsSnapshot.StopTotalSeconds
 		lightStops = statsSnapshot.TrafficLightStopCount
+		roadCrossings = statsSnapshot.RoadCrossingCount
 	}
 
 	view := ActivityView{
@@ -249,7 +252,7 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 		StopTotal:         formatDuration(stopTotalSeconds),
 		LightStops:        lightStops,
 		DetectedFactCount: len(detectedFacts),
-		RoadCrossings:     countRoadCrossings(stopViews),
+		RoadCrossings:     roadCrossings,
 		RecalculatedAt:    recalculatedAt,
 		FetchedAt:         formatTimestamp(activity.UpdatedAt),
 	}

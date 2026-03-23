@@ -115,6 +115,7 @@ type ActivityWithStats struct {
 	StopCount             int
 	StopTotalSeconds      int
 	TrafficLightStopCount int
+	RoadCrossingCount     int
 	HasStats              bool
 }
 
@@ -227,6 +228,7 @@ func (s *Store) InitSchema(ctx context.Context) error {
 		`ALTER TABLE activities ADD COLUMN hidden_by_rule INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE activity_stats ADD COLUMN effort_score REAL NOT NULL DEFAULT 0`,
 		`ALTER TABLE activity_stats ADD COLUMN effort_version INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE activity_stats ADD COLUMN road_crossing_count INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE activities ADD COLUMN photo_url TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, m := range migrations {
@@ -266,6 +268,7 @@ CREATE TABLE IF NOT EXISTS activity_stats (
 	stop_count INTEGER NOT NULL,
 	stop_total_seconds INTEGER NOT NULL,
 	traffic_light_stop_count INTEGER NOT NULL,
+	road_crossing_count INTEGER NOT NULL DEFAULT 0,
 	effort_score REAL NOT NULL DEFAULT 0,
 	effort_version INTEGER NOT NULL DEFAULT 0,
 	updated_at INTEGER NOT NULL
@@ -1752,7 +1755,8 @@ SELECT a.id,
 	a.photo_url,
 	s.stop_count,
 	s.stop_total_seconds,
-	s.traffic_light_stop_count
+	s.traffic_light_stop_count,
+	s.road_crossing_count
 FROM activities a
 LEFT JOIN activity_stats s ON s.activity_id = a.id
 WHERE a.user_id = ?
@@ -1774,6 +1778,7 @@ LIMIT ?
 		var stopCount sql.NullInt64
 		var stopTotalSeconds sql.NullInt64
 		var trafficLightStopCount sql.NullInt64
+		var roadCrossingCount sql.NullInt64
 		if err := rows.Scan(
 			&item.ID,
 			&item.UserID,
@@ -1793,6 +1798,7 @@ LIMIT ?
 			&stopCount,
 			&stopTotalSeconds,
 			&trafficLightStopCount,
+			&roadCrossingCount,
 		); err != nil {
 			return nil, err
 		}
@@ -1805,6 +1811,7 @@ LIMIT ?
 			item.StopCount = int(stopCount.Int64)
 			item.StopTotalSeconds = int(stopTotalSeconds.Int64)
 			item.TrafficLightStopCount = int(trafficLightStopCount.Int64)
+			item.RoadCrossingCount = int(roadCrossingCount.Int64)
 		}
 		activities = append(activities, item)
 	}
@@ -1820,28 +1827,29 @@ func (s *Store) UpsertActivityStats(ctx context.Context, activityID int64, stats
 		updatedAt = stats.UpdatedAt
 	}
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO activity_stats (activity_id, stop_count, stop_total_seconds, traffic_light_stop_count, effort_score, effort_version, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO activity_stats (activity_id, stop_count, stop_total_seconds, traffic_light_stop_count, road_crossing_count, effort_score, effort_version, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(activity_id) DO UPDATE SET
 	stop_count = excluded.stop_count,
 	stop_total_seconds = excluded.stop_total_seconds,
 	traffic_light_stop_count = excluded.traffic_light_stop_count,
+	road_crossing_count = excluded.road_crossing_count,
 	effort_score = excluded.effort_score,
 	effort_version = excluded.effort_version,
 	updated_at = excluded.updated_at
-`, activityID, stats.StopCount, stats.StopTotalSeconds, stats.TrafficLightStopCount, stats.EffortScore, stats.EffortVersion, updatedAt.Unix())
+`, activityID, stats.StopCount, stats.StopTotalSeconds, stats.TrafficLightStopCount, stats.RoadCrossingCount, stats.EffortScore, stats.EffortVersion, updatedAt.Unix())
 	return err
 }
 
 func (s *Store) GetActivityStats(ctx context.Context, activityID int64) (stats.StopStats, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT stop_count, stop_total_seconds, traffic_light_stop_count, effort_score, effort_version, updated_at
+SELECT stop_count, stop_total_seconds, traffic_light_stop_count, road_crossing_count, effort_score, effort_version, updated_at
 FROM activity_stats
 WHERE activity_id = ?
 `, activityID)
 	var result stats.StopStats
 	var updatedAt int64
-	if err := row.Scan(&result.StopCount, &result.StopTotalSeconds, &result.TrafficLightStopCount, &result.EffortScore, &result.EffortVersion, &updatedAt); err != nil {
+	if err := row.Scan(&result.StopCount, &result.StopTotalSeconds, &result.TrafficLightStopCount, &result.RoadCrossingCount, &result.EffortScore, &result.EffortVersion, &updatedAt); err != nil {
 		return stats.StopStats{}, err
 	}
 	result.UpdatedAt = time.Unix(updatedAt, 0)

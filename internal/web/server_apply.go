@@ -310,6 +310,7 @@ func (s *Server) evaluateHideRules(ctx context.Context, activity storage.Activit
 			StopCount:             statsSnapshot.StopCount,
 			StopTotalSeconds:      statsSnapshot.StopTotalSeconds,
 			TrafficLightStopCount: statsSnapshot.TrafficLightStopCount,
+			RoadCrossingCount:     statsSnapshot.RoadCrossingCount,
 		},
 	}
 
@@ -363,6 +364,9 @@ func stopStatsFromStops(stops []storage.ActivityStop) stats.StopStats {
 		if stop.HasTrafficLight {
 			snapshot.TrafficLightStopCount++
 		}
+		if stop.HasRoadCrossing {
+			snapshot.RoadCrossingCount++
+		}
 	}
 	return snapshot
 }
@@ -405,7 +409,11 @@ func buildWeirdStatsLine(statsSnapshot stats.StopStats, rideFact rideSegmentFact
 	ridePart := buildRideSegmentPart(rideFact)
 	coffeePart := buildCoffeeStopPart(coffeeFact)
 	routePart := buildRouteHighlightPart(routeFact)
-	roadPart := buildRoadCrossingPart(roadFact)
+	roadCount := roadFact.Count
+	if roadCount <= 0 {
+		roadCount = statsSnapshot.RoadCrossingCount
+	}
+	roadPart := buildRoadCrossingPartWithCount(roadCount, roadFact.Roads)
 	if statsSnapshot.StopCount == 0 && statsSnapshot.TrafficLightStopCount == 0 && ridePart == "" && coffeePart == "" && routePart == "" && roadPart == "" {
 		return ""
 	}
@@ -486,20 +494,24 @@ func buildRouteHighlightPart(fact routeHighlightFact) string {
 }
 
 func buildRoadCrossingPart(fact roadCrossingFact) string {
-	if fact.Count <= 0 {
+	return buildRoadCrossingPartWithCount(fact.Count, fact.Roads)
+}
+
+func buildRoadCrossingPartWithCount(count int, roads []string) string {
+	if count <= 0 {
 		return ""
 	}
-	roads := uniqueCrossingRoadNames(fact.Roads)
-	if fact.Count == 1 {
+	roads = uniqueCrossingRoadNames(roads)
+	if count == 1 {
 		if len(roads) > 0 {
 			return "Road crossing: " + roads[0]
 		}
 		return "1 road crossing"
 	}
 	if len(roads) > 0 {
-		return fmt.Sprintf("%d road crossings: %s", fact.Count, strings.Join(roads, ", "))
+		return fmt.Sprintf("%d road crossings: %s", count, strings.Join(roads, ", "))
 	}
-	return fmt.Sprintf("%d road crossings", fact.Count)
+	return fmt.Sprintf("%d road crossings", count)
 }
 
 func buildRoadCrossingFact(stops []storage.ActivityStop) roadCrossingFact {

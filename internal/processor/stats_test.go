@@ -3,6 +3,8 @@ package processor
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -84,8 +86,106 @@ func TestStopStatsProcessor_ComputesStopsAndTrafficLights(t *testing.T) {
 	if stats.TrafficLightStopCount != 1 {
 		t.Fatalf("expected 1 traffic light stop, got %d", stats.TrafficLightStopCount)
 	}
+	if stats.RoadCrossingCount != 0 {
+		t.Fatalf("expected 0 road crossings, got %d", stats.RoadCrossingCount)
+	}
 	if mapStub.calls != 1 {
 		t.Fatalf("expected 1 map lookup, got %d", mapStub.calls)
+	}
+}
+
+func TestStopStatsProcessor_ComputesRoadCrossings(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "crossings.db")
+	store, err := storage.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	if err := store.InitSchema(context.Background()); err != nil {
+		t.Fatalf("init schema: %v", err)
+	}
+
+	base := time.Date(2024, 1, 1, 8, 0, 0, 0, time.UTC)
+	points := []gps.Point{
+		{Lat: 40.0000, Lon: -73.0001, Time: base, Speed: 0},
+		{Lat: 40.0000, Lon: -73.0001, Time: base.Add(5 * time.Second), Speed: 0},
+		{Lat: 40.0001, Lon: -73.0001, Time: base.Add(10 * time.Second), Speed: 2},
+		{Lat: 40.0003, Lon: -73.0001, Time: base.Add(15 * time.Second), Speed: 2},
+		{Lat: 40.0005, Lon: -73.0001, Time: base.Add(20 * time.Second), Speed: 2},
+	}
+
+	activityID, err := store.InsertActivity(context.Background(), storage.Activity{
+		UserID:      1,
+		Type:        "Ride",
+		Name:        "Crossing Test",
+		StartTime:   base,
+		Description: "test",
+		Distance:    1000,
+		MovingTime:  20,
+	}, points)
+	if err != nil {
+		t.Fatalf("insert activity: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"elements": []map[string]any{
+				{
+					"type": "way",
+					"id":   1,
+					"tags": map[string]any{"highway": "residential", "name": "Main Street"},
+					"geometry": []map[string]any{
+						{"lat": 40.0002, "lon": -73.0010},
+						{"lat": 40.0002, "lon": -73.0000},
+					},
+				},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	processor := &StopStatsProcessor{
+		Store: store,
+		Overpass: &maps.OverpassClient{
+			BaseURL:      server.URL,
+			HTTPClient:   server.Client(),
+			DisableCache: true,
+		},
+		Options: gps.StopOptions{SpeedThreshold: 0.5, MinDuration: 5 * time.Second},
+	}
+
+	if err := processor.Process(context.Background(), activityID); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+
+	stats, err := store.GetActivityStats(context.Background(), activityID)
+	if err != nil {
+		t.Fatalf("get stats: %v", err)
+	}
+	if stats.StopCount != 1 {
+		t.Fatalf("expected 1 stop, got %d", stats.StopCount)
+	}
+	if stats.TrafficLightStopCount != 0 {
+		t.Fatalf("expected 0 traffic light stops, got %d", stats.TrafficLightStopCount)
+	}
+	if stats.RoadCrossingCount != 1 {
+		t.Fatalf("expected 1 road crossing, got %d", stats.RoadCrossingCount)
+	}
+
+	stops, err := store.LoadActivityStops(context.Background(), activityID)
+	if err != nil {
+		t.Fatalf("load stops: %v", err)
+	}
+	if len(stops) != 1 {
+		t.Fatalf("expected 1 stored stop, got %d", len(stops))
+	}
+	if !stops[0].HasRoadCrossing {
+		t.Fatalf("expected stored stop to record road crossing, got %+v", stops[0])
+	}
+	if stops[0].CrossingRoad != "Main Street" {
+		t.Fatalf("expected crossing road name to be stored, got %+v", stops[0])
 	}
 }
 
@@ -187,6 +287,9 @@ func TestStopStatsProcessor_WithSampleActivityFixture(t *testing.T) {
 	if got.TrafficLightStopCount != 5 {
 		t.Fatalf("expected 5 traffic light stops from stub, got %d", got.TrafficLightStopCount)
 	}
+	if got.RoadCrossingCount != 0 {
+		t.Fatalf("expected 0 road crossings without overpass, got %d", got.RoadCrossingCount)
+	}
 	if mapStub.calls != 5 {
 		t.Fatalf("expected 5 map lookups, got %d", mapStub.calls)
 	}
@@ -235,6 +338,9 @@ func TestStopStatsProcessor_WithRecordedOverpassMock(t *testing.T) {
 	}
 	if got.StopCount != 5 {
 		t.Fatalf("expected 5 stops, got %d", got.StopCount)
+	}
+	if got.RoadCrossingCount != 0 {
+		t.Fatalf("expected 0 road crossings without overpass client, got %d", got.RoadCrossingCount)
 	}
 }
 

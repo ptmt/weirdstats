@@ -169,7 +169,7 @@ func buildStatsSnapshotDataItem(statsSnapshot stats.StopStats, statsPresent bool
 	}
 
 	item.Value = "present"
-	item.Detail = fmt.Sprintf("%d stops · %s total · %d at lights", statsSnapshot.StopCount, formatDuration(statsSnapshot.StopTotalSeconds), statsSnapshot.TrafficLightStopCount)
+	item.Detail = fmt.Sprintf("%d stops · %s total · %d at lights · %d crossings", statsSnapshot.StopCount, formatDuration(statsSnapshot.StopTotalSeconds), statsSnapshot.TrafficLightStopCount, statsSnapshot.RoadCrossingCount)
 	if !statsSnapshot.UpdatedAt.IsZero() {
 		item.Detail += " · updated " + formatTimestamp(statsSnapshot.UpdatedAt)
 	}
@@ -209,7 +209,7 @@ func buildDetectedFactsDataItem(detectedFacts []ActivityMapFactView, detectedFac
 func buildEnrichmentDataItem(mapAPIAvailable bool, overpassAvailable bool) ActivityDataItem {
 	item := ActivityDataItem{
 		Label:  "Enrichment",
-		Detail: "Traffic-light matching happens during stop processing. Overpass powers coffee stops, route highlights, and road-crossing annotations.",
+		Detail: "Traffic-light matching happens during stop processing. Overpass powers coffee stops, route highlights, and road-crossing stats plus map annotations.",
 		Tone:   "ok",
 	}
 

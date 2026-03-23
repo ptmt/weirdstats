@@ -86,6 +86,28 @@ func TestEvaluateRuleLegacyAllowAlias(t *testing.T) {
 	}
 }
 
+func TestEvaluateRule_WithRoadCrossingCount(t *testing.T) {
+	reg := DefaultRegistry()
+	parsed, err := ParseRuleJSON(`{"match":"all","conditions":[{"metric":"road_crossing_count","op":"gte","values":[2]}],"action":{"type":"hide"}}`)
+	if err != nil {
+		t.Fatalf("parse rule: %v", err)
+	}
+	ctx := Context{
+		Activity: ActivitySource{ID: 77, Type: "Ride"},
+		Stats:    StatsSource{RoadCrossingCount: 3},
+	}
+	matched, hide, err := Evaluate(parsed, reg, ctx, 11)
+	if err != nil {
+		t.Fatalf("evaluate rule: %v", err)
+	}
+	if !matched {
+		t.Fatalf("expected match")
+	}
+	if !hide {
+		t.Fatalf("expected hide action to apply")
+	}
+}
+
 func TestDescribeRuleOverride(t *testing.T) {
 	reg := DefaultRegistry()
 	parsed, err := ParseRuleJSON(`{"match":"all","conditions":[{"metric":"activity_type","op":"eq","values":["Workout"]}],"action":{"type":"hide","override":{"one_in":10}}}`)
