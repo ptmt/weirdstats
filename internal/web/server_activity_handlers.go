@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"weirdstats/internal/jobs"
+	"weirdstats/internal/stats"
 	"weirdstats/internal/storage"
 )
 
@@ -46,13 +47,17 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, activity := range activities {
 		stravaDescription, detectedFactCount := splitStoredActivityDescription(activity.Description)
+		feedDescription := stravaDescription
+		if feedDescription == "" {
+			feedDescription = strings.TrimSpace(activity.Description)
+		}
 		view := ActivityView{
 			ID:                activity.ID,
 			Name:              activity.Name,
 			Type:              activity.Type,
 			StartTime:         activity.StartTime.Format("Jan 2, 2006 15:04"),
 			Description:       activity.Description,
-			StravaDescription: stravaDescription,
+			StravaDescription: feedDescription,
 			Distance:          formatDistance(activity.Distance),
 			Duration:          formatDuration(activity.MovingTime),
 			HasStats:          activity.HasStats,
@@ -164,41 +169,24 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var stopViews []StopView
-	for _, stop := range storedStops {
-		stopViews = append(stopViews, StopView{
-			Lat:             stop.Lat,
-			Lon:             stop.Lon,
-			StartSeconds:    stop.StartSeconds,
-			Duration:        formatDuration(stop.DurationSeconds),
-			DurationSeconds: stop.DurationSeconds,
-			HasTrafficLight: stop.HasTrafficLight,
-			HasRoadCrossing: stop.HasRoadCrossing,
-			CrossingRoad:    stop.CrossingRoad,
-		})
-	}
+	stopViews := buildStopViews(storedStops)
 
-	rideFact := rideSegmentFact{}
-	coffeeFact := coffeeStopFact{}
-	routeFact := routeHighlightFact{}
-	roadFact := buildRoadCrossingFact(storedStops)
-	if isRideType(activity.Type) && len(points) > 1 {
-		rideFact = longestRideSegmentFact(activity.Type, points, s.stopOpts)
-		if s.overpass != nil {
-			var detectErr error
-			coffeeFact, detectErr = detectCoffeeStopFact(r.Context(), activity.Type, points, s.overpass)
-			if detectErr != nil {
-				log.Printf("detail coffee stop detection failed for activity %d: %v", activityID, detectErr)
-				coffeeFact = coffeeStopFact{}
-			}
-			routeFact, detectErr = detectRouteHighlightFact(r.Context(), points, s.overpass)
-			if detectErr != nil {
-				log.Printf("detail route highlight detection failed for activity %d: %v", activityID, detectErr)
-				routeFact = routeHighlightFact{}
+	detectedFacts := []ActivityMapFactView{}
+	detectedFactsPresent := false
+	rawDetectedFactsJSON, _, err := s.store.GetActivityDetectedFacts(r.Context(), activityID)
+	if err == nil {
+		detectedFactsPresent = true
+		if strings.TrimSpace(rawDetectedFactsJSON) != "" {
+			if err := json.Unmarshal([]byte(rawDetectedFactsJSON), &detectedFacts); err != nil {
+				log.Printf("detected facts cache decode failed for activity %d: %v", activityID, err)
+				detectedFacts = nil
+				detectedFactsPresent = false
 			}
 		}
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		http.Error(w, "failed to load detected facts", http.StatusInternalServerError)
+		return
 	}
-	detectedFacts := buildActivityMapFacts(stopViews, points, rideFact, coffeeFact, routeFact, roadFact)
 
 	type mapPoint struct {
 		Lat float64 `json:"lat"`
@@ -228,13 +216,25 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	speedJSON, _ := json.Marshal(speeds)
 
+	statsSnapshot := stats.StopStats{}
+	statsPresent := false
 	recalculatedAt := ""
-	stats, err := s.store.GetActivityStats(r.Context(), activityID)
+	statsSnapshot, err = s.store.GetActivityStats(r.Context(), activityID)
 	if err == nil {
-		recalculatedAt = formatTimestamp(stats.UpdatedAt)
+		statsPresent = true
+		recalculatedAt = formatTimestamp(statsSnapshot.UpdatedAt)
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "failed to load activity stats", http.StatusInternalServerError)
 		return
+	}
+
+	stopCount := len(stopViews)
+	stopTotalSeconds := totalStopSeconds(stopViews)
+	lightStops := countLightStops(stopViews)
+	if statsPresent {
+		stopCount = statsSnapshot.StopCount
+		stopTotalSeconds = statsSnapshot.StopTotalSeconds
+		lightStops = statsSnapshot.TrafficLightStopCount
 	}
 
 	view := ActivityView{
@@ -244,16 +244,29 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 		StartTime:         activity.StartTime.Format("Jan 2, 2006 15:04"),
 		Distance:          formatDistance(activity.Distance),
 		Duration:          formatDuration(activity.MovingTime),
-		HasStats:          len(stopViews) > 0,
-		StopCount:         len(stopViews),
-		StopTotal:         formatDuration(totalStopSeconds(stopViews)),
-		LightStops:        countLightStops(stopViews),
+		HasStats:          statsPresent,
+		StopCount:         stopCount,
+		StopTotal:         formatDuration(stopTotalSeconds),
+		LightStops:        lightStops,
 		DetectedFactCount: len(detectedFacts),
 		RoadCrossings:     countRoadCrossings(stopViews),
 		RecalculatedAt:    recalculatedAt,
 		FetchedAt:         formatTimestamp(activity.UpdatedAt),
 	}
 	enrichActivityView(&view, activity)
+
+	dataItems := buildActivityDataItems(
+		activity.Description,
+		points,
+		storedStops,
+		statsSnapshot,
+		statsPresent,
+		detectedFacts,
+		detectedFactsPresent,
+		s.stopOpts,
+		s.mapAPI != nil,
+		s.overpass != nil,
+	)
 
 	footerText := "Last recalculation: "
 	if view.RecalculatedAt != "" {
@@ -277,11 +290,15 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 		Activity:          view,
 		Stops:             stopViews,
 		DetectedFacts:     detectedFacts,
+		DataItems:         dataItems,
 		RoutePointsJSON:   template.JS(pointsJSON),
 		StopsJSON:         template.JS(stopsJSON),
 		DetectedFactsJSON: template.JS(detectedFactsJSON),
 		SpeedSeriesJSON:   template.JS(speedJSON),
 		SpeedThreshold:    s.stopOpts.SpeedThreshold,
+		StopMinDuration:   formatDuration(int(s.stopOpts.MinDuration.Seconds())),
+		HasRoutePoints:    len(routePoints) > 0,
+		HasSpeedSeries:    len(speeds) > 0,
 	}
 
 	if err := s.templates["activity"].ExecuteTemplate(w, "base", data); err != nil {

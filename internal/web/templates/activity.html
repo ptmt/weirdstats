@@ -219,6 +219,68 @@
         overflow: auto;
         padding-right: 2px;
       }
+      .activity-data-grid {
+        display: grid;
+        gap: 12px;
+      }
+      .activity-data-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 14px 16px;
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .activity-data-row-ok {
+        border-color: rgba(34, 197, 94, 0.28);
+      }
+      .activity-data-row-warning {
+        border-color: rgba(245, 165, 36, 0.32);
+      }
+      .activity-data-row-pending {
+        border-color: rgba(59, 130, 246, 0.28);
+      }
+      .activity-data-copy {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+      .activity-data-label {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--ink-muted);
+      }
+      .activity-data-detail {
+        font-size: 13px;
+        line-height: 1.5;
+        color: var(--ink);
+      }
+      .activity-data-value {
+        flex: 0 0 auto;
+        padding: 4px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--ink);
+        white-space: nowrap;
+      }
+      .activity-empty-state {
+        display: grid;
+        place-items: center;
+        gap: 6px;
+        min-height: 220px;
+        padding: 22px;
+        text-align: center;
+        border-radius: 18px;
+        border: 1px dashed var(--border);
+        background: rgba(255, 255, 255, 0.02);
+        color: var(--ink-muted);
+      }
       .stop-row {
         width: 100%;
         text-align: left;
@@ -233,6 +295,12 @@
         .activity-route-map-wrap #map {
           height: min(56vh, 520px);
           min-height: 420px;
+        }
+        .activity-data-row {
+          flex-direction: column;
+        }
+        .activity-data-value {
+          white-space: normal;
         }
       }
       .card h3 {
@@ -418,9 +486,16 @@
       </div>
       <div class="activity-route-grid">
         <div class="activity-route-map-wrap">
-          <div id="map"></div>
-          <div class="map-note">Magenta: route line · Red: traffic lights · Blue: road crossings · Amber: stops · Overlay colors match the fact list.</div>
-          <div class="map-note" id="map-error" style="display:none; color:#c00;">Map tiles failed to load. Configure an alternative tile URL if needed.</div>
+          {{if .HasRoutePoints}}
+            <div id="map"></div>
+            <div class="map-note">Magenta: route line · Red: traffic lights · Blue: road crossings · Amber: stops · Overlay colors match the fact list.</div>
+            <div class="map-note" id="map-error" style="display:none; color:#c00;">Map tiles failed to load. Configure an alternative tile URL if needed.</div>
+          {{else}}
+            <div class="activity-empty-state">
+              <strong>No route points stored</strong>
+              <div>Weirdstats cannot draw the route or detect stop windows until a GPS stream is available for this activity.</div>
+            </div>
+          {{end}}
         </div>
         <aside class="activity-route-events">
           <section class="activity-panel-block">
@@ -493,10 +568,36 @@
           <input type="checkbox"> Avg speed between stops
         </label>
       </div>
-      <div class="chart-wrap">
-        <canvas id="speed-chart"></canvas>
+      {{if .HasSpeedSeries}}
+        <div class="chart-wrap">
+          <canvas id="speed-chart"></canvas>
+        </div>
+        <div class="map-note">Log scale {{if eq .Activity.Type "Run"}}pace{{else}}speed{{end}}; shaded regions highlight detected stops.</div>
+      {{else}}
+        <div class="activity-empty-state">
+          <strong>No speed series stored</strong>
+          <div>The detail view does not have per-point speed samples to chart for this activity.</div>
+        </div>
+      {{end}}
+    </article>
+    <article class="card">
+      <div class="activity-stage-head">
+        <div>
+          <h3 class="section-title">What Weirdstats has</h3>
+          <div class="map-note">Stops are inferred from stored route points. A stop needs speed at or below {{printf "%.1f" .SpeedThreshold}} m/s for at least {{.StopMinDuration}}.</div>
+        </div>
       </div>
-      <div class="map-note">Log scale {{if eq .Activity.Type "Run"}}pace{{else}}speed{{end}}; shaded regions highlight detected stops.</div>
+      <div class="activity-data-grid">
+        {{range .DataItems}}
+          <div class="activity-data-row activity-data-row-{{.Tone}}">
+            <div class="activity-data-copy">
+              <div class="activity-data-label">{{.Label}}</div>
+              <div class="activity-data-detail">{{.Detail}}</div>
+            </div>
+            <div class="activity-data-value">{{.Value}}</div>
+          </div>
+        {{end}}
+      </div>
     </article>
   </section>
   <link rel="stylesheet" href="/static/leaflet/leaflet.css" />

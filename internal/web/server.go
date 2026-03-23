@@ -122,6 +122,13 @@ type ActivityMapFactView struct {
 	Path    []routePreviewPoint `json:"path,omitempty"`
 }
 
+type ActivityDataItem struct {
+	Label  string
+	Value  string
+	Detail string
+	Tone   string
+}
+
 type routePreviewPoint struct {
 	Lat float64 `json:"lat"`
 	Lon float64 `json:"lon"`
@@ -132,11 +139,15 @@ type ActivityDetailData struct {
 	Activity          ActivityView
 	Stops             []StopView
 	DetectedFacts     []ActivityMapFactView
+	DataItems         []ActivityDataItem
 	RoutePointsJSON   template.JS
 	StopsJSON         template.JS
 	DetectedFactsJSON template.JS
 	SpeedSeriesJSON   template.JS
 	SpeedThreshold    float64
+	StopMinDuration   string
+	HasRoutePoints    bool
+	HasSpeedSeries    bool
 }
 
 type StravaInfo struct {

@@ -3,13 +3,16 @@ package web
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
+	"weirdstats/internal/gps"
 	"weirdstats/internal/jobs"
 	"weirdstats/internal/rules"
 	"weirdstats/internal/stats"
@@ -165,6 +168,18 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 		hidePtr = &val
 	}
 
+	cachePoints, cacheErr := s.store.LoadActivityPoints(ctx, activityID)
+	if cacheErr != nil {
+		log.Printf("activity points load failed (skipping detected facts cache): %v", cacheErr)
+	} else {
+		cacheStops, err := s.store.LoadActivityStops(ctx, activityID)
+		if err != nil {
+			log.Printf("activity stops load failed (skipping detected facts cache): %v", err)
+		} else {
+			s.updateActivityDetectedFactsCache(ctx, activity, cachePoints, cacheStops, rideFact, coffeeFact, routeFact, roadFact)
+		}
+	}
+
 	if descPtr == nil && hidePtr == nil {
 		return nil
 	}
@@ -195,6 +210,71 @@ func totalStopSeconds(stops []StopView) int {
 		total += s.DurationSeconds
 	}
 	return total
+}
+
+func buildStopViews(storedStops []storage.ActivityStop) []StopView {
+	stopViews := make([]StopView, 0, len(storedStops))
+	for _, stop := range storedStops {
+		stopViews = append(stopViews, StopView{
+			Lat:             stop.Lat,
+			Lon:             stop.Lon,
+			StartSeconds:    stop.StartSeconds,
+			Duration:        formatDuration(stop.DurationSeconds),
+			DurationSeconds: stop.DurationSeconds,
+			HasTrafficLight: stop.HasTrafficLight,
+			HasRoadCrossing: stop.HasRoadCrossing,
+			CrossingRoad:    stop.CrossingRoad,
+		})
+	}
+	return stopViews
+}
+
+func (s *Server) updateActivityDetectedFactsCache(
+	ctx context.Context,
+	activity storage.Activity,
+	points []gps.Point,
+	storedStops []storage.ActivityStop,
+	rideFact rideSegmentFact,
+	coffeeFact coffeeStopFact,
+	routeFact routeHighlightFact,
+	roadFact roadCrossingFact,
+) {
+	if roadFact.Count == 0 && len(storedStops) > 0 {
+		roadFact = buildRoadCrossingFact(storedStops)
+	}
+	if isRideType(activity.Type) && len(points) > 1 {
+		if rideFact.DistanceMeters <= 0 {
+			rideFact = longestRideSegmentFact(activity.Type, points, s.stopOpts)
+		}
+		if s.overpass != nil {
+			if coffeeFact.Name == "" {
+				fact, err := detectCoffeeStopFact(ctx, activity.Type, points, s.overpass)
+				if err != nil {
+					log.Printf("detected facts cache coffee stop failed for activity %d: %v", activity.ID, err)
+				} else {
+					coffeeFact = fact
+				}
+			}
+			if len(routeFact.Names) == 0 {
+				fact, err := detectRouteHighlightFact(ctx, points, s.overpass)
+				if err != nil {
+					log.Printf("detected facts cache route highlights failed for activity %d: %v", activity.ID, err)
+				} else {
+					routeFact = fact
+				}
+			}
+		}
+	}
+
+	detectedFacts := buildActivityMapFacts(buildStopViews(storedStops), points, rideFact, coffeeFact, routeFact, roadFact)
+	payload, err := json.Marshal(detectedFacts)
+	if err != nil {
+		log.Printf("detected facts cache marshal failed for activity %d: %v", activity.ID, err)
+		return
+	}
+	if err := s.store.UpsertActivityDetectedFacts(ctx, activity.ID, string(payload), time.Time{}); err != nil {
+		log.Printf("detected facts cache store failed for activity %d: %v", activity.ID, err)
+	}
 }
 
 func (s *Server) evaluateHideRules(ctx context.Context, activity storage.Activity) (bool, stats.StopStats, error) {

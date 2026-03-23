@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"weirdstats/internal/gps"
+	"weirdstats/internal/stats"
 	"weirdstats/internal/storage"
 )
 
@@ -167,6 +169,67 @@ func TestActivities_ShowsStravaDescriptionAndDetectedFactCount(t *testing.T) {
 	}
 }
 
+func TestActivities_FallsBackToStoredDescriptionWhenOnlyManagedLineExists(t *testing.T) {
+	ctx := context.Background()
+	store, err := storage.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+
+	if err := store.InitSchema(ctx); err != nil {
+		t.Fatalf("init schema: %v", err)
+	}
+	if err := store.UpsertStravaToken(ctx, storage.StravaToken{
+		UserID:      405,
+		AccessToken: "token",
+		AthleteID:   405,
+		AthleteName: "Dina Example",
+	}); err != nil {
+		t.Fatalf("upsert token: %v", err)
+	}
+
+	start := time.Date(2026, time.March, 16, 9, 0, 0, 0, time.UTC)
+	_, err = store.InsertActivity(ctx, storage.Activity{
+		UserID:      405,
+		Type:        "Ride",
+		Name:        "Managed Description Ride",
+		StartTime:   start,
+		Description: "2 stops (42s total) · 1 at lights #weirdstats",
+	}, []gps.Point{{Lat: 52.52, Lon: 13.405, Time: start, Speed: 6}})
+	if err != nil {
+		t.Fatalf("insert activity: %v", err)
+	}
+
+	server, err := NewServer(store, nil, nil, nil, gps.StopOptions{}, StravaConfig{})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/activities/", nil)
+	sessionRec := httptest.NewRecorder()
+	if err := server.setSession(sessionRec, req, 405); err != nil {
+		t.Fatalf("set session: %v", err)
+	}
+	for _, cookie := range sessionRec.Result().Cookies() {
+		req.AddCookie(cookie)
+	}
+	rec := httptest.NewRecorder()
+
+	server.Activities(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "2 stops (42s total) · 1 at lights #weirdstats") {
+		t.Fatalf("expected stored activity description in response")
+	}
+	if !strings.Contains(body, "2 detected facts") {
+		t.Fatalf("expected detected fact count in response")
+	}
+}
+
 func TestActivityDetail_ShowsMapLinkedFacts(t *testing.T) {
 	ctx := context.Background()
 	store, err := storage.Open(":memory:")
@@ -207,6 +270,45 @@ func TestActivityDetail_ShowsMapLinkedFacts(t *testing.T) {
 	}, time.Now()); err != nil {
 		t.Fatalf("replace stops: %v", err)
 	}
+	factsJSON, err := json.Marshal([]ActivityMapFactView{
+		{
+			ID:      "longest_segment",
+			Kind:    "segment",
+			Title:   "Longest uninterrupted segment",
+			Summary: "1.2 km at 28 km/h",
+			Color:   "#ef4444",
+			Path: []routePreviewPoint{
+				{Lat: 52.5200, Lon: 13.4040},
+				{Lat: 52.5208, Lon: 13.4056},
+			},
+		},
+		{
+			ID:      "stop_summary",
+			Kind:    "cluster",
+			Title:   "Stop summary",
+			Summary: "1 detected stop",
+			Color:   "#f5a524",
+			Points: []ActivityFactPoint{
+				{Lat: 52.5204, Lon: 13.4048},
+			},
+		},
+		{
+			ID:      "traffic_light_stops",
+			Kind:    "cluster",
+			Title:   "Traffic light stops",
+			Summary: "1 stop at a light",
+			Color:   "#ff3b30",
+			Points: []ActivityFactPoint{
+				{Lat: 52.5204, Lon: 13.4048},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal detected facts: %v", err)
+	}
+	if err := store.UpsertActivityDetectedFacts(ctx, activityID, string(factsJSON), time.Now()); err != nil {
+		t.Fatalf("upsert detected facts: %v", err)
+	}
 
 	server, err := NewServer(store, nil, nil, nil, gps.StopOptions{SpeedThreshold: 0.5}, StravaConfig{})
 	if err != nil {
@@ -235,6 +337,88 @@ func TestActivityDetail_ShowsMapLinkedFacts(t *testing.T) {
 		"data-focus-fact=\"stop_summary\"",
 		"data-focus-fact=\"traffic_light_stops\"",
 		"The map is the primary view.",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected %q in detail response", want)
+		}
+	}
+}
+
+func TestActivityDetail_ShowsStoredDataInventory(t *testing.T) {
+	ctx := context.Background()
+	store, err := storage.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+
+	if err := store.InitSchema(ctx); err != nil {
+		t.Fatalf("init schema: %v", err)
+	}
+	if err := store.UpsertStravaToken(ctx, storage.StravaToken{
+		UserID:      606,
+		AccessToken: "token",
+		AthleteID:   606,
+		AthleteName: "Frank Example",
+	}); err != nil {
+		t.Fatalf("upsert token: %v", err)
+	}
+
+	start := time.Date(2026, time.March, 23, 8, 0, 0, 0, time.UTC)
+	activityID, err := store.InsertActivity(ctx, storage.Activity{
+		UserID:      606,
+		Type:        "Ride",
+		Name:        "No Stop Mystery",
+		StartTime:   start,
+		Description: "Short pause test",
+	}, []gps.Point{
+		{Lat: 52.5200, Lon: 13.4040, Time: start, Speed: 7},
+		{Lat: 52.5202, Lon: 13.4042, Time: start.Add(1 * time.Minute), Speed: 0},
+		{Lat: 52.5202, Lon: 13.4042, Time: start.Add(1*time.Minute + 45*time.Second), Speed: 0},
+		{Lat: 52.5205, Lon: 13.4046, Time: start.Add(2 * time.Minute), Speed: 7},
+	})
+	if err != nil {
+		t.Fatalf("insert activity: %v", err)
+	}
+	if err := store.UpsertActivityStats(ctx, activityID, stats.StopStats{
+		StopCount:             0,
+		StopTotalSeconds:      0,
+		TrafficLightStopCount: 0,
+		UpdatedAt:             time.Now(),
+	}); err != nil {
+		t.Fatalf("upsert activity stats: %v", err)
+	}
+
+	server, err := NewServer(store, nil, nil, nil, gps.StopOptions{SpeedThreshold: 0.5, MinDuration: time.Minute}, StravaConfig{})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/activity/"+strconv.FormatInt(activityID, 10), nil)
+	sessionRec := httptest.NewRecorder()
+	if err := server.setSession(sessionRec, req, 606); err != nil {
+		t.Fatalf("set session: %v", err)
+	}
+	for _, cookie := range sessionRec.Result().Cookies() {
+		req.AddCookie(cookie)
+	}
+	rec := httptest.NewRecorder()
+
+	server.ActivityDetail(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		"What Weirdstats has",
+		"Route points",
+		"Stop detection",
+		"Stats snapshot",
+		"Map-linked facts",
+		"1 candidate low-speed window found; the longest lasted 45s",
+		"0.5 m/s",
+		"1m 0s",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in detail response", want)

@@ -264,6 +264,11 @@ CREATE TABLE IF NOT EXISTS activity_stops (
 	updated_at INTEGER NOT NULL,
 	PRIMARY KEY (activity_id, seq)
 );
+CREATE TABLE IF NOT EXISTS activity_detected_facts (
+	activity_id INTEGER PRIMARY KEY,
+	detected_facts_json TEXT NOT NULL,
+	updated_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS activity_queue (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	activity_id INTEGER NOT NULL,
@@ -1164,6 +1169,12 @@ WHERE activity_id IN (SELECT id FROM activities WHERE user_id = ?)
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
+DELETE FROM activity_detected_facts
+WHERE activity_id IN (SELECT id FROM activities WHERE user_id = ?)
+`, userID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
 DELETE FROM activity_queue
 WHERE activity_id IN (SELECT id FROM activities WHERE user_id = ?)
 `, userID); err != nil {
@@ -1343,6 +1354,40 @@ ORDER BY seq
 		return nil, err
 	}
 	return stops, nil
+}
+
+func (s *Store) UpsertActivityDetectedFacts(ctx context.Context, activityID int64, detectedFactsJSON string, updatedAt time.Time) error {
+	if activityID == 0 {
+		return errors.New("activity id required")
+	}
+	if detectedFactsJSON == "" {
+		detectedFactsJSON = "[]"
+	}
+	if updatedAt.IsZero() {
+		updatedAt = time.Now()
+	}
+	_, err := s.db.ExecContext(ctx, `
+INSERT INTO activity_detected_facts (activity_id, detected_facts_json, updated_at)
+VALUES (?, ?, ?)
+ON CONFLICT(activity_id) DO UPDATE SET
+	detected_facts_json = excluded.detected_facts_json,
+	updated_at = excluded.updated_at
+`, activityID, detectedFactsJSON, updatedAt.Unix())
+	return err
+}
+
+func (s *Store) GetActivityDetectedFacts(ctx context.Context, activityID int64) (string, time.Time, error) {
+	row := s.db.QueryRowContext(ctx, `
+SELECT detected_facts_json, updated_at
+FROM activity_detected_facts
+WHERE activity_id = ?
+`, activityID)
+	var detectedFactsJSON string
+	var updatedAt int64
+	if err := row.Scan(&detectedFactsJSON, &updatedAt); err != nil {
+		return "", time.Time{}, err
+	}
+	return detectedFactsJSON, time.Unix(updatedAt, 0), nil
 }
 
 func (s *Store) ListActivityRoutePreviewPoints(ctx context.Context, activityIDs []int64, maxPoints int) (map[int64][]ActivityRoutePoint, error) {

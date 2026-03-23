@@ -9,6 +9,8 @@ import (
 	"time"
 	"unicode"
 
+	"weirdstats/internal/gps"
+	"weirdstats/internal/stats"
 	"weirdstats/internal/storage"
 )
 
@@ -45,6 +47,242 @@ func formatDistance(meters float64) string {
 		return fmt.Sprintf("%.1f km", km)
 	}
 	return fmt.Sprintf("%.2f km", km)
+}
+
+func buildActivityDataItems(
+	description string,
+	points []gps.Point,
+	stops []storage.ActivityStop,
+	statsSnapshot stats.StopStats,
+	statsPresent bool,
+	detectedFacts []ActivityMapFactView,
+	detectedFactsPresent bool,
+	stopOpts gps.StopOptions,
+	mapAPIAvailable bool,
+	overpassAvailable bool,
+) []ActivityDataItem {
+	items := []ActivityDataItem{
+		buildDescriptionDataItem(description),
+		buildRoutePointsDataItem(points),
+		buildStopDetectionDataItem(points, stops, statsPresent, stopOpts),
+		buildStatsSnapshotDataItem(statsSnapshot, statsPresent),
+		buildDetectedFactsDataItem(detectedFacts, detectedFactsPresent, points, stops),
+		buildEnrichmentDataItem(mapAPIAvailable, overpassAvailable),
+	}
+	return items
+}
+
+func buildDescriptionDataItem(description string) ActivityDataItem {
+	plainDescription, detectedFactCount := splitStoredActivityDescription(description)
+
+	item := ActivityDataItem{
+		Label:  "Description",
+		Value:  "empty",
+		Detail: "No Strava description is stored for this activity yet.",
+		Tone:   "warning",
+	}
+	if plainDescription != "" {
+		item.Value = "present"
+		item.Detail = "Strava description text is stored."
+		item.Tone = "ok"
+	}
+	if detectedFactCount > 0 {
+		item.Detail = fmt.Sprintf("%s Managed weirdstats line currently contains %s.", item.Detail, formatCountLabel(detectedFactCount, "posted fact", "posted facts"))
+		if plainDescription == "" {
+			item.Value = "managed only"
+		}
+		item.Tone = "ok"
+	}
+	return item
+}
+
+func buildRoutePointsDataItem(points []gps.Point) ActivityDataItem {
+	count := len(points)
+	item := ActivityDataItem{
+		Label: "Route points",
+		Value: formatCountLabel(count, "point", "points"),
+		Tone:  "ok",
+	}
+
+	switch {
+	case count == 0:
+		item.Detail = "No GPS route points are stored, so the map, speed chart, and stop detection cannot run."
+		item.Tone = "warning"
+	case count == 1:
+		item.Detail = "Only one GPS point is stored. The activity can be located, but route and stop windows cannot be reconstructed."
+		item.Tone = "warning"
+	default:
+		item.Detail = "Stored GPS points power the route map, speed chart, stop detection, and route-linked facts."
+	}
+	return item
+}
+
+func buildStopDetectionDataItem(points []gps.Point, stops []storage.ActivityStop, statsPresent bool, stopOpts gps.StopOptions) ActivityDataItem {
+	item := ActivityDataItem{
+		Label: "Stop detection",
+	}
+
+	if !statsPresent {
+		item.Value = "pending"
+		item.Detail = fmt.Sprintf("Processing has not written stop stats yet. A stop needs speed at or below %.1f m/s for at least %s.", stopOpts.SpeedThreshold, formatDuration(int(stopOpts.MinDuration.Seconds())))
+		item.Tone = "pending"
+		return item
+	}
+
+	item.Value = formatCountLabel(len(stops), "stop", "stops")
+	summary := summarizeLowSpeedWindows(points, stopOpts.SpeedThreshold)
+	minDuration := formatDuration(int(stopOpts.MinDuration.Seconds()))
+
+	switch {
+	case len(points) == 0:
+		item.Detail = "No route points are stored, so no stop windows could be derived."
+		item.Tone = "warning"
+	case len(points) == 1:
+		item.Detail = "Only one route point is stored, so stop windows cannot be derived."
+		item.Tone = "warning"
+	case len(stops) > 0:
+		item.Detail = fmt.Sprintf("Detected from stored route points using speed at or below %.1f m/s for at least %s.", stopOpts.SpeedThreshold, minDuration)
+		item.Tone = "ok"
+	case summary.WindowCount == 0:
+		item.Detail = fmt.Sprintf("No stored speed samples dropped to %.1f m/s or below, so there were no candidate stop windows.", stopOpts.SpeedThreshold)
+		item.Tone = "warning"
+	case summary.LongestDuration < stopOpts.MinDuration:
+		item.Detail = fmt.Sprintf("%s found; the longest lasted %s. A stop needs at least %s at or below %.1f m/s.", formatCountLabel(summary.WindowCount, "candidate low-speed window", "candidate low-speed windows"), formatDuration(int(summary.LongestDuration.Seconds())), minDuration, stopOpts.SpeedThreshold)
+		item.Tone = "warning"
+	default:
+		item.Detail = fmt.Sprintf("%s found, but none qualified as stored stops.", formatCountLabel(summary.WindowCount, "candidate low-speed window", "candidate low-speed windows"))
+		item.Tone = "warning"
+	}
+
+	return item
+}
+
+func buildStatsSnapshotDataItem(statsSnapshot stats.StopStats, statsPresent bool) ActivityDataItem {
+	item := ActivityDataItem{
+		Label: "Stats snapshot",
+	}
+	if !statsPresent {
+		item.Value = "pending"
+		item.Detail = "No processed activity-stats row is stored yet."
+		item.Tone = "pending"
+		return item
+	}
+
+	item.Value = "present"
+	item.Detail = fmt.Sprintf("%d stops · %s total · %d at lights", statsSnapshot.StopCount, formatDuration(statsSnapshot.StopTotalSeconds), statsSnapshot.TrafficLightStopCount)
+	if !statsSnapshot.UpdatedAt.IsZero() {
+		item.Detail += " · updated " + formatTimestamp(statsSnapshot.UpdatedAt)
+	}
+	item.Tone = "ok"
+	return item
+}
+
+func buildDetectedFactsDataItem(detectedFacts []ActivityMapFactView, detectedFactsPresent bool, points []gps.Point, stops []storage.ActivityStop) ActivityDataItem {
+	item := ActivityDataItem{
+		Label: "Map-linked facts",
+	}
+	switch {
+	case !detectedFactsPresent:
+		item.Value = "pending"
+		item.Detail = "Detected facts have not been precomputed and stored yet."
+		item.Tone = "pending"
+	case len(detectedFacts) > 0:
+		item.Value = formatCountLabel(len(detectedFacts), "fact", "facts")
+		item.Detail = "Built from the current route points and stored stop events."
+		item.Tone = "ok"
+	case len(points) == 0:
+		item.Value = "0 facts"
+		item.Detail = "No route-linked facts can be derived until route points are stored."
+		item.Tone = "warning"
+	case len(stops) == 0:
+		item.Value = "0 facts"
+		item.Detail = "Only route-derived facts are possible right now because no stored stop events exist."
+		item.Tone = "warning"
+	default:
+		item.Value = "0 facts"
+		item.Detail = "No map-linked facts were derived from the current route and stop data."
+		item.Tone = "warning"
+	}
+	return item
+}
+
+func buildEnrichmentDataItem(mapAPIAvailable bool, overpassAvailable bool) ActivityDataItem {
+	item := ActivityDataItem{
+		Label:  "Enrichment",
+		Detail: "Traffic-light matching happens during stop processing. Overpass powers coffee stops, route highlights, and road-crossing annotations.",
+		Tone:   "ok",
+	}
+
+	switch {
+	case mapAPIAvailable && overpassAvailable:
+		item.Value = "lights + overpass"
+	case mapAPIAvailable:
+		item.Value = "lights only"
+		item.Tone = "warning"
+	case overpassAvailable:
+		item.Value = "overpass only"
+		item.Tone = "warning"
+	default:
+		item.Value = "route-only"
+		item.Tone = "warning"
+	}
+
+	return item
+}
+
+type lowSpeedWindowSummary struct {
+	WindowCount     int
+	LongestDuration time.Duration
+}
+
+func summarizeLowSpeedWindows(points []gps.Point, threshold float64) lowSpeedWindowSummary {
+	if len(points) == 0 {
+		return lowSpeedWindowSummary{}
+	}
+
+	var summary lowSpeedWindowSummary
+	var inWindow bool
+	var startPoint gps.Point
+	var lastPoint gps.Point
+
+	for i, point := range points {
+		if i == 0 {
+			lastPoint = point
+		}
+
+		if point.Speed <= threshold {
+			if !inWindow {
+				inWindow = true
+				startPoint = point
+			}
+		} else if inWindow {
+			duration := lastPoint.Time.Sub(startPoint.Time)
+			summary.WindowCount++
+			if duration > summary.LongestDuration {
+				summary.LongestDuration = duration
+			}
+			inWindow = false
+		}
+
+		lastPoint = point
+	}
+
+	if inWindow {
+		duration := lastPoint.Time.Sub(startPoint.Time)
+		summary.WindowCount++
+		if duration > summary.LongestDuration {
+			summary.LongestDuration = duration
+		}
+	}
+
+	return summary
+}
+
+func formatCountLabel(count int, singular, plural string) string {
+	if count == 1 {
+		return fmt.Sprintf("1 %s", singular)
+	}
+	return fmt.Sprintf("%d %s", count, plural)
 }
 
 func (s *Server) buildContributionData(ctx context.Context, userID int64, now time.Time) ContributionData {
