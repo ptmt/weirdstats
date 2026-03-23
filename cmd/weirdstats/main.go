@@ -108,6 +108,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("load templates: %v", err)
 	}
+	pipeline.Applier = webServer
 	jobRunner.Applier = webServer
 
 	mux := http.NewServeMux()
