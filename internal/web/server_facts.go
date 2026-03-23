@@ -800,15 +800,11 @@ func buildActivityMapFacts(stopViews []StopView, points []gps.Point, rideFact ri
 	}
 
 	if len(stopViews) > 0 {
-		summary := fmt.Sprintf("%d stops", len(stopViews))
-		if total := totalStopSeconds(stopViews); total > 0 {
-			summary += " · " + formatDuration(total) + " total"
-		}
 		facts = append(facts, ActivityMapFactView{
 			ID:      weirdStatsFactStopSummary,
 			Kind:    "collection",
 			Title:   "Stop summary",
-			Summary: summary,
+			Summary: stopSummaryFactSummary(stopViews),
 			Color:   "#ec4899",
 			Points:  stopFactPoints(stopViews),
 		})
@@ -822,7 +818,7 @@ func buildActivityMapFacts(stopViews []StopView, points []gps.Point, rideFact ri
 			ID:      weirdStatsFactTrafficLightStops,
 			Kind:    "collection",
 			Title:   "Traffic-light stops",
-			Summary: fmt.Sprintf("%d detected near traffic signals", len(lightStops)),
+			Summary: trafficLightStopsFactSummary(len(lightStops)),
 			Color:   "#ef4444",
 			Points:  stopFactPoints(lightStops),
 		})

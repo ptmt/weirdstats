@@ -163,4 +163,23 @@ func TestApply_CachesDetectedFactsForDetailPage(t *testing.T) {
 			t.Fatalf("expected cached detected fact %q, got %+v", want, detectedFacts)
 		}
 	}
+
+	records, err := store.ListUserYearFactRecords(ctx, 1, 2026)
+	if err != nil {
+		t.Fatalf("list yearly fact records: %v", err)
+	}
+	recordSeen := make(map[string]bool, len(records))
+	for _, record := range records {
+		recordSeen[record.FactID+":"+record.MetricID] = true
+	}
+	for _, want := range []string{
+		"longest_segment:distance_meters",
+		"stop_summary:stop_count",
+		"stop_summary:stop_total_seconds",
+		"traffic_light_stops:count",
+	} {
+		if !recordSeen[want] {
+			t.Fatalf("expected yearly fact record %q, got %+v", want, records)
+		}
+	}
 }

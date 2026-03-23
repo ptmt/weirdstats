@@ -91,6 +91,25 @@ type UserFactPreference struct {
 	UpdatedAt time.Time
 }
 
+type ActivityFactMetric struct {
+	FactID      string
+	MetricID    string
+	MetricValue float64
+	Summary     string
+	UpdatedAt   time.Time
+}
+
+type UserYearFactRecord struct {
+	ActivityID int64
+	UserID     int64
+	Year       int
+	FactID     string
+	MetricID   string
+	Value      float64
+	Summary    string
+	UpdatedAt  time.Time
+}
+
 type ActivityWithStats struct {
 	Activity
 	StopCount             int
@@ -269,6 +288,19 @@ CREATE TABLE IF NOT EXISTS activity_detected_facts (
 	detected_facts_json TEXT NOT NULL,
 	updated_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS activity_fact_metrics (
+	activity_id INTEGER NOT NULL,
+	user_id INTEGER NOT NULL,
+	year INTEGER NOT NULL,
+	fact_id TEXT NOT NULL,
+	metric_id TEXT NOT NULL,
+	metric_value REAL NOT NULL,
+	summary TEXT NOT NULL,
+	updated_at INTEGER NOT NULL,
+	PRIMARY KEY (activity_id, fact_id, metric_id)
+);
+CREATE INDEX IF NOT EXISTS idx_activity_fact_metrics_user_year
+	ON activity_fact_metrics (user_id, year, fact_id, metric_id, metric_value DESC, activity_id DESC);
 CREATE TABLE IF NOT EXISTS activity_queue (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	activity_id INTEGER NOT NULL,
@@ -1175,6 +1207,12 @@ WHERE activity_id IN (SELECT id FROM activities WHERE user_id = ?)
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
+DELETE FROM activity_fact_metrics
+WHERE user_id = ?
+`, userID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
 DELETE FROM activity_queue
 WHERE activity_id IN (SELECT id FROM activities WHERE user_id = ?)
 `, userID); err != nil {
@@ -1244,6 +1282,10 @@ func (s *Store) ReassignUserData(ctx context.Context, fromUserID, toUserID int64
 		},
 		{
 			query: `UPDATE user_fact_preferences SET user_id = ? WHERE user_id = ?`,
+			args:  []interface{}{toUserID, fromUserID},
+		},
+		{
+			query: `UPDATE activity_fact_metrics SET user_id = ? WHERE user_id = ?`,
 			args:  []interface{}{toUserID, fromUserID},
 		},
 		{
@@ -1388,6 +1430,136 @@ WHERE activity_id = ?
 		return "", time.Time{}, err
 	}
 	return detectedFactsJSON, time.Unix(updatedAt, 0), nil
+}
+
+func (s *Store) ReplaceActivityFactMetrics(ctx context.Context, activity Activity, metrics []ActivityFactMetric) error {
+	if activity.ID == 0 {
+		return errors.New("activity id required")
+	}
+	userID := activity.UserID
+	if userID == 0 {
+		userID = 1
+	}
+	if len(metrics) > 0 && activity.StartTime.IsZero() {
+		return errors.New("activity start time required")
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	if _, err := tx.ExecContext(ctx, `
+DELETE FROM activity_fact_metrics
+WHERE activity_id = ?
+`, activity.ID); err != nil {
+		return err
+	}
+
+	if len(metrics) == 0 {
+		return tx.Commit()
+	}
+
+	stmt, err := tx.PrepareContext(ctx, `
+INSERT INTO activity_fact_metrics (activity_id, user_id, year, fact_id, metric_id, metric_value, summary, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	year := activity.StartTime.UTC().Year()
+	now := time.Now()
+	for _, metric := range metrics {
+		factID := strings.TrimSpace(metric.FactID)
+		if factID == "" {
+			return errors.New("fact id required")
+		}
+		metricID := strings.TrimSpace(metric.MetricID)
+		if metricID == "" {
+			return errors.New("metric id required")
+		}
+		updatedAt := metric.UpdatedAt
+		if updatedAt.IsZero() {
+			updatedAt = now
+		}
+		if _, err := stmt.ExecContext(
+			ctx,
+			activity.ID,
+			userID,
+			year,
+			factID,
+			metricID,
+			metric.MetricValue,
+			metric.Summary,
+			updatedAt.Unix(),
+		); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (s *Store) ListUserYearFactRecords(ctx context.Context, userID int64, year int) ([]UserYearFactRecord, error) {
+	if userID == 0 {
+		userID = 1
+	}
+	if year == 0 {
+		return nil, errors.New("year required")
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+SELECT m.activity_id, m.user_id, m.year, m.fact_id, m.metric_id, m.metric_value, m.summary, m.updated_at
+FROM activity_fact_metrics m
+WHERE m.user_id = ?
+	AND m.year = ?
+	AND NOT EXISTS (
+		SELECT 1
+		FROM activity_fact_metrics other
+		WHERE other.user_id = m.user_id
+			AND other.year = m.year
+			AND other.fact_id = m.fact_id
+			AND other.metric_id = m.metric_id
+			AND (
+				other.metric_value > m.metric_value
+				OR (other.metric_value = m.metric_value AND other.activity_id > m.activity_id)
+			)
+	)
+ORDER BY m.fact_id, m.metric_id
+`, userID, year)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var records []UserYearFactRecord
+	for rows.Next() {
+		var record UserYearFactRecord
+		var updatedAt int64
+		if err := rows.Scan(
+			&record.ActivityID,
+			&record.UserID,
+			&record.Year,
+			&record.FactID,
+			&record.MetricID,
+			&record.Value,
+			&record.Summary,
+			&updatedAt,
+		); err != nil {
+			return nil, err
+		}
+		record.UpdatedAt = time.Unix(updatedAt, 0)
+		records = append(records, record)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return records, nil
 }
 
 func (s *Store) ListActivityRoutePreviewPoints(ctx context.Context, activityIDs []int64, maxPoints int) (map[int64][]ActivityRoutePoint, error) {

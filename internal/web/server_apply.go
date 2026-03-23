@@ -266,7 +266,12 @@ func (s *Server) updateActivityDetectedFactsCache(
 		}
 	}
 
-	detectedFacts := buildActivityMapFacts(buildStopViews(storedStops), points, rideFact, coffeeFact, routeFact, roadFact)
+	stopViews := buildStopViews(storedStops)
+	if err := s.store.ReplaceActivityFactMetrics(ctx, activity, buildActivityFactMetrics(stopViews, rideFact, roadFact)); err != nil {
+		log.Printf("activity fact metrics store failed for activity %d: %v", activity.ID, err)
+	}
+
+	detectedFacts := buildActivityMapFacts(stopViews, points, rideFact, coffeeFact, routeFact, roadFact)
 	payload, err := json.Marshal(detectedFacts)
 	if err != nil {
 		log.Printf("detected facts cache marshal failed for activity %d: %v", activity.ID, err)
