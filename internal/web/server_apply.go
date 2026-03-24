@@ -157,7 +157,17 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 	}
 
 	var descPtr *string
-	newDesc, descChanged := applyWeirdStatsDescription(baseDescription, filterWeirdStatsSnapshot(statsSnapshot, factSettings), rideFact, coffeeFact, routeFact, roadFact)
+	filteredSnapshot := filterWeirdStatsSnapshot(statsSnapshot, factSettings)
+	descriptionLine := buildWeirdStatsLine(filteredSnapshot, rideFact, coffeeFact, routeFact, roadFact)
+	if metrics := collectWeirdStatsCandidateMetrics(buildWeirdStatsFactCandidates(filteredSnapshot, rideFact, coffeeFact, routeFact, roadFact)); len(metrics) > 0 {
+		histories, err := s.store.ListUserFactMetricHistories(ctx, activity.UserID, activity.ID, metrics)
+		if err != nil {
+			log.Printf("activity fact history load failed for activity %d: %v", activity.ID, err)
+		} else {
+			descriptionLine = buildPrioritizedWeirdStatsLine(filteredSnapshot, rideFact, coffeeFact, routeFact, roadFact, histories)
+		}
+	}
+	newDesc, descChanged := applyWeirdStatsDescriptionLine(baseDescription, descriptionLine)
 	if descChanged {
 		descPtr = &newDesc
 	}
@@ -176,7 +186,7 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 		if err != nil {
 			log.Printf("activity stops load failed (skipping detected facts cache): %v", err)
 		} else {
-			s.updateActivityDetectedFactsCache(ctx, activity, cachePoints, cacheStops, rideFact, coffeeFact, routeFact, roadFact)
+			s.updateActivityDetectedFactsCache(ctx, activity, statsSnapshot, cachePoints, cacheStops, rideFact, coffeeFact, routeFact, roadFact)
 		}
 	}
 
@@ -232,6 +242,7 @@ func buildStopViews(storedStops []storage.ActivityStop) []StopView {
 func (s *Server) updateActivityDetectedFactsCache(
 	ctx context.Context,
 	activity storage.Activity,
+	statsSnapshot stats.StopStats,
 	points []gps.Point,
 	storedStops []storage.ActivityStop,
 	rideFact rideSegmentFact,
@@ -267,7 +278,7 @@ func (s *Server) updateActivityDetectedFactsCache(
 	}
 
 	stopViews := buildStopViews(storedStops)
-	if err := s.store.ReplaceActivityFactMetrics(ctx, activity, buildActivityFactMetrics(stopViews, rideFact, roadFact)); err != nil {
+	if err := s.store.ReplaceActivityFactMetrics(ctx, activity, buildActivityFactMetrics(statsSnapshot, rideFact, coffeeFact, routeFact, roadFact)); err != nil {
 		log.Printf("activity fact metrics store failed for activity %d: %v", activity.ID, err)
 	}
 
@@ -376,6 +387,10 @@ const weirdstatsTag = "#weirdstats"
 
 func applyWeirdStatsDescription(existing string, statsSnapshot stats.StopStats, rideFact rideSegmentFact, coffeeFact coffeeStopFact, routeFact routeHighlightFact, roadFact roadCrossingFact) (string, bool) {
 	line := buildWeirdStatsLine(statsSnapshot, rideFact, coffeeFact, routeFact, roadFact)
+	return applyWeirdStatsDescriptionLine(existing, line)
+}
+
+func applyWeirdStatsDescriptionLine(existing, line string) (string, bool) {
 	normalized := strings.ReplaceAll(existing, "\r\n", "\n")
 	lines := strings.Split(normalized, "\n")
 	filtered := make([]string, 0, len(lines))
@@ -406,44 +421,7 @@ func applyWeirdStatsDescription(existing string, statsSnapshot stats.StopStats, 
 }
 
 func buildWeirdStatsLine(statsSnapshot stats.StopStats, rideFact rideSegmentFact, coffeeFact coffeeStopFact, routeFact routeHighlightFact, roadFact roadCrossingFact) string {
-	ridePart := buildRideSegmentPart(rideFact)
-	coffeePart := buildCoffeeStopPart(coffeeFact)
-	routePart := buildRouteHighlightPart(routeFact)
-	roadCount := roadFact.Count
-	if roadCount <= 0 {
-		roadCount = statsSnapshot.RoadCrossingCount
-	}
-	roadPart := buildRoadCrossingPartWithCount(roadCount, roadFact.Roads)
-	if statsSnapshot.StopCount == 0 && statsSnapshot.TrafficLightStopCount == 0 && ridePart == "" && coffeePart == "" && routePart == "" && roadPart == "" {
-		return ""
-	}
-	parts := make([]string, 0, 6)
-	if ridePart != "" {
-		parts = append(parts, ridePart)
-	}
-	if coffeePart != "" {
-		parts = append(parts, coffeePart)
-	}
-	if routePart != "" {
-		parts = append(parts, routePart)
-	}
-	if roadPart != "" {
-		parts = append(parts, roadPart)
-	}
-	if statsSnapshot.StopCount > 0 {
-		part := formatCountLabel(statsSnapshot.StopCount, "stop", "stops")
-		if statsSnapshot.StopTotalSeconds > 0 {
-			part += fmt.Sprintf(" (%s total)", formatDuration(statsSnapshot.StopTotalSeconds))
-		}
-		parts = append(parts, part)
-	}
-	if statsSnapshot.TrafficLightStopCount > 0 {
-		parts = append(parts, fmt.Sprintf("%d at lights", statsSnapshot.TrafficLightStopCount))
-	}
-	if len(parts) == 0 {
-		return ""
-	}
-	return strings.Join(parts, " · ")
+	return buildPrioritizedWeirdStatsLine(statsSnapshot, rideFact, coffeeFact, routeFact, roadFact, nil)
 }
 
 func buildRideSegmentPart(fact rideSegmentFact) string {

@@ -21,7 +21,7 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 	coffeeFact := coffeeStopFact{Name: "Bean Machine"}
 	routeFact := routeHighlightFact{Names: []string{"Victory Column", "Memorial Church"}}
 	roadFact := roadCrossingFact{Count: 2, Roads: []string{"Unter den Linden", "Friedrichstrasse"}}
-	line := "Longest uninterrupted segment: 48km - 200w - 30kmh · Detected Coffee Stop: Bean Machine · Route highlights: Victory Column, Memorial Church · 2 road crossings: Unter den Linden, Friedrichstrasse · 3 stops (1m 35s total) · 2 at lights #weirdstats"
+	line := "Longest uninterrupted segment: 48km - 200w - 30kmh · Detected Coffee Stop: Bean Machine · Route highlights: Victory Column, Memorial Church · 2 road crossings: Unter den Linden, Friedrichstrasse #weirdstats"
 
 	tests := []struct {
 		name       string
@@ -192,13 +192,13 @@ func TestBuildWeirdStatsLine(t *testing.T) {
 		want       string
 	}{
 		{
-			name:       "ride fact first with coffee, route highlights, stops and lights",
+			name:       "keeps top four base-priority facts",
 			stats:      stats.StopStats{StopCount: 3, StopTotalSeconds: 95, TrafficLightStopCount: 2},
 			rideFact:   rideFact,
 			coffeeFact: coffeeFact,
 			routeFact:  routeFact,
 			roadFact:   roadFact,
-			want:       "Longest uninterrupted segment: 48km - 200w - 30kmh · Detected Coffee Stop: Bean Machine · Route highlights: Victory Column, Memorial Church · 2 road crossings: Unter den Linden, Friedrichstrasse · 3 stops (1m 35s total) · 2 at lights",
+			want:       "Longest uninterrupted segment: 48km - 200w - 30kmh · Detected Coffee Stop: Bean Machine · Route highlights: Victory Column, Memorial Church · 2 road crossings: Unter den Linden, Friedrichstrasse",
 		},
 		{
 			name:     "ride fact only",

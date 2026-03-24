@@ -101,7 +101,7 @@ func buildWeirdStatsFactCandidates(
 		candidates = append(candidates, weirdStatsFactCandidate{
 			ID:           weirdStatsFactStopSummary,
 			Part:         part,
-			BasePriority: 320,
+			BasePriority: 350,
 			DefaultOrder: 4,
 			Metrics:      stopSummaryFactMetrics(statsSnapshot),
 		})
@@ -111,7 +111,7 @@ func buildWeirdStatsFactCandidates(
 		candidates = append(candidates, weirdStatsFactCandidate{
 			ID:           weirdStatsFactTrafficLightStops,
 			Part:         part,
-			BasePriority: 340,
+			BasePriority: 330,
 			DefaultOrder: 5,
 			Metrics:      trafficLightStopFactMetrics(statsSnapshot),
 		})
@@ -155,6 +155,14 @@ func prioritizeStravaFactCandidates(
 		selected = append(selected, item.candidate)
 	}
 	return selected
+}
+
+func collectWeirdStatsCandidateMetrics(candidates []weirdStatsFactCandidate) []storage.ActivityFactMetric {
+	metrics := make([]storage.ActivityFactMetric, 0, len(candidates)*2)
+	for _, candidate := range candidates {
+		metrics = append(metrics, candidate.Metrics...)
+	}
+	return metrics
 }
 
 func scoreWeirdStatsFactCandidate(candidate weirdStatsFactCandidate, histories map[string]storage.UserFactMetricHistory) int {
