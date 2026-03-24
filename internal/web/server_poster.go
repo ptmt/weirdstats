@@ -24,18 +24,18 @@ import (
 )
 
 const (
-	posterMapWidth            = 1000.0
-	posterMapHeight           = 1120.0
-	posterMapPadding          = 58.0
-	posterFactMarkerLimit     = 6
-	posterExportWidth         = 1170
-	posterExportHeight        = 2532
-	posterContextBBoxPaddingM = 1400.0
-	posterContextRoadLimit    = 5
-	posterContextWaterLimit   = 3
+	posterMapWidth             = 1000.0
+	posterMapHeight            = 1120.0
+	posterMapPadding           = 58.0
+	posterFactMarkerLimit      = 6
+	posterExportWidth          = 1170
+	posterExportHeight         = 2532
+	posterContextBBoxPaddingM  = 1400.0
+	posterContextRoadLimit     = 5
+	posterContextWaterLimit    = 3
 	posterContextWaterwayLimit = 4
-	posterContextPeakLimit    = 3
-	posterContextLoadTimeout  = 3 * time.Second
+	posterContextPeakLimit     = 3
+	posterContextLoadTimeout   = 3 * time.Second
 )
 
 var (

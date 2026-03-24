@@ -119,11 +119,21 @@ func TestActivityPoster_RendersStoredDetectedFacts(t *testing.T) {
 		"Longest uninterrupted segment",
 		"3.2 km without a real stop",
 		"Stop summary",
-		"Numbers on the map match the fact cards",
-		"/activity/" + strconv.FormatInt(activityID, 10) + "/poster.png",
+		"Back to activity",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in poster response", want)
+		}
+	}
+	for _, unwanted := range []string{
+		"Selected Facts",
+		"Download PNG",
+		"Route + Fact Anchors",
+		"2 facts",
+		"/activity/" + strconv.FormatInt(activityID, 10) + "/poster.png",
+	} {
+		if strings.Contains(body, unwanted) {
+			t.Fatalf("did not expect %q in poster response", unwanted)
 		}
 	}
 }

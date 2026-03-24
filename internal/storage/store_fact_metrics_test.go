@@ -123,3 +123,82 @@ func TestReplaceActivityFactMetricsTracksPerUserYearRecords(t *testing.T) {
 	}
 	assertRecord(records, "longest_segment:distance_meters", activityB, 800, "B shorter")
 }
+
+func TestListUserFactMetricHistoriesExcludesCurrentActivity(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+
+	if err := store.InitSchema(ctx); err != nil {
+		t.Fatalf("init schema: %v", err)
+	}
+
+	startA := time.Date(2026, time.January, 10, 8, 0, 0, 0, time.UTC)
+	startB := time.Date(2026, time.February, 10, 8, 0, 0, 0, time.UTC)
+	startOtherUser := time.Date(2026, time.March, 5, 8, 0, 0, 0, time.UTC)
+
+	activityA, err := store.InsertActivity(ctx, Activity{UserID: 1, Type: "Ride", Name: "A", StartTime: startA}, nil)
+	if err != nil {
+		t.Fatalf("insert activity A: %v", err)
+	}
+	activityB, err := store.InsertActivity(ctx, Activity{UserID: 1, Type: "Ride", Name: "B", StartTime: startB}, nil)
+	if err != nil {
+		t.Fatalf("insert activity B: %v", err)
+	}
+	activityOtherUser, err := store.InsertActivity(ctx, Activity{UserID: 2, Type: "Ride", Name: "Other", StartTime: startOtherUser}, nil)
+	if err != nil {
+		t.Fatalf("insert activity other user: %v", err)
+	}
+
+	if err := store.ReplaceActivityFactMetrics(ctx, Activity{ID: activityA, UserID: 1, StartTime: startA}, []ActivityFactMetric{
+		{FactID: "longest_segment", MetricID: "distance_meters", MetricValue: 42000, Summary: "A longest"},
+		{FactID: "route_highlights", MetricID: "poi:victory column", MetricValue: 1, Summary: "Victory Column"},
+	}); err != nil {
+		t.Fatalf("replace metrics A: %v", err)
+	}
+	if err := store.ReplaceActivityFactMetrics(ctx, Activity{ID: activityB, UserID: 1, StartTime: startB}, []ActivityFactMetric{
+		{FactID: "longest_segment", MetricID: "distance_meters", MetricValue: 51000, Summary: "B longest"},
+		{FactID: "route_highlights", MetricID: "poi:victory column", MetricValue: 1, Summary: "Victory Column"},
+		{FactID: "route_highlights", MetricID: "poi:memorial church", MetricValue: 1, Summary: "Memorial Church"},
+	}); err != nil {
+		t.Fatalf("replace metrics B: %v", err)
+	}
+	if err := store.ReplaceActivityFactMetrics(ctx, Activity{ID: activityOtherUser, UserID: 2, StartTime: startOtherUser}, []ActivityFactMetric{
+		{FactID: "longest_segment", MetricID: "distance_meters", MetricValue: 99999, Summary: "Other longest"},
+	}); err != nil {
+		t.Fatalf("replace metrics other user: %v", err)
+	}
+
+	histories, err := store.ListUserFactMetricHistories(ctx, 1, activityB, []ActivityFactMetric{
+		{FactID: "longest_segment", MetricID: "distance_meters"},
+		{FactID: "route_highlights", MetricID: "poi:victory column"},
+		{FactID: "route_highlights", MetricID: "poi:memorial church"},
+		{FactID: "route_highlights", MetricID: "poi:memorial church"},
+	})
+	if err != nil {
+		t.Fatalf("list metric histories: %v", err)
+	}
+
+	longest := histories["longest_segment:distance_meters"]
+	if longest.SeenCount != 1 {
+		t.Fatalf("expected 1 prior longest segment, got %+v", longest)
+	}
+	if longest.BestValue != 42000 {
+		t.Fatalf("expected longest best value 42000, got %+v", longest)
+	}
+
+	victory := histories["route_highlights:poi:victory column"]
+	if victory.SeenCount != 1 {
+		t.Fatalf("expected 1 prior victory column record, got %+v", victory)
+	}
+	if victory.BestValue != 1 {
+		t.Fatalf("expected victory column best value 1, got %+v", victory)
+	}
+
+	if _, ok := histories["route_highlights:poi:memorial church"]; ok {
+		t.Fatalf("expected no prior memorial church record, got %+v", histories["route_highlights:poi:memorial church"])
+	}
+}

@@ -111,6 +111,13 @@ type UserYearFactRecord struct {
 	UpdatedAt  time.Time
 }
 
+type UserFactMetricHistory struct {
+	FactID    string
+	MetricID  string
+	SeenCount int
+	BestValue float64
+}
+
 type ActivityWithStats struct {
 	Activity
 	StopCount             int
@@ -306,6 +313,8 @@ CREATE TABLE IF NOT EXISTS activity_fact_metrics (
 );
 CREATE INDEX IF NOT EXISTS idx_activity_fact_metrics_user_year
 	ON activity_fact_metrics (user_id, year, fact_id, metric_id, metric_value DESC, activity_id DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_fact_metrics_user_fact_metric
+	ON activity_fact_metrics (user_id, fact_id, metric_id, activity_id, metric_value DESC);
 CREATE TABLE IF NOT EXISTS activity_queue (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	activity_id INTEGER NOT NULL,
@@ -1568,6 +1577,84 @@ ORDER BY m.fact_id, m.metric_id
 		return nil, err
 	}
 	return records, nil
+}
+
+func (s *Store) ListUserFactMetricHistories(ctx context.Context, userID, excludeActivityID int64, metrics []ActivityFactMetric) (map[string]UserFactMetricHistory, error) {
+	if userID == 0 {
+		userID = 1
+	}
+
+	histories := make(map[string]UserFactMetricHistory)
+	if len(metrics) == 0 {
+		return histories, nil
+	}
+
+	type metricKey struct {
+		factID   string
+		metricID string
+	}
+
+	keys := make([]metricKey, 0, len(metrics))
+	seen := make(map[string]struct{}, len(metrics))
+	for _, metric := range metrics {
+		factID := strings.TrimSpace(metric.FactID)
+		if factID == "" {
+			return nil, errors.New("fact id required")
+		}
+		metricID := strings.TrimSpace(metric.MetricID)
+		if metricID == "" {
+			return nil, errors.New("metric id required")
+		}
+		key := factID + ":" + metricID
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		keys = append(keys, metricKey{factID: factID, metricID: metricID})
+	}
+	if len(keys) == 0 {
+		return histories, nil
+	}
+
+	query := strings.Builder{}
+	query.WriteString(`
+SELECT fact_id, metric_id, COUNT(*), MAX(metric_value)
+FROM activity_fact_metrics
+WHERE user_id = ?
+`)
+	args := make([]interface{}, 0, 2+(len(keys)*2))
+	args = append(args, userID)
+	if excludeActivityID != 0 {
+		query.WriteString("AND activity_id <> ?\n")
+		args = append(args, excludeActivityID)
+	}
+	query.WriteString("AND (")
+	for i, key := range keys {
+		if i > 0 {
+			query.WriteString(" OR ")
+		}
+		query.WriteString("(fact_id = ? AND metric_id = ?)")
+		args = append(args, key.factID, key.metricID)
+	}
+	query.WriteString(")\nGROUP BY fact_id, metric_id")
+
+	rows, err := s.db.QueryContext(ctx, query.String(), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var history UserFactMetricHistory
+		if err := rows.Scan(&history.FactID, &history.MetricID, &history.SeenCount, &history.BestValue); err != nil {
+			return nil, err
+		}
+		histories[history.FactID+":"+history.MetricID] = history
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return histories, nil
 }
 
 func (s *Store) ListActivityRoutePreviewPoints(ctx context.Context, activityIDs []int64, maxPoints int) (map[int64][]ActivityRoutePoint, error) {
