@@ -30,21 +30,36 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	trace := newRequestTrace("activities")
+	trace.AddField("user_id", userID)
+	defer trace.Log()
+
+	stepStart := time.Now()
 	activities, err := s.store.ListActivitiesWithStats(r.Context(), userID, 100)
+	trace.AddStep("list_activities", stepStart)
 	if err != nil {
+		trace.AddField("error", "list_activities")
 		http.Error(w, "failed to load activities", http.StatusInternalServerError)
 		return
 	}
+	trace.AddField("activities", len(activities))
+
 	var views []ActivityView
 	activityIDs := make([]int64, 0, len(activities))
 	for _, activity := range activities {
 		activityIDs = append(activityIDs, activity.ID)
 	}
+
+	stepStart = time.Now()
 	routePointsByActivity, err := s.store.ListActivityRoutePreviewPoints(r.Context(), activityIDs, 48)
+	trace.AddStep("list_route_previews", stepStart)
 	if err != nil {
 		log.Printf("route preview load failed: %v", err)
+		trace.AddField("route_previews_error", true)
 		routePointsByActivity = map[int64][]storage.ActivityRoutePoint{}
 	}
+
+	stepStart = time.Now()
 	for _, activity := range activities {
 		stravaDescription, detectedFactCount := splitStoredActivityDescription(activity.Description)
 		feedDescription := stravaDescription
@@ -96,10 +111,15 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 		}
 		views = append(views, view)
 	}
+	trace.AddStep("build_views", stepStart)
+
 	now := time.Now()
+	stepStart = time.Now()
 	years, err := s.store.ListActivityYears(r.Context(), userID)
+	trace.AddStep("list_activity_years", stepStart)
 	if err != nil {
 		log.Printf("contrib years load failed: %v", err)
+		trace.AddField("activity_years_error", true)
 	}
 	currentYear := now.Year()
 	seenYears := map[int]bool{currentYear: true}
@@ -111,9 +131,13 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var contribs []ContributionData
+	stepStart = time.Now()
 	for _, year := range orderedYears {
 		contribs = append(contribs, s.buildContributionDataForYear(r.Context(), userID, year, now))
 	}
+	trace.AddStep("build_contributions", stepStart)
+	trace.AddField("contribution_years", len(contribs))
+
 	data := ProfilePageData{
 		PageData: PageData{
 			Title:      "Activities",
@@ -126,9 +150,14 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 		Activities:    views,
 		Contributions: contribs,
 	}
+	stepStart = time.Now()
 	if err := s.templates["profile"].ExecuteTemplate(w, "base", data); err != nil {
+		trace.AddStep("render_template", stepStart)
+		trace.AddField("error", "render_template")
 		http.Error(w, "template render failed", http.StatusInternalServerError)
+		return
 	}
+	trace.AddStep("render_template", stepStart)
 }
 
 func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
@@ -154,26 +183,45 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	trace := newRequestTrace("activity_detail")
+	trace.AddField("user_id", userID)
+	trace.AddField("activity_id", activityID)
+	defer trace.Log()
+
+	stepStart := time.Now()
 	activity, err := s.store.GetActivityForUser(r.Context(), userID, activityID)
+	trace.AddStep("get_activity", stepStart)
 	if err != nil {
+		trace.AddField("error", "get_activity")
 		http.Error(w, "activity not found", http.StatusNotFound)
 		return
 	}
+
+	stepStart = time.Now()
 	points, err := s.store.LoadActivityPoints(r.Context(), activityID)
+	trace.AddStep("load_points", stepStart)
 	if err != nil {
+		trace.AddField("error", "load_points")
 		http.Error(w, "failed to load points", http.StatusInternalServerError)
 		return
 	}
+
+	stepStart = time.Now()
 	storedStops, err := s.store.LoadActivityStops(r.Context(), activityID)
+	trace.AddStep("load_stops", stepStart)
 	if err != nil {
+		trace.AddField("error", "load_stops")
 		http.Error(w, "failed to load stops", http.StatusInternalServerError)
 		return
 	}
+	trace.AddField("points", len(points))
+	trace.AddField("stops", len(storedStops))
 
 	stopViews := buildStopViews(storedStops)
 
 	detectedFacts := []ActivityMapFactView{}
 	detectedFactsPresent := false
+	stepStart = time.Now()
 	rawDetectedFactsJSON, _, err := s.store.GetActivityDetectedFacts(r.Context(), activityID)
 	if err == nil {
 		detectedFactsPresent = true
@@ -185,9 +233,14 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	} else if !errors.Is(err, sql.ErrNoRows) {
+		trace.AddStep("load_detected_facts", stepStart)
+		trace.AddField("error", "load_detected_facts")
 		http.Error(w, "failed to load detected facts", http.StatusInternalServerError)
 		return
 	}
+	trace.AddStep("load_detected_facts", stepStart)
+	trace.AddField("detected_facts_present", detectedFactsPresent)
+	trace.AddField("detected_facts", len(detectedFacts))
 
 	type mapPoint struct {
 		Lat float64 `json:"lat"`
@@ -198,6 +251,7 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 		routePoints = append(routePoints, mapPoint{Lat: p.Lat, Lon: p.Lon})
 	}
 
+	stepStart = time.Now()
 	pointsJSON, _ := json.Marshal(routePoints)
 	stopsJSON, _ := json.Marshal(stopViews)
 	detectedFactsJSON, _ := json.Marshal(detectedFacts)
@@ -216,18 +270,24 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	speedJSON, _ := json.Marshal(speeds)
+	trace.AddStep("marshal_payloads", stepStart)
 
 	statsSnapshot := stats.StopStats{}
 	statsPresent := false
 	recalculatedAt := ""
+	stepStart = time.Now()
 	statsSnapshot, err = s.store.GetActivityStats(r.Context(), activityID)
 	if err == nil {
 		statsPresent = true
 		recalculatedAt = formatTimestamp(statsSnapshot.UpdatedAt)
 	} else if !errors.Is(err, sql.ErrNoRows) {
+		trace.AddStep("load_stats", stepStart)
+		trace.AddField("error", "load_stats")
 		http.Error(w, "failed to load activity stats", http.StatusInternalServerError)
 		return
 	}
+	trace.AddStep("load_stats", stepStart)
+	trace.AddField("stats_present", statsPresent)
 
 	stopCount := len(stopViews)
 	stopTotalSeconds := totalStopSeconds(stopViews)
@@ -258,6 +318,7 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	enrichActivityView(&view, activity)
 
+	stepStart = time.Now()
 	dataItems := buildActivityDataItems(
 		activity.Description,
 		points,
@@ -270,6 +331,7 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 		s.mapAPI != nil,
 		s.overpass != nil,
 	)
+	trace.AddStep("build_data_items", stepStart)
 
 	footerText := "Last recalculation: "
 	if view.RecalculatedAt != "" {
@@ -304,9 +366,14 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 		HasSpeedSeries:    len(speeds) > 0,
 	}
 
+	stepStart = time.Now()
 	if err := s.templates["activity"].ExecuteTemplate(w, "base", data); err != nil {
+		trace.AddStep("render_template", stepStart)
+		trace.AddField("error", "render_template")
 		http.Error(w, "template render failed", http.StatusInternalServerError)
+		return
 	}
+	trace.AddStep("render_template", stepStart)
 }
 
 // Activity dispatches to either detail view or download based on path.

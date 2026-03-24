@@ -85,10 +85,11 @@ type HideRule struct {
 }
 
 type UserFactPreference struct {
-	UserID    int64
-	FactID    string
-	Enabled   bool
-	UpdatedAt time.Time
+	UserID       int64
+	FactID       string
+	Enabled      bool
+	PostToStrava bool
+	UpdatedAt    time.Time
 }
 
 type ActivityFactMetric struct {
@@ -230,6 +231,7 @@ func (s *Store) InitSchema(ctx context.Context) error {
 		`ALTER TABLE activity_stats ADD COLUMN effort_version INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE activity_stats ADD COLUMN road_crossing_count INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE activities ADD COLUMN photo_url TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE user_fact_preferences ADD COLUMN post_to_strava INTEGER NOT NULL DEFAULT 1`,
 	}
 	for _, m := range migrations {
 		_, _ = s.db.ExecContext(ctx, m) // ignore errors (column already exists)
@@ -354,6 +356,7 @@ CREATE TABLE IF NOT EXISTS user_fact_preferences (
 	user_id INTEGER NOT NULL,
 	fact_id TEXT NOT NULL,
 	enabled INTEGER NOT NULL,
+	post_to_strava INTEGER NOT NULL DEFAULT 1,
 	updated_at INTEGER NOT NULL,
 	PRIMARY KEY (user_id, fact_id)
 );
@@ -1105,7 +1108,7 @@ func (s *Store) ListUserFactPreferences(ctx context.Context, userID int64) ([]Us
 		userID = 1
 	}
 	rows, err := s.db.QueryContext(ctx, `
-SELECT user_id, fact_id, enabled, updated_at
+SELECT user_id, fact_id, enabled, post_to_strava, updated_at
 FROM user_fact_preferences
 WHERE user_id = ?
 ORDER BY fact_id
@@ -1119,11 +1122,13 @@ ORDER BY fact_id
 	for rows.Next() {
 		var pref UserFactPreference
 		var enabled int
+		var postToStrava int
 		var updatedAt int64
-		if err := rows.Scan(&pref.UserID, &pref.FactID, &enabled, &updatedAt); err != nil {
+		if err := rows.Scan(&pref.UserID, &pref.FactID, &enabled, &postToStrava, &updatedAt); err != nil {
 			return nil, err
 		}
 		pref.Enabled = enabled != 0
+		pref.PostToStrava = postToStrava != 0
 		pref.UpdatedAt = time.Unix(updatedAt, 0)
 		prefs = append(prefs, pref)
 	}
@@ -1157,8 +1162,8 @@ WHERE user_id = ?
 	}
 
 	stmt, err := tx.PrepareContext(ctx, `
-INSERT INTO user_fact_preferences (user_id, fact_id, enabled, updated_at)
-VALUES (?, ?, ?, ?)
+INSERT INTO user_fact_preferences (user_id, fact_id, enabled, post_to_strava, updated_at)
+VALUES (?, ?, ?, ?, ?)
 `)
 	if err != nil {
 		return err
@@ -1171,7 +1176,7 @@ VALUES (?, ?, ?, ?)
 		if factID == "" {
 			return errors.New("fact id required")
 		}
-		if _, err := stmt.ExecContext(ctx, userID, factID, boolToInt(pref.Enabled), now); err != nil {
+		if _, err := stmt.ExecContext(ctx, userID, factID, boolToInt(pref.Enabled), boolToInt(pref.PostToStrava), now); err != nil {
 			return err
 		}
 	}

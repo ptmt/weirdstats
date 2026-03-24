@@ -231,6 +231,11 @@ func TestBuildWeirdStatsLine(t *testing.T) {
 			want:  "2 stops (42s total)",
 		},
 		{
+			name:  "single stop uses singular",
+			stats: stats.StopStats{StopCount: 1, StopTotalSeconds: 12},
+			want:  "1 stop (12s total)",
+		},
+		{
 			name:  "lights only",
 			stats: stats.StopStats{TrafficLightStopCount: 1},
 			want:  "1 at lights",

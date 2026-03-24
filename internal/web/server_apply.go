@@ -431,7 +431,7 @@ func buildWeirdStatsLine(statsSnapshot stats.StopStats, rideFact rideSegmentFact
 		parts = append(parts, roadPart)
 	}
 	if statsSnapshot.StopCount > 0 {
-		part := fmt.Sprintf("%d stops", statsSnapshot.StopCount)
+		part := formatCountLabel(statsSnapshot.StopCount, "stop", "stops")
 		if statsSnapshot.StopTotalSeconds > 0 {
 			part += fmt.Sprintf(" (%s total)", formatDuration(statsSnapshot.StopTotalSeconds))
 		}

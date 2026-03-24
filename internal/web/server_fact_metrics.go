@@ -66,7 +66,7 @@ func buildActivityFactMetrics(stopViews []StopView, rideFact rideSegmentFact, ro
 }
 
 func stopSummaryFactSummary(stopViews []StopView) string {
-	summary := fmt.Sprintf("%d stops", len(stopViews))
+	summary := formatCountLabel(len(stopViews), "stop", "stops")
 	if total := totalStopSeconds(stopViews); total > 0 {
 		summary += " · " + formatDuration(total) + " total"
 	}
