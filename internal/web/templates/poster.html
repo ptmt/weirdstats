@@ -30,11 +30,23 @@
         color: var(--ink);
         font-family: "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
       }
+      body.poster-export {
+        min-height: 0;
+        width: 1170px;
+        height: 2532px;
+        overflow: hidden;
+      }
       .poster-page {
         display: grid;
         justify-items: center;
         gap: 16px;
         padding: 20px;
+      }
+      .poster-page--export {
+        display: block;
+        width: 1170px;
+        height: 2532px;
+        padding: 0;
       }
       .poster-toolbar {
         width: min(430px, 92vw);
@@ -46,6 +58,12 @@
         font-size: 12px;
         letter-spacing: 0.04em;
         text-transform: uppercase;
+      }
+      .poster-toolbar-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
       }
       .poster-toolbar a {
         color: var(--ink);
@@ -62,6 +80,14 @@
         box-shadow: var(--shadow);
         border: 1px solid rgba(255, 255, 255, 0.55);
         overflow: hidden;
+      }
+      .story-shot--export {
+        width: 430px;
+        border-radius: 0;
+        border: 0;
+        box-shadow: none;
+        transform: scale(2.7209302326);
+        transform-origin: top left;
       }
       .story-inner {
         display: grid;
@@ -272,13 +298,18 @@
       }
     </style>
   </head>
-  <body>
-    <div class="poster-page">
-      <div class="poster-toolbar">
-        <a href="/activity/{{.ActivityID}}">← Back to activity</a>
-        <span>Numbers on the map match the fact cards</span>
-      </div>
-      <article class="story-shot">
+  <body class="{{if .PNGExport}}poster-export{{end}}">
+    <div class="poster-page{{if .PNGExport}} poster-page--export{{end}}">
+      {{if not .PNGExport}}
+        <div class="poster-toolbar">
+          <div class="poster-toolbar-actions">
+            <a href="/activity/{{.ActivityID}}">← Back to activity</a>
+            <a href="/activity/{{.ActivityID}}/poster.png" download="weirdstats-activity-{{.ActivityID}}-poster.png">Download PNG</a>
+          </div>
+          <span>Numbers on the map match the fact cards</span>
+        </div>
+      {{end}}
+      <article class="story-shot{{if .PNGExport}} story-shot--export{{end}}">
         <div class="story-inner">
           <header class="story-head">
             <div class="story-brand">WEIRDSTATS SHARE CARD</div>
@@ -320,7 +351,7 @@
           <section class="story-facts">
             <div class="story-facts-head">
               <h2>Selected Facts</h2>
-              <span>Open on a phone and screenshot to share</span>
+              <span>{{if .PNGExport}}PNG export{{else}}Download PNG or screenshot to share{{end}}</span>
             </div>
             <div class="story-grid{{if eq (len .Facts) 1}} story-grid--single{{end}}">
               {{if .Facts}}

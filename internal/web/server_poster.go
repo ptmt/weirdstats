@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -8,6 +9,10 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -20,6 +25,26 @@ const (
 	posterMapHeight       = 1120.0
 	posterMapPadding      = 58.0
 	posterFactMarkerLimit = 6
+	posterExportWidth     = 1170
+	posterExportHeight    = 2532
+)
+
+var (
+	errPosterActivityNotFound   = errors.New("poster activity not found")
+	errPosterBrowserUnavailable = errors.New("poster browser unavailable")
+	posterPNGCapture            = capturePosterPNGWithHeadlessBrowser
+	posterBrowserCandidates     = []string{
+		"google-chrome",
+		"google-chrome-stable",
+		"chromium",
+		"chromium-browser",
+		"chrome",
+		"msedge",
+		"microsoft-edge",
+		"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+		"/Applications/Chromium.app/Contents/MacOS/Chromium",
+		"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+	}
 )
 
 type posterPoint struct {
@@ -54,6 +79,7 @@ type posterPageData struct {
 	RouteEndY    float64
 	HasRoute     bool
 	Facts        []posterFactView
+	PNGExport    bool
 }
 
 type posterProjection struct {
@@ -70,35 +96,106 @@ func (s *Server) ActivityPoster(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	idStr := strings.TrimPrefix(r.URL.Path, "/activity/")
-	idStr = strings.TrimSuffix(idStr, "/poster")
-	activityID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil || activityID == 0 {
+	activityID, err := posterActivityID(r.URL.Path, "/poster")
+	if err != nil {
 		http.Error(w, "invalid activity id", http.StatusBadRequest)
 		return
 	}
 
-	activity, err := s.store.GetActivityForUser(r.Context(), userID, activityID)
-	if err != nil {
+	data, err := s.posterPageData(r.Context(), userID, activityID, false)
+	if errors.Is(err, errPosterActivityNotFound) {
 		http.Error(w, "activity not found", http.StatusNotFound)
 		return
 	}
-
-	points, err := s.store.LoadActivityPoints(r.Context(), activityID)
 	if err != nil {
-		http.Error(w, "failed to load points", http.StatusInternalServerError)
-		return
-	}
-	storedStops, err := s.store.LoadActivityStops(r.Context(), activityID)
-	if err != nil {
-		http.Error(w, "failed to load stops", http.StatusInternalServerError)
+		http.Error(w, "failed to build poster", http.StatusInternalServerError)
 		return
 	}
 
-	detectedFacts, err := s.posterFacts(r.Context(), activityID, points, storedStops)
+	html, err := s.renderPosterHTML(data)
 	if err != nil {
-		http.Error(w, "failed to load detected facts", http.StatusInternalServerError)
+		http.Error(w, "template render failed", http.StatusInternalServerError)
 		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if _, err := w.Write(html); err != nil {
+		http.Error(w, "poster write failed", http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) ActivityPosterPNG(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.requireUserID(w, r)
+	if !ok {
+		return
+	}
+
+	activityID, err := posterActivityID(r.URL.Path, "/poster.png")
+	if err != nil {
+		http.Error(w, "invalid activity id", http.StatusBadRequest)
+		return
+	}
+
+	data, err := s.posterPageData(r.Context(), userID, activityID, true)
+	if errors.Is(err, errPosterActivityNotFound) {
+		http.Error(w, "activity not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, "failed to build poster", http.StatusInternalServerError)
+		return
+	}
+
+	html, err := s.renderPosterHTML(data)
+	if err != nil {
+		http.Error(w, "template render failed", http.StatusInternalServerError)
+		return
+	}
+
+	png, err := posterPNGCapture(r.Context(), html)
+	if errors.Is(err, errPosterBrowserUnavailable) {
+		http.Error(w, "png export requires Chrome or Chromium installed locally", http.StatusServiceUnavailable)
+		return
+	}
+	if err != nil {
+		http.Error(w, "png export failed", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", fmt.Sprintf("weirdstats-activity-%d-poster.png", activityID)))
+	if _, err := w.Write(png); err != nil {
+		http.Error(w, "png write failed", http.StatusInternalServerError)
+	}
+}
+
+func posterActivityID(path, suffix string) (int64, error) {
+	idStr := strings.TrimPrefix(path, "/activity/")
+	idStr = strings.TrimSuffix(idStr, suffix)
+	activityID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || activityID == 0 {
+		return 0, errors.New("invalid activity id")
+	}
+	return activityID, nil
+}
+
+func (s *Server) posterPageData(ctx context.Context, userID, activityID int64, pngExport bool) (posterPageData, error) {
+	activity, err := s.store.GetActivityForUser(ctx, userID, activityID)
+	if err != nil {
+		return posterPageData{}, errPosterActivityNotFound
+	}
+
+	points, err := s.store.LoadActivityPoints(ctx, activityID)
+	if err != nil {
+		return posterPageData{}, fmt.Errorf("load points: %w", err)
+	}
+	storedStops, err := s.store.LoadActivityStops(ctx, activityID)
+	if err != nil {
+		return posterPageData{}, fmt.Errorf("load stops: %w", err)
+	}
+
+	detectedFacts, err := s.posterFacts(ctx, activityID, points, storedStops)
+	if err != nil {
+		return posterPageData{}, fmt.Errorf("load detected facts: %w", err)
 	}
 
 	routePoints := posterRoutePoints(points)
@@ -115,7 +212,7 @@ func (s *Server) ActivityPoster(w http.ResponseWriter, r *http.Request) {
 		projectedFacts = buildPosterFactViews(detectedFacts, proj)
 	}
 
-	data := posterPageData{
+	return posterPageData{
 		Title:        activity.Name,
 		ActivityID:   activity.ID,
 		ActivityName: activity.Name,
@@ -130,12 +227,16 @@ func (s *Server) ActivityPoster(w http.ResponseWriter, r *http.Request) {
 		RouteEndY:    endY,
 		HasRoute:     hasRoute,
 		Facts:        projectedFacts,
-	}
+		PNGExport:    pngExport,
+	}, nil
+}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.templates["poster"].ExecuteTemplate(w, "poster", data); err != nil {
-		http.Error(w, "template render failed", http.StatusInternalServerError)
+func (s *Server) renderPosterHTML(data posterPageData) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := s.templates["poster"].ExecuteTemplate(&buf, "poster", data); err != nil {
+		return nil, err
 	}
+	return buf.Bytes(), nil
 }
 
 func (s *Server) posterFacts(ctx context.Context, activityID int64, points []gps.Point, storedStops []storage.ActivityStop) ([]ActivityMapFactView, error) {
@@ -336,4 +437,66 @@ func samplePosterFactPoints(points []ActivityFactPoint, max int) []ActivityFactP
 		}
 	}
 	return sampled
+}
+
+func capturePosterPNGWithHeadlessBrowser(ctx context.Context, html []byte) ([]byte, error) {
+	browserPath, err := findPosterBrowser()
+	if err != nil {
+		return nil, err
+	}
+
+	tempDir, err := os.MkdirTemp("", "weirdstats-poster-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(tempDir)
+
+	htmlPath := filepath.Join(tempDir, "poster.html")
+	if err := os.WriteFile(htmlPath, html, 0o600); err != nil {
+		return nil, err
+	}
+
+	targetURL := (&url.URL{Scheme: "file", Path: filepath.ToSlash(htmlPath)}).String()
+	cmd := exec.CommandContext(
+		ctx,
+		browserPath,
+		"--headless",
+		"--disable-gpu",
+		"--hide-scrollbars",
+		fmt.Sprintf("--window-size=%d,%d", posterExportWidth, posterExportHeight),
+		"--screenshot",
+		targetURL,
+	)
+	cmd.Dir = tempDir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		message := strings.TrimSpace(string(output))
+		if message == "" {
+			return nil, err
+		}
+		return nil, fmt.Errorf("%w: %s", err, message)
+	}
+
+	pngPath := filepath.Join(tempDir, "screenshot.png")
+	png, err := os.ReadFile(pngPath)
+	if err != nil {
+		return nil, err
+	}
+	return png, nil
+}
+
+func findPosterBrowser() (string, error) {
+	for _, candidate := range posterBrowserCandidates {
+		if strings.Contains(candidate, string(filepath.Separator)) {
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate, nil
+			}
+			continue
+		}
+		path, err := exec.LookPath(candidate)
+		if err == nil {
+			return path, nil
+		}
+	}
+	return "", errPosterBrowserUnavailable
 }
