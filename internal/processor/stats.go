@@ -15,6 +15,11 @@ type StopStatsProcessor struct {
 	MapAPI   maps.API
 	Overpass *maps.OverpassClient
 	Options  gps.StopOptions
+	Facts    ActivityFactPrecomputer
+}
+
+type ActivityFactPrecomputer interface {
+	PrecomputeActivityFacts(ctx context.Context, activity storage.Activity, statsSnapshot stats.StopStats, points []gps.Point, stops []storage.ActivityStop) error
 }
 
 func (p *StopStatsProcessor) Process(ctx context.Context, activityID int64) error {
@@ -95,5 +100,13 @@ func (p *StopStatsProcessor) Process(ctx context.Context, activityID int64) erro
 	if err := p.Store.UpsertActivityStats(ctx, activityID, stats); err != nil {
 		return err
 	}
-	return p.Store.ReplaceActivityStops(ctx, activityID, stopRows, updatedAt)
+	if err := p.Store.ReplaceActivityStops(ctx, activityID, stopRows, updatedAt); err != nil {
+		return err
+	}
+	if p.Facts != nil {
+		if err := p.Facts.PrecomputeActivityFacts(ctx, activity, stats, points, stopRows); err != nil {
+			return err
+		}
+	}
+	return nil
 }

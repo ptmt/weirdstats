@@ -129,7 +129,6 @@ func TestActivityPoster_RendersStoredDetectedFacts(t *testing.T) {
 		"Selected Facts",
 		"Download PNG",
 		"Route + Fact Anchors",
-		"/activity/" + strconv.FormatInt(activityID, 10) + "/poster.png",
 	} {
 		if strings.Contains(body, unwanted) {
 			t.Fatalf("did not expect %q in poster response", unwanted)

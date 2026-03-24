@@ -73,8 +73,8 @@
         padding: 14px;
         border-radius: 28px;
         border: 1px solid rgba(22, 11, 57, 0.12);
-        background: rgba(255, 255, 255, 0.54);
-        box-shadow: 0 18px 40px rgba(22, 11, 57, 0.12);
+        background: rgba(255, 255, 255, 0.42);
+        box-shadow: 0 14px 32px rgba(22, 11, 57, 0.08);
       }
       .poster-controls-grid {
         display: grid;
@@ -87,8 +87,8 @@
         gap: 6px;
         padding: 10px 12px;
         border-radius: 18px;
-        border: 1px solid rgba(22, 11, 57, 0.1);
-        background: rgba(255, 255, 255, 0.34);
+        border: 1px solid rgba(22, 11, 57, 0.08);
+        background: rgba(255, 255, 255, 0.2);
       }
       .poster-toggle {
         grid-template-columns: auto 1fr;
@@ -332,22 +332,11 @@
         border-radius: 24px;
         min-height: 0;
         background:
-          linear-gradient(180deg, rgba(255, 255, 255, 0.56), rgba(255, 255, 255, 0.18)),
-          radial-gradient(circle at top right, var(--fact-color, var(--hot)) 0, transparent 44%),
-          linear-gradient(135deg, rgba(117, 255, 87, 0.18), rgba(0, 216, 255, 0.16));
-        border: 1px solid rgba(22, 11, 57, 0.1);
-        box-shadow: 0 16px 30px rgba(22, 11, 57, 0.1);
-      }
-      .story-card::after {
-        content: "";
-        position: absolute;
-        right: 14px;
-        bottom: 14px;
-        width: 44px;
-        height: 44px;
-        border-radius: 14px;
-        border: 2px solid rgba(22, 11, 57, 0.08);
-        transform: rotate(12deg);
+          linear-gradient(180deg, rgba(255, 255, 255, 0.44), rgba(255, 255, 255, 0.2)),
+          radial-gradient(circle at top right, rgba(255, 255, 255, 0.04) 0, transparent 52%),
+          linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+        border: 1px solid rgba(22, 11, 57, 0.08);
+        box-shadow: 0 10px 18px rgba(22, 11, 57, 0.06);
       }
       .story-card-top {
         display: flex;

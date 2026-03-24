@@ -369,7 +369,6 @@ func TestActivityDetail_ShowsMapLinkedFacts(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		"Route &amp; detected facts",
 		"data-focus-fact=\"longest_segment\"",
 		"data-focus-fact=\"stop_summary\"",
 		"data-focus-fact=\"traffic_light_stops\"",

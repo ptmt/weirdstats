@@ -88,6 +88,14 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 	coffeeFact := coffeeStopFact{}
 	routeFact := routeHighlightFact{}
 	roadFact := roadCrossingFact{}
+	if coffeeFactEnabled {
+		storedCoffeeFact, err := s.loadStoredCoffeeStopFact(ctx, activityID)
+		if err != nil {
+			log.Printf("stored coffee stop load failed (ignoring cached coffee fact): %v", err)
+		} else {
+			coffeeFact = storedCoffeeFact
+		}
+	}
 	if roadCrossingFactEnabled {
 		stops, err := s.store.LoadActivityStops(ctx, activityID)
 		if err != nil {
@@ -115,10 +123,11 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 				speedFacts = filterSpeedMilestoneFactsBySettings(detectSpeedMilestoneFacts(activity.Type, points), factSettings)
 			}
 			if coffeeFactEnabled {
-				coffeeFact, err = detectCoffeeStopFact(ctx, activity.Type, points, s.overpass)
+				detectedCoffeeFact, err := detectCoffeeStopFact(ctx, activity.Type, points, s.overpass)
 				if err != nil {
 					log.Printf("local coffee stop detection failed (skipping coffee fact): %v", err)
-					coffeeFact = coffeeStopFact{}
+				} else if detectedCoffeeFact.Name != "" {
+					coffeeFact = detectedCoffeeFact
 				}
 			}
 		}
@@ -151,9 +160,11 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 						speedFacts = filterSpeedMilestoneFactsBySettings(detectSpeedMilestoneFacts(latest.Type, points), factSettings)
 					}
 					if coffeeFactEnabled {
-						coffeeFact, err = detectCoffeeStopFact(ctx, latest.Type, points, s.overpass)
+						detectedCoffeeFact, err := detectCoffeeStopFact(ctx, latest.Type, points, s.overpass)
 						if err != nil {
 							log.Printf("strava coffee stop detection failed (using cached coffee fact): %v", err)
+						} else if detectedCoffeeFact.Name != "" {
+							coffeeFact = detectedCoffeeFact
 						}
 					}
 				}
@@ -249,6 +260,40 @@ func buildStopViews(storedStops []storage.ActivityStop) []StopView {
 		})
 	}
 	return stopViews
+}
+
+func (s *Server) loadStoredCoffeeStopFact(ctx context.Context, activityID int64) (coffeeStopFact, error) {
+	rawDetectedFactsJSON, _, err := s.store.GetActivityDetectedFacts(ctx, activityID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return coffeeStopFact{}, nil
+		}
+		return coffeeStopFact{}, err
+	}
+	if strings.TrimSpace(rawDetectedFactsJSON) == "" {
+		return coffeeStopFact{}, nil
+	}
+
+	var detectedFacts []ActivityMapFactView
+	if err := json.Unmarshal([]byte(rawDetectedFactsJSON), &detectedFacts); err != nil {
+		return coffeeStopFact{}, err
+	}
+
+	fact, ok := detectedFactByID(detectedFacts, weirdStatsFactCoffeeStop)
+	if !ok {
+		return coffeeStopFact{}, nil
+	}
+
+	coffeeFact := coffeeStopFact{Name: strings.TrimSpace(fact.Summary)}
+	if coffeeFact.Name == "" {
+		return coffeeStopFact{}, nil
+	}
+	if len(fact.Points) > 0 {
+		coffeeFact.Lat = fact.Points[0].Lat
+		coffeeFact.Lon = fact.Points[0].Lon
+		coffeeFact.HasLocation = true
+	}
+	return coffeeFact, nil
 }
 
 func (s *Server) updateActivityDetectedFactsCache(

@@ -14,6 +14,7 @@ import (
 	"weirdstats/internal/gps"
 	"weirdstats/internal/maps"
 	"weirdstats/internal/storage"
+	"weirdstats/internal/web"
 )
 
 type stubMapAPI struct {
@@ -186,6 +187,111 @@ func TestStopStatsProcessor_ComputesRoadCrossings(t *testing.T) {
 	}
 	if stops[0].CrossingRoad != "Main Street" {
 		t.Fatalf("expected crossing road name to be stored, got %+v", stops[0])
+	}
+}
+
+func TestStopStatsProcessor_PrecomputesDetectedFacts(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "facts.db")
+	store, err := storage.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	if err := store.InitSchema(context.Background()); err != nil {
+		t.Fatalf("init schema: %v", err)
+	}
+
+	overpassServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"elements": []map[string]any{
+				{
+					"type":   "way",
+					"center": map[string]any{"lat": 52.52031, "lon": 13.40501},
+					"tags":   map[string]any{"amenity": "cafe", "name": "Bean Machine"},
+				},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer overpassServer.Close()
+
+	stopOpts := gps.StopOptions{SpeedThreshold: 0.5, MinDuration: 30 * time.Second}
+	webServer, err := web.NewServer(store, nil, nil, &maps.OverpassClient{
+		BaseURL:      overpassServer.URL,
+		HTTPClient:   overpassServer.Client(),
+		DisableCache: true,
+	}, stopOpts, web.StravaConfig{})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	start := time.Date(2026, time.March, 1, 8, 0, 0, 0, time.UTC)
+	points := []gps.Point{
+		{Lat: 52.5200, Lon: 13.4047, Time: start, Speed: 7},
+		{Lat: 52.5202, Lon: 13.4049, Time: start.Add(1 * time.Minute), Speed: 7},
+		{Lat: 52.5203, Lon: 13.4050, Time: start.Add(2 * time.Minute), Speed: 0},
+		{Lat: 52.52031, Lon: 13.40501, Time: start.Add(5 * time.Minute), Speed: 0},
+		{Lat: 52.52032, Lon: 13.40502, Time: start.Add(7 * time.Minute), Speed: 0},
+		{Lat: 52.5206, Lon: 13.4053, Time: start.Add(8 * time.Minute), Speed: 8},
+	}
+
+	activityID, err := store.InsertActivity(context.Background(), storage.Activity{
+		UserID:      1,
+		Type:        "Ride",
+		Name:        "Coffee Stop Test",
+		StartTime:   start,
+		Description: "test",
+		Distance:    1000,
+		MovingTime:  480,
+	}, points)
+	if err != nil {
+		t.Fatalf("insert activity: %v", err)
+	}
+
+	processor := &StopStatsProcessor{
+		Store:   store,
+		Options: stopOpts,
+		Facts:   webServer,
+	}
+
+	if err := processor.Process(context.Background(), activityID); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+
+	rawFacts, _, err := store.GetActivityDetectedFacts(context.Background(), activityID)
+	if err != nil {
+		t.Fatalf("get detected facts: %v", err)
+	}
+	var detectedFacts []web.ActivityMapFactView
+	if err := json.Unmarshal([]byte(rawFacts), &detectedFacts); err != nil {
+		t.Fatalf("unmarshal detected facts: %v", err)
+	}
+
+	foundCoffee := false
+	for _, fact := range detectedFacts {
+		if fact.ID == "coffee_stop" && fact.Summary == "Bean Machine" {
+			foundCoffee = true
+			break
+		}
+	}
+	if !foundCoffee {
+		t.Fatalf("expected precomputed coffee_stop fact, got %+v", detectedFacts)
+	}
+
+	metrics, err := store.ListActivityFactMetrics(context.Background(), activityID)
+	if err != nil {
+		t.Fatalf("list activity fact metrics: %v", err)
+	}
+	foundCoffeeMetric := false
+	for _, metric := range metrics {
+		if metric.FactID == "coffee_stop" && metric.Summary == "Bean Machine" {
+			foundCoffeeMetric = true
+			break
+		}
+	}
+	if !foundCoffeeMetric {
+		t.Fatalf("expected stored coffee_stop metric, got %+v", metrics)
 	}
 }
 
