@@ -427,9 +427,11 @@ func TestActivityDetail_ShowsStoredDataInventory(t *testing.T) {
 		"What Weirdstats has",
 		"Route points",
 		"Stop detection",
+		"Coffee stop",
 		"Stats snapshot",
 		"Map-linked facts",
 		"1 candidate low-speed window found; the longest lasted 45s",
+		"Overpass-backed detection is unavailable",
 		"0.5 m/s",
 		"1m 0s",
 	} {

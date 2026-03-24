@@ -51,6 +51,7 @@ func formatDistance(meters float64) string {
 
 func buildActivityDataItems(
 	description string,
+	activityType string,
 	points []gps.Point,
 	stops []storage.ActivityStop,
 	statsSnapshot stats.StopStats,
@@ -66,6 +67,7 @@ func buildActivityDataItems(
 		buildRoutePointsDataItem(points),
 		buildStopDetectionDataItem(points, stops, statsPresent, stopOpts),
 		buildStatsSnapshotDataItem(statsSnapshot, statsPresent),
+		buildCoffeeStopDataItem(activityType, detectedFacts, detectedFactsPresent, points, overpassAvailable),
 		buildDetectedFactsDataItem(detectedFacts, detectedFactsPresent, points, stops),
 		buildEnrichmentDataItem(mapAPIAvailable, overpassAvailable),
 	}
@@ -206,6 +208,79 @@ func buildDetectedFactsDataItem(detectedFacts []ActivityMapFactView, detectedFac
 	return item
 }
 
+func buildCoffeeStopDataItem(activityType string, detectedFacts []ActivityMapFactView, detectedFactsPresent bool, points []gps.Point, overpassAvailable bool) ActivityDataItem {
+	item := ActivityDataItem{
+		Label: "Coffee stop",
+	}
+
+	if fact, ok := detectedFactByID(detectedFacts, weirdStatsFactCoffeeStop); ok {
+		name := strings.TrimSpace(fact.Summary)
+		if name == "" {
+			name = "detected"
+		}
+		item.Value = name
+		item.Detail = fmt.Sprintf("Detected from a qualifying ride pause near a cafe or restaurant%s.", coffeeStopDetailSuffix(name))
+		item.Tone = "ok"
+		return item
+	}
+
+	if !isRideType(activityType) {
+		item.Value = "ride only"
+		item.Detail = "Coffee-stop detection only runs for ride-type activities."
+		item.Tone = "warning"
+		return item
+	}
+
+	if !overpassAvailable {
+		item.Value = "unavailable"
+		item.Detail = fmt.Sprintf("Overpass-backed detection is unavailable, so coffee stops cannot be checked. Coffee stops need Overpass plus a qualifying pause of at least %s at or below %.1f m/s.", formatDuration(int(coffeeStopMinDuration.Seconds())), coffeeStopSpeedThresholdMPS)
+		item.Tone = "warning"
+		return item
+	}
+
+	if !detectedFactsPresent {
+		item.Value = "pending"
+		item.Detail = "Coffee-stop detection has not been precomputed and stored yet."
+		item.Tone = "pending"
+		return item
+	}
+
+	switch len(points) {
+	case 0:
+		item.Value = "insufficient data"
+		item.Detail = "No route points are stored, so coffee-stop detection cannot evaluate pauses or nearby cafes."
+		item.Tone = "warning"
+		return item
+	case 1:
+		item.Value = "insufficient data"
+		item.Detail = "Only one route point is stored, so coffee-stop detection cannot evaluate pauses or nearby cafes."
+		item.Tone = "warning"
+		return item
+	}
+
+	qualifying := buildPauseWindows(points, coffeeStopSpeedThresholdMPS, coffeeStopMinDuration)
+	if len(qualifying) > 0 {
+		longest := longestPauseWindowDuration(qualifying)
+		item.Value = "not found"
+		item.Detail = fmt.Sprintf("%s found; the longest lasted %s, but no nearby cafe or restaurant matched within %dm.", formatCountLabel(len(qualifying), "qualifying pause", "qualifying pauses"), formatDuration(int(longest.Seconds())), coffeeStopSearchRadiusMeters)
+		item.Tone = "warning"
+		return item
+	}
+
+	summary := summarizeLowSpeedWindows(points, coffeeStopSpeedThresholdMPS)
+	if summary.WindowCount == 0 {
+		item.Value = "not found"
+		item.Detail = fmt.Sprintf("No low-speed pauses reached %.1f m/s or below, so coffee-stop detection had nothing to check.", coffeeStopSpeedThresholdMPS)
+		item.Tone = "warning"
+		return item
+	}
+
+	item.Value = "near miss"
+	item.Detail = fmt.Sprintf("%s found; the longest lasted %s. Coffee-stop detection needs at least %s at or below %.1f m/s.", formatCountLabel(summary.WindowCount, "low-speed pause", "low-speed pauses"), formatDuration(int(summary.LongestDuration.Seconds())), formatDuration(int(coffeeStopMinDuration.Seconds())), coffeeStopSpeedThresholdMPS)
+	item.Tone = "warning"
+	return item
+}
+
 func buildEnrichmentDataItem(mapAPIAvailable bool, overpassAvailable bool) ActivityDataItem {
 	item := ActivityDataItem{
 		Label: "Enrichment",
@@ -232,6 +307,32 @@ func buildEnrichmentDataItem(mapAPIAvailable bool, overpassAvailable bool) Activ
 	}
 
 	return item
+}
+
+func detectedFactByID(facts []ActivityMapFactView, factID string) (ActivityMapFactView, bool) {
+	for _, fact := range facts {
+		if fact.ID == factID {
+			return fact, true
+		}
+	}
+	return ActivityMapFactView{}, false
+}
+
+func longestPauseWindowDuration(windows []pauseWindow) time.Duration {
+	longest := time.Duration(0)
+	for _, window := range windows {
+		if window.duration > longest {
+			longest = window.duration
+		}
+	}
+	return longest
+}
+
+func coffeeStopDetailSuffix(name string) string {
+	if name == "" || strings.EqualFold(name, "detected") {
+		return ""
+	}
+	return fmt.Sprintf(": %s", name)
 }
 
 type lowSpeedWindowSummary struct {

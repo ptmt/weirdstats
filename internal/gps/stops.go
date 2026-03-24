@@ -18,8 +18,9 @@ type Stop struct {
 }
 
 type StopOptions struct {
-	SpeedThreshold float64
-	MinDuration    time.Duration
+	SpeedThreshold  float64
+	MinDuration     time.Duration
+	GlitchTolerance time.Duration // ignore brief speed spikes shorter than this during a stop
 }
 
 func DetectStops(points []Point, opts StopOptions) []Stop {
@@ -30,20 +31,30 @@ func DetectStops(points []Point, opts StopOptions) []Stop {
 	var stops []Stop
 	var inStop bool
 	var stopStart Point
-	var last Point
+	var lastSlow Point       // last point at or below threshold
+	var glitchStart time.Time // when the current above-threshold glitch began
 
 	for i, p := range points {
-		if i == 0 {
-			last = p
-		}
+		slow := p.Speed <= opts.SpeedThreshold
 
-		if p.Speed <= opts.SpeedThreshold {
+		if slow {
 			if !inStop {
 				inStop = true
 				stopStart = p
 			}
+			lastSlow = p
+			glitchStart = time.Time{}
 		} else if inStop {
-			duration := last.Time.Sub(stopStart.Time)
+			// Above threshold while in a stop — might be a glitch.
+			if glitchStart.IsZero() {
+				glitchStart = p.Time
+			}
+			if opts.GlitchTolerance > 0 && p.Time.Sub(glitchStart) < opts.GlitchTolerance {
+				// Still within tolerance, stay in stop.
+				continue
+			}
+			// Glitch exceeded tolerance (or no tolerance set): end the stop.
+			duration := lastSlow.Time.Sub(stopStart.Time)
 			if duration >= opts.MinDuration {
 				stops = append(stops, Stop{
 					Lat:       stopStart.Lat,
@@ -53,13 +64,14 @@ func DetectStops(points []Point, opts StopOptions) []Stop {
 				})
 			}
 			inStop = false
+			glitchStart = time.Time{}
 		}
 
-		last = p
+		_ = i
 	}
 
 	if inStop {
-		duration := last.Time.Sub(stopStart.Time)
+		duration := lastSlow.Time.Sub(stopStart.Time)
 		if duration >= opts.MinDuration {
 			stops = append(stops, Stop{
 				Lat:       stopStart.Lat,

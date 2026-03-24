@@ -128,6 +128,29 @@ out center;`, bbox.String(), bbox.String(), bbox.String(), bbox.String())
 	return poisFromOverpassElements(elements), nil
 }
 
+func (c *OverpassClient) FetchMapContext(ctx context.Context, bbox BBox) (MapContext, error) {
+	query := fmt.Sprintf(`[out:json][timeout:25];
+(
+  way["highway"~"^(motorway|trunk|primary|secondary|tertiary|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$"](%s);
+  way["waterway"~"^(river|canal|stream)$"](%s);
+  way["natural"="water"](%s);
+  way["waterway"="riverbank"](%s);
+  way["landuse"="reservoir"](%s);
+  nwr["natural"~"^(peak|volcano)$"]["name"](%s);
+);
+out geom center;`, bbox.String(), bbox.String(), bbox.String(), bbox.String(), bbox.String(), bbox.String())
+
+	ctx, cancel := context.WithTimeout(ctx, c.effectiveTimeout())
+	defer cancel()
+
+	elements, err := c.fetchWithCache(ctx, query)
+	if err != nil {
+		return MapContext{}, err
+	}
+
+	return mapContextFromOverpassElements(elements), nil
+}
+
 // FetchNearbyRoads returns roads within the given radius (meters) of a point.
 // Only fetches roads suitable for crossing detection (excludes footways, paths, etc.)
 func (c *OverpassClient) FetchNearbyRoads(ctx context.Context, lat, lon float64, radiusMeters int) ([]Road, error) {
@@ -359,6 +382,102 @@ func poisFromOverpassElements(elements []overpassElement) []POI {
 		})
 	}
 	return pois
+}
+
+func mapContextFromOverpassElements(elements []overpassElement) MapContext {
+	ctx := MapContext{
+		Roads:     make([]Road, 0),
+		Waterways: make([]PolylineFeature, 0),
+		Waters:    make([]PolygonFeature, 0),
+		Peaks:     make([]POI, 0),
+	}
+	for _, el := range elements {
+		switch {
+		case isMajorRoad(el.Tags) && len(el.Geometry) >= 2:
+			ctx.Roads = append(ctx.Roads, Road{
+				ID:       el.ID,
+				Name:     el.Tags["name"],
+				Highway:  el.Tags["highway"],
+				Geometry: latLonGeometry(el.Geometry),
+			})
+		case isWaterway(el.Tags) && len(el.Geometry) >= 2:
+			ctx.Waterways = append(ctx.Waterways, PolylineFeature{
+				Name:     el.Tags["name"],
+				Kind:     el.Tags["waterway"],
+				Geometry: latLonGeometry(el.Geometry),
+			})
+		case isWaterArea(el.Tags) && len(el.Geometry) >= 3:
+			ctx.Waters = append(ctx.Waters, PolygonFeature{
+				Name:     el.Tags["name"],
+				Kind:     waterAreaKind(el.Tags),
+				Geometry: latLonGeometry(el.Geometry),
+			})
+		case isPeak(el.Tags):
+			lat, lon := el.coordinates()
+			ctx.Peaks = append(ctx.Peaks, POI{
+				Feature: Feature{
+					Type: FeatureType(el.Tags["natural"]),
+					Name: el.Tags["name"],
+				},
+				Lat:  lat,
+				Lon:  lon,
+				Tags: el.Tags,
+			})
+		}
+	}
+	return ctx
+}
+
+func latLonGeometry(points []overpassLatLon) []LatLon {
+	geom := make([]LatLon, 0, len(points))
+	for _, pt := range points {
+		geom = append(geom, LatLon{Lat: pt.Lat, Lon: pt.Lon})
+	}
+	return geom
+}
+
+func isMajorRoad(tags map[string]string) bool {
+	switch tags["highway"] {
+	case "motorway", "trunk", "primary", "secondary", "tertiary", "motorway_link", "trunk_link", "primary_link", "secondary_link", "tertiary_link":
+		return true
+	default:
+		return false
+	}
+}
+
+func isWaterway(tags map[string]string) bool {
+	switch tags["waterway"] {
+	case "river", "canal", "stream":
+		return true
+	default:
+		return false
+	}
+}
+
+func isWaterArea(tags map[string]string) bool {
+	return tags["natural"] == "water" || tags["waterway"] == "riverbank" || tags["landuse"] == "reservoir"
+}
+
+func waterAreaKind(tags map[string]string) string {
+	if tags["natural"] == "water" {
+		return "water"
+	}
+	if tags["waterway"] == "riverbank" {
+		return "riverbank"
+	}
+	if tags["landuse"] == "reservoir" {
+		return "reservoir"
+	}
+	return ""
+}
+
+func isPeak(tags map[string]string) bool {
+	switch tags["natural"] {
+	case "peak", "volcano":
+		return strings.TrimSpace(tags["name"]) != ""
+	default:
+		return false
+	}
 }
 
 type overpassElement struct {

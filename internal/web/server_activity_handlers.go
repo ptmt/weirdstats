@@ -321,6 +321,7 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 	stepStart = time.Now()
 	dataItems := buildActivityDataItems(
 		activity.Description,
+		activity.Type,
 		points,
 		storedStops,
 		statsSnapshot,

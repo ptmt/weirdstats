@@ -203,6 +203,101 @@ func TestOverpassClient_FetchNearbyRoads(t *testing.T) {
 	}
 }
 
+func TestOverpassClient_FetchMapContext(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query().Get("data")
+		for _, want := range []string{
+			`["highway"~"^(motorway|trunk|primary|secondary|tertiary|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$"]`,
+			`["waterway"~"^(river|canal|stream)$"]`,
+			`["natural"="water"]`,
+			`["waterway"="riverbank"]`,
+			`["landuse"="reservoir"]`,
+			`["natural"~"^(peak|volcano)$"]["name"]`,
+		} {
+			if !strings.Contains(query, want) {
+				t.Fatalf("unexpected map context query, missing %q in %q", want, query)
+			}
+		}
+
+		resp := overpassResponse{
+			Elements: []overpassElement{
+				{
+					Type: "way",
+					ID:   1001,
+					Tags: map[string]string{"highway": "primary", "name": "A1"},
+					Geometry: []overpassLatLon{
+						{Lat: 40.0, Lon: -73.0},
+						{Lat: 40.002, Lon: -73.002},
+					},
+				},
+				{
+					Type: "way",
+					ID:   1002,
+					Tags: map[string]string{"waterway": "river", "name": "Blue River"},
+					Geometry: []overpassLatLon{
+						{Lat: 40.0, Lon: -73.01},
+						{Lat: 40.003, Lon: -73.011},
+					},
+				},
+				{
+					Type: "way",
+					ID:   1003,
+					Tags: map[string]string{"natural": "water", "name": "Silver Lake"},
+					Geometry: []overpassLatLon{
+						{Lat: 40.01, Lon: -73.01},
+						{Lat: 40.011, Lon: -73.012},
+						{Lat: 40.013, Lon: -73.011},
+					},
+				},
+				{
+					Type: "node",
+					ID:   1004,
+					Lat:  40.02,
+					Lon:  -73.02,
+					Tags: map[string]string{"natural": "peak", "name": "Mount Example"},
+				},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := &OverpassClient{
+		BaseURL:      server.URL,
+		HTTPClient:   server.Client(),
+		DisableCache: true,
+	}
+
+	ctx, err := client.FetchMapContext(context.Background(), BBox{South: 1, West: 1, North: 2, East: 2})
+	if err != nil {
+		t.Fatalf("FetchMapContext error: %v", err)
+	}
+	if len(ctx.Roads) != 1 {
+		t.Fatalf("expected 1 road, got %d", len(ctx.Roads))
+	}
+	if len(ctx.Waterways) != 1 {
+		t.Fatalf("expected 1 waterway, got %d", len(ctx.Waterways))
+	}
+	if len(ctx.Waters) != 1 {
+		t.Fatalf("expected 1 water area, got %d", len(ctx.Waters))
+	}
+	if len(ctx.Peaks) != 1 {
+		t.Fatalf("expected 1 peak, got %d", len(ctx.Peaks))
+	}
+	if ctx.Roads[0].Name != "A1" || ctx.Roads[0].Highway != "primary" {
+		t.Fatalf("unexpected roads: %+v", ctx.Roads)
+	}
+	if ctx.Waterways[0].Name != "Blue River" || ctx.Waterways[0].Kind != "river" {
+		t.Fatalf("unexpected waterways: %+v", ctx.Waterways)
+	}
+	if ctx.Waters[0].Name != "Silver Lake" || ctx.Waters[0].Kind != "water" {
+		t.Fatalf("unexpected waters: %+v", ctx.Waters)
+	}
+	if ctx.Peaks[0].Name != "Mount Example" || ctx.Peaks[0].Type != FeatureType("peak") {
+		t.Fatalf("unexpected peaks: %+v", ctx.Peaks)
+	}
+}
+
 func TestOverpassClient_RoundRobinMirrors(t *testing.T) {
 	var firstHits, secondHits int32
 	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

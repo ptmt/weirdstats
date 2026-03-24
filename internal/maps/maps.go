@@ -43,6 +43,25 @@ type LatLon struct {
 	Lon float64
 }
 
+type PolylineFeature struct {
+	Name     string
+	Kind     string
+	Geometry []LatLon
+}
+
+type PolygonFeature struct {
+	Name     string
+	Kind     string
+	Geometry []LatLon
+}
+
+type MapContext struct {
+	Roads     []Road
+	Waterways []PolylineFeature
+	Waters    []PolygonFeature
+	Peaks     []POI
+}
+
 type API interface {
 	NearbyFeatures(lat, lon float64) ([]Feature, error)
 }
