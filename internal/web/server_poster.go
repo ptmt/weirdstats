@@ -389,6 +389,7 @@ func (s *Server) posterFacts(ctx context.Context, activityID int64, points []gps
 		stopViews,
 		points,
 		rideSegmentFact{},
+		nil,
 		coffeeStopFact{},
 		routeHighlightFact{},
 		buildRoadCrossingFact(storedStops),

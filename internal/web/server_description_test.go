@@ -2,6 +2,7 @@ package web
 
 import (
 	"testing"
+	"time"
 
 	"weirdstats/internal/stats"
 	"weirdstats/internal/storage"
@@ -89,7 +90,7 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, changed := applyWeirdStatsDescription(tt.existing, tt.stats, tt.rideFact, tt.coffeeFact, tt.routeFact, tt.roadFact)
+			got, changed := applyWeirdStatsDescription(tt.existing, tt.stats, tt.rideFact, nil, tt.coffeeFact, tt.routeFact, tt.roadFact)
 			if got != tt.want {
 				t.Fatalf("unexpected description\nwant: %q\n got: %q", tt.want, got)
 			}
@@ -107,7 +108,7 @@ func TestApplyWeirdStatsDescription_WithRideFactOnly(t *testing.T) {
 		AvgSpeedMPS:    29.8 / 3.6,
 	}
 
-	got, changed := applyWeirdStatsDescription("", stats.StopStats{}, rideFact, coffeeStopFact{}, routeHighlightFact{}, roadCrossingFact{})
+	got, changed := applyWeirdStatsDescription("", stats.StopStats{}, rideFact, nil, coffeeStopFact{}, routeHighlightFact{}, roadCrossingFact{})
 	want := "Longest uninterrupted segment: 48.3km - 199w - 29.8kmh #weirdstats"
 	if got != want {
 		t.Fatalf("unexpected description\nwant: %q\n got: %q", want, got)
@@ -127,7 +128,7 @@ func TestApplyWeirdStatsDescription_ReplacesHashtagManagedLine(t *testing.T) {
 	existing := "Morning ride\n\n3 stops (1m 35s total) · 2 at lights #weirdstats"
 	want := "Morning ride\n\n2 stops (42s total) · 1 at lights #weirdstats"
 
-	got, changed := applyWeirdStatsDescription(existing, snapshot, rideSegmentFact{}, coffeeStopFact{}, routeHighlightFact{}, roadCrossingFact{})
+	got, changed := applyWeirdStatsDescription(existing, snapshot, rideSegmentFact{}, nil, coffeeStopFact{}, routeHighlightFact{}, roadCrossingFact{})
 	if got != want {
 		t.Fatalf("unexpected description\nwant: %q\n got: %q", want, got)
 	}
@@ -139,7 +140,7 @@ func TestApplyWeirdStatsDescription_ReplacesHashtagManagedLine(t *testing.T) {
 func TestApplyWeirdStatsDescription_RemovesManagedLineWhenNoFactsRemain(t *testing.T) {
 	existing := "Morning ride\n\n2 stops (42s total) · 1 at lights #weirdstats"
 
-	got, changed := applyWeirdStatsDescription(existing, stats.StopStats{}, rideSegmentFact{}, coffeeStopFact{}, routeHighlightFact{}, roadCrossingFact{})
+	got, changed := applyWeirdStatsDescription(existing, stats.StopStats{}, rideSegmentFact{}, nil, coffeeStopFact{}, routeHighlightFact{}, roadCrossingFact{})
 	if got != "Morning ride" {
 		t.Fatalf("unexpected description\nwant: %q\n got: %q", "Morning ride", got)
 	}
@@ -248,11 +249,26 @@ func TestBuildWeirdStatsLine(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := buildWeirdStatsLine(tt.stats, tt.rideFact, tt.coffeeFact, tt.routeFact, tt.roadFact)
+			got := buildWeirdStatsLine(tt.stats, tt.rideFact, nil, tt.coffeeFact, tt.routeFact, tt.roadFact)
 			if got != tt.want {
 				t.Fatalf("unexpected line\nwant: %q\n got: %q", tt.want, got)
 			}
 		})
+	}
+}
+
+func TestBuildWeirdStatsLine_WithSpeedFacts(t *testing.T) {
+	speedFacts := []speedMilestoneFact{{
+		FactID:   weirdStatsFactAcceleration040,
+		Label:    "0 to 40 km/h",
+		StartKPH: 0,
+		EndKPH:   40,
+		Duration: 4500 * time.Millisecond,
+	}}
+
+	got := buildWeirdStatsLine(stats.StopStats{}, rideSegmentFact{}, speedFacts, coffeeStopFact{}, routeHighlightFact{}, roadCrossingFact{})
+	if got != "0-40kmh in 4.5s" {
+		t.Fatalf("unexpected speed line: %q", got)
 	}
 }
 
@@ -503,6 +519,11 @@ func TestIsWeirdstatsManagedLine(t *testing.T) {
 		{
 			name: "new stats line",
 			line: "Longest uninterrupted segment: 48km - 200w - 30kmh · Detected Coffee Stop: Bean Machine · Route highlights: Victory Column · 2 road crossings: Unter den Linden, Friedrichstrasse · 2 stops (42s total) #weirdstats",
+			want: true,
+		},
+		{
+			name: "speed milestone line",
+			line: "0-40kmh in 4.5s #weirdstats",
 			want: true,
 		},
 		{

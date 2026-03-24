@@ -26,12 +26,13 @@ type scoredWeirdStatsFactCandidate struct {
 func buildPrioritizedWeirdStatsLine(
 	statsSnapshot stats.StopStats,
 	rideFact rideSegmentFact,
+	speedFacts []speedMilestoneFact,
 	coffeeFact coffeeStopFact,
 	routeFact routeHighlightFact,
 	roadFact roadCrossingFact,
 	histories map[string]storage.UserFactMetricHistory,
 ) string {
-	candidates := buildWeirdStatsFactCandidates(statsSnapshot, rideFact, coffeeFact, routeFact, roadFact)
+	candidates := buildWeirdStatsFactCandidates(statsSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact)
 	candidates = prioritizeStravaFactCandidates(candidates, histories, stravaPostedFactLimit)
 	if len(candidates) == 0 {
 		return ""
@@ -47,11 +48,12 @@ func buildPrioritizedWeirdStatsLine(
 func buildWeirdStatsFactCandidates(
 	statsSnapshot stats.StopStats,
 	rideFact rideSegmentFact,
+	speedFacts []speedMilestoneFact,
 	coffeeFact coffeeStopFact,
 	routeFact routeHighlightFact,
 	roadFact roadCrossingFact,
 ) []weirdStatsFactCandidate {
-	candidates := make([]weirdStatsFactCandidate, 0, 6)
+	candidates := make([]weirdStatsFactCandidate, 0, 10)
 
 	if part := buildRideSegmentPart(rideFact); part != "" {
 		candidates = append(candidates, weirdStatsFactCandidate{
@@ -63,12 +65,24 @@ func buildWeirdStatsFactCandidates(
 		})
 	}
 
+	for _, speedFact := range speedFacts {
+		if part := buildSpeedMilestonePart(speedFact); part != "" {
+			candidates = append(candidates, weirdStatsFactCandidate{
+				ID:           speedFact.FactID,
+				Part:         part,
+				BasePriority: speedMilestoneBasePriority(speedFact.FactID),
+				DefaultOrder: 1 + speedFact.DefaultOrder,
+				Metrics:      speedMilestoneFactMetrics([]speedMilestoneFact{speedFact}),
+			})
+		}
+	}
+
 	if part := buildCoffeeStopPart(coffeeFact); part != "" {
 		candidates = append(candidates, weirdStatsFactCandidate{
 			ID:           weirdStatsFactCoffeeStop,
 			Part:         part,
 			BasePriority: 540,
-			DefaultOrder: 1,
+			DefaultOrder: 5,
 			Metrics:      coffeeStopFactMetrics(coffeeFact),
 		})
 	}
@@ -78,7 +92,7 @@ func buildWeirdStatsFactCandidates(
 			ID:           weirdStatsFactRouteHighlights,
 			Part:         part,
 			BasePriority: 520,
-			DefaultOrder: 2,
+			DefaultOrder: 6,
 			Metrics:      routeHighlightFactMetrics(routeFact),
 		})
 	}
@@ -92,7 +106,7 @@ func buildWeirdStatsFactCandidates(
 			ID:           weirdStatsFactRoadCrossings,
 			Part:         part,
 			BasePriority: 400,
-			DefaultOrder: 3,
+			DefaultOrder: 7,
 			Metrics:      roadCrossingFactMetrics(statsSnapshot, roadFact),
 		})
 	}
@@ -102,7 +116,7 @@ func buildWeirdStatsFactCandidates(
 			ID:           weirdStatsFactStopSummary,
 			Part:         part,
 			BasePriority: 350,
-			DefaultOrder: 4,
+			DefaultOrder: 8,
 			Metrics:      stopSummaryFactMetrics(statsSnapshot),
 		})
 	}
@@ -112,7 +126,7 @@ func buildWeirdStatsFactCandidates(
 			ID:           weirdStatsFactTrafficLightStops,
 			Part:         part,
 			BasePriority: 330,
-			DefaultOrder: 5,
+			DefaultOrder: 9,
 			Metrics:      trafficLightStopFactMetrics(statsSnapshot),
 		})
 	}
@@ -182,7 +196,7 @@ func scoreWeirdStatsFactCandidate(candidate weirdStatsFactCandidate, histories m
 func scorePOINovelty(metrics []storage.ActivityFactMetric, histories map[string]storage.UserFactMetricHistory) int {
 	score := 0
 	for _, metric := range metrics {
-		if history, ok := histories[metric.FactID+":"+metric.MetricID]; ok && history.SeenCount > 0 {
+		if history, ok := histories[metric.FactID+":"+metric.MetricID]; ok && history.AllTimeSeenCount > 0 {
 			score -= 70
 			continue
 		}
@@ -209,15 +223,15 @@ func scoreNumericNovelty(metrics []storage.ActivityFactMetric, histories map[str
 
 func scoreNumericMetric(metric storage.ActivityFactMetric, histories map[string]storage.UserFactMetricHistory) int {
 	history, ok := histories[metric.FactID+":"+metric.MetricID]
-	if !ok || history.SeenCount == 0 {
-		return 180
+	if !ok || history.AllTimeSeenCount == 0 {
+		return 220
 	}
-	if history.BestValue <= 0 {
+	if history.AllTimeBestValue <= 0 {
 		return 0
 	}
-	if metric.MetricValue > history.BestValue {
-		improvementRatio := (metric.MetricValue - history.BestValue) / history.BestValue
-		score := 240
+	if metric.MetricValue > history.AllTimeBestValue {
+		improvementRatio := improvementRatio(metric.MetricValue, history.AllTimeBestValue)
+		score := 320
 		switch {
 		case improvementRatio >= 0.25:
 			score += 60
@@ -228,8 +242,21 @@ func scoreNumericMetric(metric storage.ActivityFactMetric, histories map[string]
 		}
 		return score
 	}
+	if history.YearSeenCount > 0 && metric.MetricValue > history.YearBestValue && history.YearBestValue > 0 {
+		improvementRatio := improvementRatio(metric.MetricValue, history.YearBestValue)
+		score := 210
+		switch {
+		case improvementRatio >= 0.25:
+			score += 40
+		case improvementRatio >= 0.10:
+			score += 20
+		case improvementRatio > 0:
+			score += 10
+		}
+		return score
+	}
 
-	ratio := metric.MetricValue / history.BestValue
+	ratio := metric.MetricValue / history.AllTimeBestValue
 	switch {
 	case ratio >= 0.98:
 		return 90
@@ -241,6 +268,28 @@ func scoreNumericMetric(metric storage.ActivityFactMetric, histories map[string]
 		return -55
 	default:
 		return -140
+	}
+}
+
+func improvementRatio(value, baseline float64) float64 {
+	if baseline <= 0 {
+		return 0
+	}
+	return (value - baseline) / baseline
+}
+
+func speedMilestoneBasePriority(factID string) int {
+	switch factID {
+	case weirdStatsFactAcceleration040:
+		return 490
+	case weirdStatsFactAcceleration030:
+		return 480
+	case weirdStatsFactDeceleration400:
+		return 470
+	case weirdStatsFactDeceleration300:
+		return 460
+	default:
+		return 450
 	}
 }
 

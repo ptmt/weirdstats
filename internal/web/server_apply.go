@@ -72,14 +72,19 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 		return err
 	}
 	rideFactEnabled := weirdStatsFactEnabled(factSettings, weirdStatsFactLongestSegment)
+	speedFactEnabled := weirdStatsFactEnabled(factSettings, weirdStatsFactAcceleration030) ||
+		weirdStatsFactEnabled(factSettings, weirdStatsFactAcceleration040) ||
+		weirdStatsFactEnabled(factSettings, weirdStatsFactDeceleration400) ||
+		weirdStatsFactEnabled(factSettings, weirdStatsFactDeceleration300)
 	coffeeFactEnabled := weirdStatsFactEnabled(factSettings, weirdStatsFactCoffeeStop)
 	routeFactEnabled := weirdStatsFactEnabled(factSettings, weirdStatsFactRouteHighlights)
 	roadCrossingFactEnabled := weirdStatsFactEnabled(factSettings, weirdStatsFactRoadCrossings)
-	needsRideFacts := rideFactEnabled || coffeeFactEnabled || routeFactEnabled
+	needsRideFacts := rideFactEnabled || speedFactEnabled || coffeeFactEnabled || routeFactEnabled
 
 	baseDescription := activity.Description
 	baseHideFromHome := activity.HideFromHome
 	rideFact := rideSegmentFact{}
+	speedFacts := []speedMilestoneFact{}
 	coffeeFact := coffeeStopFact{}
 	routeFact := routeHighlightFact{}
 	roadFact := roadCrossingFact{}
@@ -105,6 +110,9 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 			}
 			if rideFactEnabled {
 				rideFact = longestRideSegmentFact(activity.Type, points, s.stopOpts)
+			}
+			if speedFactEnabled {
+				speedFacts = filterSpeedMilestoneFactsBySettings(detectSpeedMilestoneFacts(activity.Type, points), factSettings)
 			}
 			if coffeeFactEnabled {
 				coffeeFact, err = detectCoffeeStopFact(ctx, activity.Type, points, s.overpass)
@@ -139,6 +147,9 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 					if rideFactEnabled {
 						rideFact = longestRideSegmentFact(latest.Type, points, s.stopOpts)
 					}
+					if speedFactEnabled {
+						speedFacts = filterSpeedMilestoneFactsBySettings(detectSpeedMilestoneFacts(latest.Type, points), factSettings)
+					}
 					if coffeeFactEnabled {
 						coffeeFact, err = detectCoffeeStopFact(ctx, latest.Type, points, s.overpass)
 						if err != nil {
@@ -148,6 +159,7 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 				}
 			} else {
 				rideFact = rideSegmentFact{}
+				speedFacts = nil
 				coffeeFact = coffeeStopFact{}
 				routeFact = routeHighlightFact{}
 			}
@@ -158,13 +170,13 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 
 	var descPtr *string
 	filteredSnapshot := filterWeirdStatsSnapshot(statsSnapshot, factSettings)
-	descriptionLine := buildWeirdStatsLine(filteredSnapshot, rideFact, coffeeFact, routeFact, roadFact)
-	if metrics := collectWeirdStatsCandidateMetrics(buildWeirdStatsFactCandidates(filteredSnapshot, rideFact, coffeeFact, routeFact, roadFact)); len(metrics) > 0 {
-		histories, err := s.store.ListUserFactMetricHistories(ctx, activity.UserID, activity.ID, metrics)
+	descriptionLine := buildWeirdStatsLine(filteredSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact)
+	if metrics := collectWeirdStatsCandidateMetrics(buildWeirdStatsFactCandidates(filteredSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact)); len(metrics) > 0 {
+		histories, err := s.store.ListUserFactMetricHistories(ctx, activity.UserID, activity.ID, activity.StartTime.UTC().Year(), metrics)
 		if err != nil {
 			log.Printf("activity fact history load failed for activity %d: %v", activity.ID, err)
 		} else {
-			descriptionLine = buildPrioritizedWeirdStatsLine(filteredSnapshot, rideFact, coffeeFact, routeFact, roadFact, histories)
+			descriptionLine = buildPrioritizedWeirdStatsLine(filteredSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact, histories)
 		}
 	}
 	newDesc, descChanged := applyWeirdStatsDescriptionLine(baseDescription, descriptionLine)
@@ -186,7 +198,7 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 		if err != nil {
 			log.Printf("activity stops load failed (skipping detected facts cache): %v", err)
 		} else {
-			s.updateActivityDetectedFactsCache(ctx, activity, statsSnapshot, cachePoints, cacheStops, rideFact, coffeeFact, routeFact, roadFact)
+			s.updateActivityDetectedFactsCache(ctx, activity, statsSnapshot, cachePoints, cacheStops, rideFact, speedFacts, coffeeFact, routeFact, roadFact)
 		}
 	}
 
@@ -246,6 +258,7 @@ func (s *Server) updateActivityDetectedFactsCache(
 	points []gps.Point,
 	storedStops []storage.ActivityStop,
 	rideFact rideSegmentFact,
+	speedFacts []speedMilestoneFact,
 	coffeeFact coffeeStopFact,
 	routeFact routeHighlightFact,
 	roadFact roadCrossingFact,
@@ -256,6 +269,9 @@ func (s *Server) updateActivityDetectedFactsCache(
 	if isRideType(activity.Type) && len(points) > 1 {
 		if rideFact.DistanceMeters <= 0 {
 			rideFact = longestRideSegmentFact(activity.Type, points, s.stopOpts)
+		}
+		if len(speedFacts) == 0 {
+			speedFacts = detectSpeedMilestoneFacts(activity.Type, points)
 		}
 		if s.overpass != nil {
 			if coffeeFact.Name == "" {
@@ -278,11 +294,11 @@ func (s *Server) updateActivityDetectedFactsCache(
 	}
 
 	stopViews := buildStopViews(storedStops)
-	if err := s.store.ReplaceActivityFactMetrics(ctx, activity, buildActivityFactMetrics(statsSnapshot, rideFact, coffeeFact, routeFact, roadFact)); err != nil {
+	if err := s.store.ReplaceActivityFactMetrics(ctx, activity, buildActivityFactMetrics(statsSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact)); err != nil {
 		log.Printf("activity fact metrics store failed for activity %d: %v", activity.ID, err)
 	}
 
-	detectedFacts := buildActivityMapFacts(stopViews, points, rideFact, coffeeFact, routeFact, roadFact)
+	detectedFacts := buildActivityMapFacts(stopViews, points, rideFact, speedFacts, coffeeFact, routeFact, roadFact)
 	payload, err := json.Marshal(detectedFacts)
 	if err != nil {
 		log.Printf("detected facts cache marshal failed for activity %d: %v", activity.ID, err)
@@ -385,8 +401,8 @@ func stopStatsFromStops(stops []storage.ActivityStop) stats.StopStats {
 const weirdStatsPrefix = "Weirdstats:"
 const weirdstatsTag = "#weirdstats"
 
-func applyWeirdStatsDescription(existing string, statsSnapshot stats.StopStats, rideFact rideSegmentFact, coffeeFact coffeeStopFact, routeFact routeHighlightFact, roadFact roadCrossingFact) (string, bool) {
-	line := buildWeirdStatsLine(statsSnapshot, rideFact, coffeeFact, routeFact, roadFact)
+func applyWeirdStatsDescription(existing string, statsSnapshot stats.StopStats, rideFact rideSegmentFact, speedFacts []speedMilestoneFact, coffeeFact coffeeStopFact, routeFact routeHighlightFact, roadFact roadCrossingFact) (string, bool) {
+	line := buildWeirdStatsLine(statsSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact)
 	return applyWeirdStatsDescriptionLine(existing, line)
 }
 
@@ -420,8 +436,8 @@ func applyWeirdStatsDescriptionLine(existing, line string) (string, bool) {
 	return updated, updated != existing
 }
 
-func buildWeirdStatsLine(statsSnapshot stats.StopStats, rideFact rideSegmentFact, coffeeFact coffeeStopFact, routeFact routeHighlightFact, roadFact roadCrossingFact) string {
-	return buildPrioritizedWeirdStatsLine(statsSnapshot, rideFact, coffeeFact, routeFact, roadFact, nil)
+func buildWeirdStatsLine(statsSnapshot stats.StopStats, rideFact rideSegmentFact, speedFacts []speedMilestoneFact, coffeeFact coffeeStopFact, routeFact routeHighlightFact, roadFact roadCrossingFact) string {
+	return buildPrioritizedWeirdStatsLine(statsSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact, nil)
 }
 
 func buildRideSegmentPart(fact rideSegmentFact) string {
@@ -593,6 +609,10 @@ func isWeirdstatsManagedLine(line string) bool {
 	return strings.Contains(trimmed, "stops") ||
 		strings.Contains(trimmed, "at lights") ||
 		strings.Contains(trimmed, "Longest uninterrupted segment:") ||
+		strings.Contains(trimmed, "0-30kmh in ") ||
+		strings.Contains(trimmed, "0-40kmh in ") ||
+		strings.Contains(trimmed, "40-0kmh in ") ||
+		strings.Contains(trimmed, "30-0kmh in ") ||
 		strings.Contains(trimmed, "Detected Coffee Stop:") ||
 		strings.Contains(trimmed, "Route highlights:") ||
 		strings.Contains(trimmed, "Road crossing:") ||

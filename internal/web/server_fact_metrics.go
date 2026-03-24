@@ -13,18 +13,21 @@ const (
 	factMetricStopCount      = "stop_count"
 	factMetricStopTotal      = "stop_total_seconds"
 	factMetricCount          = "count"
+	factMetricInverseSeconds = "inverse_seconds"
 	factMetricPOIPrefix      = "poi:"
 )
 
 func buildActivityFactMetrics(
 	statsSnapshot stats.StopStats,
 	rideFact rideSegmentFact,
+	speedFacts []speedMilestoneFact,
 	coffeeFact coffeeStopFact,
 	routeFact routeHighlightFact,
 	roadFact roadCrossingFact,
 ) []storage.ActivityFactMetric {
-	metrics := make([]storage.ActivityFactMetric, 0, 8)
+	metrics := make([]storage.ActivityFactMetric, 0, 12)
 	metrics = append(metrics, rideSegmentFactMetrics(rideFact)...)
+	metrics = append(metrics, speedMilestoneFactMetrics(speedFacts)...)
 	metrics = append(metrics, coffeeStopFactMetrics(coffeeFact)...)
 	metrics = append(metrics, routeHighlightFactMetrics(routeFact)...)
 	metrics = append(metrics, roadCrossingFactMetrics(statsSnapshot, roadFact)...)
@@ -43,6 +46,30 @@ func rideSegmentFactMetrics(rideFact rideSegmentFact) []storage.ActivityFactMetr
 		}}
 	}
 	return nil
+}
+
+func speedMilestoneFactMetrics(facts []speedMilestoneFact) []storage.ActivityFactMetric {
+	if len(facts) == 0 {
+		return nil
+	}
+
+	metrics := make([]storage.ActivityFactMetric, 0, len(facts))
+	for _, fact := range facts {
+		if fact.Duration <= 0 {
+			continue
+		}
+		seconds := fact.Duration.Seconds()
+		if seconds <= 0 {
+			continue
+		}
+		metrics = append(metrics, storage.ActivityFactMetric{
+			FactID:      fact.FactID,
+			MetricID:    factMetricInverseSeconds,
+			MetricValue: 1 / seconds,
+			Summary:     speedMilestoneSummary(fact),
+		})
+	}
+	return metrics
 }
 
 func coffeeStopFactMetrics(fact coffeeStopFact) []storage.ActivityFactMetric {

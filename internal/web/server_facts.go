@@ -745,8 +745,16 @@ func formatCompactNumber(value float64, precision int) string {
 	return text
 }
 
-func buildActivityMapFacts(stopViews []StopView, points []gps.Point, rideFact rideSegmentFact, coffeeFact coffeeStopFact, routeFact routeHighlightFact, roadFact roadCrossingFact) []ActivityMapFactView {
-	facts := make([]ActivityMapFactView, 0, 6)
+func buildActivityMapFacts(
+	stopViews []StopView,
+	points []gps.Point,
+	rideFact rideSegmentFact,
+	speedFacts []speedMilestoneFact,
+	coffeeFact coffeeStopFact,
+	routeFact routeHighlightFact,
+	roadFact roadCrossingFact,
+) []ActivityMapFactView {
+	facts := make([]ActivityMapFactView, 0, 10)
 
 	if summary := trimFactPrefix(buildRideSegmentPart(rideFact), "Longest uninterrupted segment: "); summary != "" {
 		fact := ActivityMapFactView{
@@ -762,6 +770,23 @@ func buildActivityMapFacts(stopViews []StopView, points []gps.Point, rideFact ri
 			Path: rideSegmentPathPoints(points, rideFact),
 		}
 		facts = append(facts, fact)
+	}
+
+	for _, speedFact := range speedFacts {
+		if summary := speedMilestoneSummary(speedFact); summary != "" {
+			facts = append(facts, ActivityMapFactView{
+				ID:      speedFact.FactID,
+				Kind:    "segment",
+				Title:   speedFact.Label,
+				Summary: summary,
+				Color:   speedFact.Color,
+				Points: []ActivityFactPoint{
+					{Lat: speedFact.StartLat, Lon: speedFact.StartLon, Label: "Start"},
+					{Lat: speedFact.EndLat, Lon: speedFact.EndLon, Label: "Finish"},
+				},
+				Path: speedMilestonePathPoints(points, speedFact),
+			})
+		}
 	}
 
 	if summary := trimFactPrefix(buildCoffeeStopPart(coffeeFact), "Detected Coffee Stop: "); summary != "" && coffeeFact.HasLocation {
@@ -835,11 +860,15 @@ func trimFactPrefix(part, prefix string) string {
 }
 
 func rideSegmentPathPoints(points []gps.Point, fact rideSegmentFact) []routePreviewPoint {
-	if fact.StartIndex < 0 || fact.EndIndex >= len(points) || fact.StartIndex >= fact.EndIndex {
+	return pathPointsBetweenIndices(points, fact.StartIndex, fact.EndIndex)
+}
+
+func pathPointsBetweenIndices(points []gps.Point, startIndex, endIndex int) []routePreviewPoint {
+	if startIndex < 0 || endIndex >= len(points) || startIndex >= endIndex {
 		return nil
 	}
-	path := make([]routePreviewPoint, 0, fact.EndIndex-fact.StartIndex+1)
-	for _, point := range points[fact.StartIndex : fact.EndIndex+1] {
+	path := make([]routePreviewPoint, 0, endIndex-startIndex+1)
+	for _, point := range points[startIndex : endIndex+1] {
 		path = append(path, routePreviewPoint{Lat: point.Lat, Lon: point.Lon})
 	}
 	return path

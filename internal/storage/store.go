@@ -112,10 +112,12 @@ type UserYearFactRecord struct {
 }
 
 type UserFactMetricHistory struct {
-	FactID    string
-	MetricID  string
-	SeenCount int
-	BestValue float64
+	FactID           string
+	MetricID         string
+	AllTimeSeenCount int
+	AllTimeBestValue float64
+	YearSeenCount    int
+	YearBestValue    float64
 }
 
 type ActivityWithStats struct {
@@ -1579,7 +1581,7 @@ ORDER BY m.fact_id, m.metric_id
 	return records, nil
 }
 
-func (s *Store) ListUserFactMetricHistories(ctx context.Context, userID, excludeActivityID int64, metrics []ActivityFactMetric) (map[string]UserFactMetricHistory, error) {
+func (s *Store) ListUserFactMetricHistories(ctx context.Context, userID, excludeActivityID int64, year int, metrics []ActivityFactMetric) (map[string]UserFactMetricHistory, error) {
 	if userID == 0 {
 		userID = 1
 	}
@@ -1618,12 +1620,18 @@ func (s *Store) ListUserFactMetricHistories(ctx context.Context, userID, exclude
 
 	query := strings.Builder{}
 	query.WriteString(`
-SELECT fact_id, metric_id, COUNT(*), MAX(metric_value)
+SELECT
+	fact_id,
+	metric_id,
+	COUNT(*),
+	MAX(metric_value),
+	SUM(CASE WHEN year = ? THEN 1 ELSE 0 END),
+	MAX(CASE WHEN year = ? THEN metric_value ELSE NULL END)
 FROM activity_fact_metrics
 WHERE user_id = ?
 `)
-	args := make([]interface{}, 0, 2+(len(keys)*2))
-	args = append(args, userID)
+	args := make([]interface{}, 0, 4+(len(keys)*2))
+	args = append(args, year, year, userID)
 	if excludeActivityID != 0 {
 		query.WriteString("AND activity_id <> ?\n")
 		args = append(args, excludeActivityID)
@@ -1646,8 +1654,19 @@ WHERE user_id = ?
 
 	for rows.Next() {
 		var history UserFactMetricHistory
-		if err := rows.Scan(&history.FactID, &history.MetricID, &history.SeenCount, &history.BestValue); err != nil {
+		var yearBest sql.NullFloat64
+		if err := rows.Scan(
+			&history.FactID,
+			&history.MetricID,
+			&history.AllTimeSeenCount,
+			&history.AllTimeBestValue,
+			&history.YearSeenCount,
+			&yearBest,
+		); err != nil {
 			return nil, err
+		}
+		if yearBest.Valid {
+			history.YearBestValue = yearBest.Float64
 		}
 		histories[history.FactID+":"+history.MetricID] = history
 	}

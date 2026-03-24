@@ -14,6 +14,10 @@ const (
 	weirdStatsFactCoffeeStop        = "coffee_stop"
 	weirdStatsFactRouteHighlights   = "route_highlights"
 	weirdStatsFactRoadCrossings     = "road_crossings"
+	weirdStatsFactAcceleration030   = "acceleration_0_30"
+	weirdStatsFactAcceleration040   = "acceleration_0_40"
+	weirdStatsFactDeceleration400   = "deceleration_40_0"
+	weirdStatsFactDeceleration300   = "deceleration_30_0"
 )
 
 type SettingsFact struct {
@@ -71,6 +75,34 @@ var weirdStatsFactDefinitions = []weirdStatsFactDefinition{
 		Label:          "Road crossings",
 		Description:    "Write detected road crossings after stops, including road names when available.",
 		DefaultEnabled: true,
+	},
+	{
+		ID:             weirdStatsFactAcceleration030,
+		Label:          "0 to 30 km/h",
+		Description:    "Write the fastest detected acceleration from standstill to 30 km/h.",
+		DefaultEnabled: true,
+		RideOnly:       true,
+	},
+	{
+		ID:             weirdStatsFactAcceleration040,
+		Label:          "0 to 40 km/h",
+		Description:    "Write the fastest detected acceleration from standstill to 40 km/h.",
+		DefaultEnabled: true,
+		RideOnly:       true,
+	},
+	{
+		ID:             weirdStatsFactDeceleration400,
+		Label:          "40 to 0 km/h",
+		Description:    "Write the fastest detected deceleration from 40 km/h to standstill.",
+		DefaultEnabled: true,
+		RideOnly:       true,
+	},
+	{
+		ID:             weirdStatsFactDeceleration300,
+		Label:          "30 to 0 km/h",
+		Description:    "Write the fastest detected deceleration from 30 km/h to standstill.",
+		DefaultEnabled: true,
+		RideOnly:       true,
 	},
 }
 

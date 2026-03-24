@@ -59,7 +59,19 @@ func TestSettings_ShowsFactPreferences(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 	body := rec.Body.String()
-	for _, text := range []string{"Weirdstats facts", "Stop summary", "Traffic-light stops", "Longest uninterrupted segment", "Coffee stop", "Route highlights", "Road crossings"} {
+	for _, text := range []string{
+		"Weirdstats facts",
+		"Stop summary",
+		"Traffic-light stops",
+		"Longest uninterrupted segment",
+		"Coffee stop",
+		"Route highlights",
+		"Road crossings",
+		"0 to 30 km/h",
+		"0 to 40 km/h",
+		"40 to 0 km/h",
+		"30 to 0 km/h",
+	} {
 		if !strings.Contains(body, text) {
 			t.Fatalf("expected %q in settings page", text)
 		}

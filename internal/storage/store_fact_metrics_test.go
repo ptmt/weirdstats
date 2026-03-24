@@ -172,7 +172,7 @@ func TestListUserFactMetricHistoriesExcludesCurrentActivity(t *testing.T) {
 		t.Fatalf("replace metrics other user: %v", err)
 	}
 
-	histories, err := store.ListUserFactMetricHistories(ctx, 1, activityB, []ActivityFactMetric{
+	histories, err := store.ListUserFactMetricHistories(ctx, 1, activityB, 2026, []ActivityFactMetric{
 		{FactID: "longest_segment", MetricID: "distance_meters"},
 		{FactID: "route_highlights", MetricID: "poi:victory column"},
 		{FactID: "route_highlights", MetricID: "poi:memorial church"},
@@ -183,19 +183,25 @@ func TestListUserFactMetricHistoriesExcludesCurrentActivity(t *testing.T) {
 	}
 
 	longest := histories["longest_segment:distance_meters"]
-	if longest.SeenCount != 1 {
+	if longest.AllTimeSeenCount != 1 {
 		t.Fatalf("expected 1 prior longest segment, got %+v", longest)
 	}
-	if longest.BestValue != 42000 {
+	if longest.AllTimeBestValue != 42000 {
 		t.Fatalf("expected longest best value 42000, got %+v", longest)
+	}
+	if longest.YearSeenCount != 1 || longest.YearBestValue != 42000 {
+		t.Fatalf("expected 2026 longest best value 42000, got %+v", longest)
 	}
 
 	victory := histories["route_highlights:poi:victory column"]
-	if victory.SeenCount != 1 {
+	if victory.AllTimeSeenCount != 1 {
 		t.Fatalf("expected 1 prior victory column record, got %+v", victory)
 	}
-	if victory.BestValue != 1 {
+	if victory.AllTimeBestValue != 1 {
 		t.Fatalf("expected victory column best value 1, got %+v", victory)
+	}
+	if victory.YearSeenCount != 1 || victory.YearBestValue != 1 {
+		t.Fatalf("expected 2026 victory column best value 1, got %+v", victory)
 	}
 
 	if _, ok := histories["route_highlights:poi:memorial church"]; ok {

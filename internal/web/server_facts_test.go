@@ -443,7 +443,7 @@ func TestBuildActivityMapFacts(t *testing.T) {
 		},
 	}
 
-	got := buildActivityMapFacts(stopViews, points, rideFact, coffeeFact, routeFact, roadFact)
+	got := buildActivityMapFacts(stopViews, points, rideFact, nil, coffeeFact, routeFact, roadFact)
 	if len(got) != 6 {
 		t.Fatalf("expected 6 map facts, got %+v", got)
 	}

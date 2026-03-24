@@ -3,6 +3,7 @@ package web
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"weirdstats/internal/stats"
 	"weirdstats/internal/storage"
@@ -26,50 +27,64 @@ func TestBuildPrioritizedWeirdStatsLineUsesHistoryToSortFacts(t *testing.T) {
 
 	histories := map[string]storage.UserFactMetricHistory{
 		weirdStatsFactLongestSegment + ":" + factMetricDistanceMeters: {
-			FactID:    weirdStatsFactLongestSegment,
-			MetricID:  factMetricDistanceMeters,
-			SeenCount: 6,
-			BestValue: 60000,
+			FactID:           weirdStatsFactLongestSegment,
+			MetricID:         factMetricDistanceMeters,
+			AllTimeSeenCount: 6,
+			AllTimeBestValue: 60000,
+			YearSeenCount:    6,
+			YearBestValue:    60000,
 		},
 		weirdStatsFactCoffeeStop + ":" + factMetricPOIPrefix + "bean machine": {
-			FactID:    weirdStatsFactCoffeeStop,
-			MetricID:  factMetricPOIPrefix + "bean machine",
-			SeenCount: 2,
-			BestValue: 1,
+			FactID:           weirdStatsFactCoffeeStop,
+			MetricID:         factMetricPOIPrefix + "bean machine",
+			AllTimeSeenCount: 2,
+			AllTimeBestValue: 1,
+			YearSeenCount:    2,
+			YearBestValue:    1,
 		},
 		weirdStatsFactRouteHighlights + ":" + factMetricPOIPrefix + "victory column": {
-			FactID:    weirdStatsFactRouteHighlights,
-			MetricID:  factMetricPOIPrefix + "victory column",
-			SeenCount: 3,
-			BestValue: 1,
+			FactID:           weirdStatsFactRouteHighlights,
+			MetricID:         factMetricPOIPrefix + "victory column",
+			AllTimeSeenCount: 3,
+			AllTimeBestValue: 1,
+			YearSeenCount:    3,
+			YearBestValue:    1,
 		},
 		weirdStatsFactRoadCrossings + ":" + factMetricCount: {
-			FactID:    weirdStatsFactRoadCrossings,
-			MetricID:  factMetricCount,
-			SeenCount: 4,
-			BestValue: 1,
+			FactID:           weirdStatsFactRoadCrossings,
+			MetricID:         factMetricCount,
+			AllTimeSeenCount: 4,
+			AllTimeBestValue: 1,
+			YearSeenCount:    4,
+			YearBestValue:    1,
 		},
 		weirdStatsFactStopSummary + ":" + factMetricStopCount: {
-			FactID:    weirdStatsFactStopSummary,
-			MetricID:  factMetricStopCount,
-			SeenCount: 5,
-			BestValue: 9,
+			FactID:           weirdStatsFactStopSummary,
+			MetricID:         factMetricStopCount,
+			AllTimeSeenCount: 5,
+			AllTimeBestValue: 9,
+			YearSeenCount:    5,
+			YearBestValue:    9,
 		},
 		weirdStatsFactStopSummary + ":" + factMetricStopTotal: {
-			FactID:    weirdStatsFactStopSummary,
-			MetricID:  factMetricStopTotal,
-			SeenCount: 5,
-			BestValue: 900,
+			FactID:           weirdStatsFactStopSummary,
+			MetricID:         factMetricStopTotal,
+			AllTimeSeenCount: 5,
+			AllTimeBestValue: 900,
+			YearSeenCount:    5,
+			YearBestValue:    900,
 		},
 		weirdStatsFactTrafficLightStops + ":" + factMetricCount: {
-			FactID:    weirdStatsFactTrafficLightStops,
-			MetricID:  factMetricCount,
-			SeenCount: 5,
-			BestValue: 5,
+			FactID:           weirdStatsFactTrafficLightStops,
+			MetricID:         factMetricCount,
+			AllTimeSeenCount: 5,
+			AllTimeBestValue: 5,
+			YearSeenCount:    5,
+			YearBestValue:    5,
 		},
 	}
 
-	line := buildPrioritizedWeirdStatsLine(snapshot, rideFact, coffeeFact, routeFact, roadFact, histories)
+	line := buildPrioritizedWeirdStatsLine(snapshot, rideFact, nil, coffeeFact, routeFact, roadFact, histories)
 	want := "2 road crossings: Unter den Linden, Friedrichstrasse · Route highlights: Victory Column, Memorial Church · Detected Coffee Stop: Bean Machine · Longest uninterrupted segment: 20km - 200w - 30kmh"
 	if line != want {
 		t.Fatalf("unexpected prioritized line\nwant: %q\n got: %q", want, line)
@@ -89,6 +104,13 @@ func TestBuildActivityFactMetricsIncludesPOIHistoryKeys(t *testing.T) {
 	metrics := buildActivityFactMetrics(
 		snapshot,
 		rideSegmentFact{DistanceMeters: 48000, AvgPower: 200, AvgSpeedMPS: 30.0 / 3.6},
+		[]speedMilestoneFact{{
+			FactID:   weirdStatsFactAcceleration040,
+			Label:    "0 to 40 km/h",
+			StartKPH: 0,
+			EndKPH:   40,
+			Duration: 4 * time.Second,
+		}},
 		coffeeStopFact{Name: " Bean Machine "},
 		routeHighlightFact{Names: []string{"Victory Column", "victory   column", "Memorial Church"}},
 		roadCrossingFact{},
@@ -101,6 +123,7 @@ func TestBuildActivityFactMetricsIncludesPOIHistoryKeys(t *testing.T) {
 
 	for _, want := range []string{
 		weirdStatsFactLongestSegment + ":" + factMetricDistanceMeters,
+		weirdStatsFactAcceleration040 + ":" + factMetricInverseSeconds,
 		weirdStatsFactCoffeeStop + ":" + factMetricPOIPrefix + "bean machine",
 		weirdStatsFactRouteHighlights + ":" + factMetricPOIPrefix + "victory column",
 		weirdStatsFactRouteHighlights + ":" + factMetricPOIPrefix + "memorial church",
@@ -112,5 +135,77 @@ func TestBuildActivityFactMetricsIncludesPOIHistoryKeys(t *testing.T) {
 		if !seen[want] {
 			t.Fatalf("missing metric %q in %+v", want, metrics)
 		}
+	}
+}
+
+func TestBuildPrioritizedWeirdStatsLineBoostsAllTimeAndYearBestSpeedFacts(t *testing.T) {
+	snapshot := stats.StopStats{
+		StopCount:         3,
+		StopTotalSeconds:  95,
+		RoadCrossingCount: 2,
+	}
+	speedFacts := []speedMilestoneFact{
+		{
+			FactID:   weirdStatsFactAcceleration040,
+			Label:    "0 to 40 km/h",
+			StartKPH: 0,
+			EndKPH:   40,
+			Duration: 4 * time.Second,
+		},
+		{
+			FactID:   weirdStatsFactDeceleration300,
+			Label:    "30 to 0 km/h",
+			StartKPH: 30,
+			EndKPH:   0,
+			Duration: 3 * time.Second,
+		},
+	}
+	histories := map[string]storage.UserFactMetricHistory{
+		weirdStatsFactAcceleration040 + ":" + factMetricInverseSeconds: {
+			FactID:           weirdStatsFactAcceleration040,
+			MetricID:         factMetricInverseSeconds,
+			AllTimeSeenCount: 5,
+			AllTimeBestValue: 0.20,
+			YearSeenCount:    2,
+			YearBestValue:    0.20,
+		},
+		weirdStatsFactDeceleration300 + ":" + factMetricInverseSeconds: {
+			FactID:           weirdStatsFactDeceleration300,
+			MetricID:         factMetricInverseSeconds,
+			AllTimeSeenCount: 8,
+			AllTimeBestValue: 0.50,
+			YearSeenCount:    3,
+			YearBestValue:    0.25,
+		},
+		weirdStatsFactRoadCrossings + ":" + factMetricCount: {
+			FactID:           weirdStatsFactRoadCrossings,
+			MetricID:         factMetricCount,
+			AllTimeSeenCount: 5,
+			AllTimeBestValue: 4,
+			YearSeenCount:    2,
+			YearBestValue:    3,
+		},
+		weirdStatsFactStopSummary + ":" + factMetricStopCount: {
+			FactID:           weirdStatsFactStopSummary,
+			MetricID:         factMetricStopCount,
+			AllTimeSeenCount: 5,
+			AllTimeBestValue: 8,
+			YearSeenCount:    2,
+			YearBestValue:    6,
+		},
+		weirdStatsFactStopSummary + ":" + factMetricStopTotal: {
+			FactID:           weirdStatsFactStopSummary,
+			MetricID:         factMetricStopTotal,
+			AllTimeSeenCount: 5,
+			AllTimeBestValue: 900,
+			YearSeenCount:    2,
+			YearBestValue:    600,
+		},
+	}
+
+	line := buildPrioritizedWeirdStatsLine(snapshot, rideSegmentFact{}, speedFacts, coffeeStopFact{}, routeHighlightFact{}, roadCrossingFact{Count: 2}, histories)
+	want := "0-40kmh in 4s · 30-0kmh in 3s · 2 road crossings · 3 stops (1m 35s total)"
+	if line != want {
+		t.Fatalf("unexpected prioritized speed line\nwant: %q\n got: %q", want, line)
 	}
 }
