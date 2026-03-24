@@ -124,7 +124,7 @@ func buildStopDetectionDataItem(points []gps.Point, stops []storage.ActivityStop
 
 	if !statsPresent {
 		item.Value = "pending"
-		item.Detail = fmt.Sprintf("Processing has not written stop stats yet. A stop needs speed at or below %.1f m/s for at least %s.", stopOpts.SpeedThreshold, formatDuration(int(stopOpts.MinDuration.Seconds())))
+		item.Detail = fmt.Sprintf("Stop processing has not written stop stats yet. A stored stop needs speed at or below %.1f m/s for at least %s.", stopOpts.SpeedThreshold, formatDuration(int(stopOpts.MinDuration.Seconds())))
 		item.Tone = "pending"
 		return item
 	}
@@ -135,22 +135,22 @@ func buildStopDetectionDataItem(points []gps.Point, stops []storage.ActivityStop
 
 	switch {
 	case len(points) == 0:
-		item.Detail = "No route points are stored, so no stop windows could be derived."
+		item.Detail = "Stop processing completed, but no route points are stored, so no stop windows could be derived."
 		item.Tone = "warning"
 	case len(points) == 1:
-		item.Detail = "Only one route point is stored, so stop windows cannot be derived."
+		item.Detail = "Stop processing completed, but only one route point is stored, so stop windows cannot be derived."
 		item.Tone = "warning"
 	case len(stops) > 0:
-		item.Detail = fmt.Sprintf("Detected from stored route points using speed at or below %.1f m/s for at least %s.", stopOpts.SpeedThreshold, minDuration)
+		item.Detail = fmt.Sprintf("Stop processing completed and wrote %s from stored route points using speed at or below %.1f m/s for at least %s.", formatCountLabel(len(stops), "stored stop", "stored stops"), stopOpts.SpeedThreshold, minDuration)
 		item.Tone = "ok"
 	case summary.WindowCount == 0:
-		item.Detail = fmt.Sprintf("No stored speed samples dropped to %.1f m/s or below, so there were no candidate stop windows.", stopOpts.SpeedThreshold)
+		item.Detail = fmt.Sprintf("Stop processing completed. No stored speed samples dropped to %.1f m/s or below, so there were no candidate stop windows.", stopOpts.SpeedThreshold)
 		item.Tone = "warning"
 	case summary.LongestDuration < stopOpts.MinDuration:
-		item.Detail = fmt.Sprintf("%s found; the longest lasted %s. A stop needs at least %s at or below %.1f m/s.", formatCountLabel(summary.WindowCount, "candidate low-speed window", "candidate low-speed windows"), formatDuration(int(summary.LongestDuration.Seconds())), minDuration, stopOpts.SpeedThreshold)
+		item.Detail = fmt.Sprintf("Stop processing completed. %s found; the longest lasted %s. A stored stop needs at least %s at or below %.1f m/s.", formatCountLabel(summary.WindowCount, "candidate low-speed window", "candidate low-speed windows"), formatDuration(int(summary.LongestDuration.Seconds())), minDuration, stopOpts.SpeedThreshold)
 		item.Tone = "warning"
 	default:
-		item.Detail = fmt.Sprintf("%s found, but none qualified as stored stops.", formatCountLabel(summary.WindowCount, "candidate low-speed window", "candidate low-speed windows"))
+		item.Detail = fmt.Sprintf("Stop processing completed. %s found, but none qualified as stored stops.", formatCountLabel(summary.WindowCount, "candidate low-speed window", "candidate low-speed windows"))
 		item.Tone = "warning"
 	}
 
@@ -208,22 +208,26 @@ func buildDetectedFactsDataItem(detectedFacts []ActivityMapFactView, detectedFac
 
 func buildEnrichmentDataItem(mapAPIAvailable bool, overpassAvailable bool) ActivityDataItem {
 	item := ActivityDataItem{
-		Label:  "Enrichment",
-		Detail: "Traffic-light matching happens during stop processing. Overpass powers coffee stops, route highlights, and road-crossing stats plus map annotations.",
-		Tone:   "ok",
+		Label: "Enrichment",
 	}
+	coffeePause := formatDuration(int(coffeeStopMinDuration.Seconds()))
 
 	switch {
 	case mapAPIAvailable && overpassAvailable:
-		item.Value = "lights + overpass"
+		item.Value = "overpass available"
+		item.Detail = fmt.Sprintf("Traffic-light matching was available during stop processing, and Overpass-backed detections can run for coffee stops, route highlights, and named road crossings. Coffee stops specifically need a ride and a qualifying pause of at least %s.", coffeePause)
+		item.Tone = "ok"
 	case mapAPIAvailable:
-		item.Value = "lights only"
+		item.Value = "overpass unavailable"
+		item.Detail = fmt.Sprintf("Traffic-light matching was available during stop processing, but Overpass-backed detections are unavailable, so coffee stops, route highlights, and named road crossings cannot be enriched. Coffee stops specifically need Overpass plus a qualifying pause of at least %s.", coffeePause)
 		item.Tone = "warning"
 	case overpassAvailable:
-		item.Value = "overpass only"
+		item.Value = "lights unavailable"
+		item.Detail = fmt.Sprintf("Overpass-backed detections can run for coffee stops, route highlights, and named road crossings, but traffic-light matching was unavailable during stop processing. Coffee stops still need a ride and a qualifying pause of at least %s.", coffeePause)
 		item.Tone = "warning"
 	default:
 		item.Value = "route-only"
+		item.Detail = fmt.Sprintf("Neither traffic-light map matching nor Overpass-backed enrichment is available. Coffee stops, route highlights, and named road crossings cannot be enriched, and coffee stops would still need a qualifying pause of at least %s.", coffeePause)
 		item.Tone = "warning"
 	}
 

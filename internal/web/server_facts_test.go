@@ -145,8 +145,8 @@ func TestBuildPauseWindows(t *testing.T) {
 		{Time: start.Add(6 * time.Minute), Speed: 0},
 		{Time: start.Add(7 * time.Minute), Speed: 7},
 		{Time: start.Add(8 * time.Minute), Speed: 0},
-		{Time: start.Add(12 * time.Minute), Speed: 0},
-		{Time: start.Add(13 * time.Minute), Speed: 7},
+		{Time: start.Add(9*time.Minute + 30*time.Second), Speed: 0},
+		{Time: start.Add(10 * time.Minute), Speed: 7},
 	}
 
 	got := buildPauseWindows(points, coffeeStopSpeedThresholdMPS, coffeeStopMinDuration)
@@ -219,8 +219,8 @@ func TestDetectCoffeeStopFact_IgnoresShortPause(t *testing.T) {
 		{Lat: 52.5200, Lon: 13.4047, Time: start, Speed: 7},
 		{Lat: 52.5202, Lon: 13.4049, Time: start.Add(1 * time.Minute), Speed: 7},
 		{Lat: 52.5203, Lon: 13.4050, Time: start.Add(2 * time.Minute), Speed: 0},
-		{Lat: 52.52031, Lon: 13.40501, Time: start.Add(6*time.Minute + 59*time.Second), Speed: 0},
-		{Lat: 52.5206, Lon: 13.4053, Time: start.Add(7 * time.Minute), Speed: 8},
+		{Lat: 52.52031, Lon: 13.40501, Time: start.Add(4*time.Minute + 59*time.Second), Speed: 0},
+		{Lat: 52.5206, Lon: 13.4053, Time: start.Add(5 * time.Minute), Speed: 8},
 	}
 
 	got, err := detectCoffeeStopFact(context.Background(), "Ride", points, &maps.OverpassClient{

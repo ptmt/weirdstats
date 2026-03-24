@@ -112,10 +112,32 @@ func TestBuildStopDetectionDataItem_ExplainsShortPause(t *testing.T) {
 		t.Fatalf("unexpected value: %q", item.Value)
 	}
 	for _, want := range []string{
+		"Stop processing completed.",
 		"1 candidate low-speed window found",
 		"45s",
 		"1m 0s",
 		"0.5 m/s",
+	} {
+		if !strings.Contains(item.Detail, want) {
+			t.Fatalf("expected %q in detail %q", want, item.Detail)
+		}
+	}
+	if item.Tone != "warning" {
+		t.Fatalf("expected warning tone, got %q", item.Tone)
+	}
+}
+
+func TestBuildEnrichmentDataItem_ExplainsUnavailableOverpass(t *testing.T) {
+	item := buildEnrichmentDataItem(true, false)
+
+	if item.Value != "overpass unavailable" {
+		t.Fatalf("unexpected value: %q", item.Value)
+	}
+	for _, want := range []string{
+		"coffee stops",
+		"route highlights",
+		"named road crossings",
+		"3m 0s",
 	} {
 		if !strings.Contains(item.Detail, want) {
 			t.Fatalf("expected %q in detail %q", want, item.Detail)

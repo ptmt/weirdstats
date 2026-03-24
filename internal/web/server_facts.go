@@ -87,7 +87,7 @@ const (
 	longestRideSegmentMinSpeedKPH = 15.0
 	longestRideSegmentMinSpeedMPS = longestRideSegmentMinSpeedKPH / 3.6
 	longestRideSegmentMinSlowTime = 5 * time.Second
-	coffeeStopMinDuration         = 5 * time.Minute
+	coffeeStopMinDuration         = 3 * time.Minute
 	coffeeStopSpeedThresholdMPS   = 0.5
 	coffeeStopSearchRadiusMeters  = 45
 	routeHighlightMaxDistanceM    = 200.0
