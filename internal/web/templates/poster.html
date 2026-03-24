@@ -12,7 +12,6 @@
         --paper-echo: #ff5478;
         --ink: #160b39;
         --ink-soft: #563271;
-        --acid: #75ff57;
         --cyan: #00d8ff;
         --hot: #ff2f92;
         --sun: #ffce4c;
@@ -44,6 +43,17 @@
         height: 2532px;
         overflow: hidden;
       }
+      body.poster-transparent {
+        background:
+          linear-gradient(45deg, rgba(0, 0, 0, 0.07) 25%, transparent 25%, transparent 75%, rgba(0, 0, 0, 0.07) 75%, rgba(0, 0, 0, 0.07) 100%),
+          linear-gradient(45deg, rgba(0, 0, 0, 0.07) 25%, transparent 25%, transparent 75%, rgba(0, 0, 0, 0.07) 75%, rgba(0, 0, 0, 0.07) 100%);
+        background-position: 0 0, 14px 14px;
+        background-size: 28px 28px;
+        background-color: #f2f2f2;
+      }
+      body.poster-export.poster-transparent {
+        background: transparent;
+      }
       .poster-page {
         display: grid;
         justify-items: center;
@@ -56,25 +66,81 @@
         height: 2532px;
         padding: 0;
       }
-      .poster-toolbar {
+      .poster-controls {
         width: min(430px, 92vw);
-        display: flex;
-        justify-content: flex-start;
+        display: grid;
+        gap: 12px;
+        padding: 14px;
+        border-radius: 28px;
+        border: 1px solid rgba(22, 11, 57, 0.12);
+        background: rgba(255, 255, 255, 0.54);
+        box-shadow: 0 18px 40px rgba(22, 11, 57, 0.12);
       }
-      .poster-toolbar a {
+      .poster-controls-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .poster-toggle,
+      .poster-select {
+        display: grid;
+        gap: 6px;
+        padding: 10px 12px;
+        border-radius: 18px;
+        border: 1px solid rgba(22, 11, 57, 0.1);
+        background: rgba(255, 255, 255, 0.34);
+      }
+      .poster-toggle {
+        grid-template-columns: auto 1fr;
+        align-items: center;
+      }
+      .poster-toggle input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        margin: 0;
+        accent-color: var(--hot);
+      }
+      .poster-toggle span,
+      .poster-select span {
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+      .poster-select select {
+        width: 100%;
+        padding: 8px 10px;
+        border-radius: 12px;
+        border: 1px solid rgba(22, 11, 57, 0.12);
+        background: rgba(255, 255, 255, 0.86);
+        color: var(--ink);
+        font: inherit;
+      }
+      .poster-controls-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .poster-controls-actions a,
+      .poster-controls-actions button {
         display: inline-flex;
         align-items: center;
+        justify-content: center;
         padding: 10px 14px;
         border-radius: 999px;
         border: 1px solid rgba(22, 11, 57, 0.12);
-        background: rgba(255, 255, 255, 0.48);
+        background: rgba(255, 255, 255, 0.78);
         color: var(--ink);
+        font: inherit;
         font-size: 12px;
         font-weight: 800;
         letter-spacing: 0.12em;
         text-decoration: none;
         text-transform: uppercase;
-        box-shadow: 0 14px 32px rgba(22, 11, 57, 0.1);
+        cursor: pointer;
+      }
+      .poster-controls-actions button:last-child {
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0.86), rgba(0, 216, 255, 0.22));
       }
       .story-shot {
         position: relative;
@@ -121,11 +187,54 @@
         transform: scale(2.7209302326);
         transform-origin: top left;
       }
+      .story-shot--no-header .story-inner {
+        grid-template-rows: 1fr auto;
+      }
+      .story-shot--route-only .story-inner {
+        grid-template-rows: auto 1fr;
+      }
+      .story-shot--no-header.story-shot--route-only .story-inner {
+        grid-template-rows: 1fr;
+      }
+      .story-shot--transparent {
+        background: transparent;
+        border-color: transparent;
+        box-shadow: none;
+      }
+      .story-shot--transparent::before,
+      .story-shot--transparent::after {
+        display: none;
+      }
+      .story-shot--transparent .story-map-frame {
+        background: rgba(255, 255, 255, 0.14);
+        border-color: rgba(22, 11, 57, 0.14);
+        box-shadow: none;
+      }
+      .story-shot--transparent .story-card,
+      .story-shot--transparent .story-card-empty {
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.08)),
+          radial-gradient(circle at top right, var(--fact-color, var(--hot)) 0, transparent 44%);
+      }
+      .story-shot--uppercase .story-head h1,
+      .story-shot--uppercase .story-meta,
+      .story-shot--uppercase .story-kicker,
+      .story-shot--uppercase .context-water-label,
+      .story-shot--uppercase .context-road-label,
+      .story-shot--uppercase .context-peak-label {
+        text-transform: uppercase;
+      }
+      .story-shot--uppercase .story-head h1 {
+        letter-spacing: 0.02em;
+      }
+      .story-shot--mono {
+        filter: grayscale(1) contrast(1.06);
+      }
       .story-inner {
         position: relative;
         z-index: 1;
         display: grid;
-        grid-template-rows: auto auto 1fr;
+        grid-template-rows: auto 1fr auto;
         gap: 18px;
         height: 100%;
         padding: 24px 22px 22px;
@@ -146,25 +255,34 @@
         font-size: 11px;
         font-weight: 900;
         letter-spacing: 0.16em;
+        text-transform: uppercase;
       }
       .story-head h1 {
         margin: 0;
-        font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
-        font-size: clamp(30px, 5vw, 40px);
-        line-height: 0.96;
-        letter-spacing: -0.04em;
+        font-family: "Avenir Next Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
+        font-size: clamp(32px, 5vw, 44px);
+        font-style: italic;
+        font-weight: 900;
+        line-height: 0.9;
+        letter-spacing: -0.06em;
       }
       .story-meta {
         margin: 0;
         color: rgba(22, 11, 57, 0.78);
-        font-size: 14px;
-        line-height: 1.5;
+        font-family: "Avenir Next Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
+        font-size: 15px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        line-height: 1.45;
       }
       .story-map {
         display: grid;
+        min-height: 0;
       }
       .story-map-frame {
         position: relative;
+        height: 100%;
+        min-height: 0;
         border-radius: 30px;
         border: 1px solid var(--line-strong);
         background:
@@ -180,12 +298,13 @@
       .story-map svg {
         display: block;
         width: 100%;
-        height: auto;
+        height: 100%;
       }
       .story-map-empty {
         display: grid;
         place-items: center;
         min-height: 320px;
+        height: 100%;
         padding: 24px;
         color: var(--ink-soft);
         font-size: 14px;
@@ -249,10 +368,11 @@
       }
       .story-kicker {
         min-width: 0;
-        font-size: 13px;
+        font-family: "Avenir Next Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
+        font-size: 15px;
+        font-style: italic;
         font-weight: 900;
-        letter-spacing: 0.09em;
-        text-transform: uppercase;
+        letter-spacing: 0.02em;
       }
       .story-card p,
       .story-card-empty p {
@@ -286,11 +406,12 @@
       .context-road-label,
       .context-peak-label {
         fill: rgba(22, 11, 57, 0.58);
+        font-family: "Avenir Next Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
         font-size: 18px;
+        font-style: italic;
         font-weight: 800;
-        letter-spacing: 0.08em;
+        letter-spacing: 0.05em;
         text-anchor: middle;
-        text-transform: uppercase;
       }
       .context-water-label {
         fill: rgba(0, 123, 156, 0.8);
@@ -346,31 +467,83 @@
         .poster-page {
           padding: 14px;
         }
+        .poster-controls-grid,
         .story-grid {
           grid-template-columns: 1fr;
         }
       }
     </style>
   </head>
-  <body class="{{if .PNGExport}}poster-export{{end}}">
+  <body class="{{if .PNGExport}}poster-export{{end}}{{if .Options.Transparent}} poster-transparent{{end}}">
     <div class="poster-page{{if .PNGExport}} poster-page--export{{end}}">
       {{if not .PNGExport}}
-        <div class="poster-toolbar">
-          <a href="/activity/{{.ActivityID}}">Back to activity</a>
-        </div>
+        <form class="poster-controls" method="get" action="/activity/{{.ActivityID}}/poster">
+          <div class="poster-controls-grid">
+            <div class="poster-toggle">
+              <input type="hidden" name="header" value="0" />
+              <input type="checkbox" id="poster-header" name="header" value="1" {{if .Options.ShowHeader}}checked{{end}} onchange="this.form.submit()" />
+              <span>Header</span>
+            </div>
+            <div class="poster-toggle">
+              <input type="hidden" name="meta" value="0" />
+              <input type="checkbox" id="poster-meta" name="meta" value="1" {{if .Options.ShowMeta}}checked{{end}} onchange="this.form.submit()" />
+              <span>Meta</span>
+            </div>
+            <div class="poster-toggle">
+              <input type="hidden" name="context" value="0" />
+              <input type="checkbox" id="poster-context" name="context" value="1" {{if .Options.ShowContext}}checked{{end}} onchange="this.form.submit()" />
+              <span>Context</span>
+            </div>
+            <div class="poster-toggle">
+              <input type="hidden" name="transparent" value="0" />
+              <input type="checkbox" id="poster-transparent" name="transparent" value="1" {{if .Options.Transparent}}checked{{end}} onchange="this.form.submit()" />
+              <span>Transparent</span>
+            </div>
+            <div class="poster-toggle">
+              <input type="hidden" name="uppercase" value="0" />
+              <input type="checkbox" id="poster-uppercase" name="uppercase" value="1" {{if .Options.Uppercase}}checked{{end}} onchange="this.form.submit()" />
+              <span>Uppercase</span>
+            </div>
+            <div class="poster-toggle">
+              <input type="hidden" name="mono" value="0" />
+              <input type="checkbox" id="poster-mono" name="mono" value="1" {{if .Options.Monochrome}}checked{{end}} onchange="this.form.submit()" />
+              <span>B/W only</span>
+            </div>
+            <label class="poster-select">
+              <span>Facts</span>
+              <select name="facts" onchange="this.form.submit()">
+                <option value="all" {{if eq .Options.FactsLimit -1}}selected{{end}}>All</option>
+                <option value="2" {{if eq .Options.FactsLimit 2}}selected{{end}}>2 facts</option>
+                <option value="1" {{if eq .Options.FactsLimit 1}}selected{{end}}>1 fact</option>
+                <option value="0" {{if eq .Options.FactsLimit 0}}selected{{end}}>Off</option>
+              </select>
+            </label>
+          </div>
+          <div class="poster-controls-actions">
+            <a href="/activity/{{.ActivityID}}">Back</a>
+            <a href="/activity/{{.ActivityID}}/poster">Reset</a>
+            <button type="submit" formaction="/activity/{{.ActivityID}}/poster.png" formtarget="_blank">Export PNG</button>
+          </div>
+        </form>
       {{end}}
-      <article class="story-shot{{if .PNGExport}} story-shot--export{{end}}">
+      <article class="story-shot{{if .PNGExport}} story-shot--export{{end}}{{if not .ShowHeaderBlock}} story-shot--no-header{{end}}{{if not .ShowFactsSection}} story-shot--route-only{{end}}{{if .Options.Transparent}} story-shot--transparent{{end}}{{if .Options.Uppercase}} story-shot--uppercase{{end}}{{if .Options.Monochrome}} story-shot--mono{{end}}">
         <div class="story-inner">
-          <header class="story-head">
-            <div class="story-brand">WEIRDSTATS SHARE CARD</div>
-            <h1>{{.ActivityName}}</h1>
-            <p class="story-meta">{{.ActivityType}} · {{.ActivityTime}}{{if .Distance}} · {{.Distance}}{{end}}{{if .Duration}} · {{.Duration}}{{end}}</p>
-          </header>
+          {{if .ShowHeaderBlock}}
+            <header class="story-head">
+              {{if .Options.ShowHeader}}
+                <div class="story-brand">WeirdStats Share Card</div>
+                <h1>{{.ActivityName}}</h1>
+              {{end}}
+              {{if .Options.ShowMeta}}
+                <p class="story-meta">{{.ActivityType}} · {{.ActivityTime}}{{if .Distance}} · {{.Distance}}{{end}}{{if .Duration}} · {{.Duration}}{{end}}</p>
+              {{end}}
+            </header>
+          {{end}}
 
           <section class="story-map">
             <div class="story-map-frame">
               {{if .HasRoute}}
-                <svg viewBox="0 0 1000 1120" role="img" aria-label="Route poster for {{.ActivityName}}">
+                <svg viewBox="0 0 1000 1120" role="img" aria-label="Route poster for {{.ActivityName}}" preserveAspectRatio="xMidYMid meet">
                   {{range .Waters}}
                     <path class="context-water-area" d="{{.Path}}" />
                     {{if .HasLabel}}<text class="context-water-label" x="{{printf "%.1f" .LabelX}}" y="{{printf "%.1f" .LabelY}}">{{.Name}}</text>{{end}}
@@ -413,25 +586,27 @@
             </div>
           </section>
 
-          <section class="story-facts">
-            <div class="story-grid{{if eq (len .Facts) 1}} story-grid--single{{end}}">
-              {{if .Facts}}
-                {{range .Facts}}
-                  <article class="story-card" style="--fact-color: {{.Color}};">
-                    <div class="story-card-top">
-                      <span class="story-index">{{.Index}}</span>
-                      <span class="story-kicker">{{.Title}}</span>
-                    </div>
-                    <p>{{.Summary}}</p>
+          {{if .ShowFactsSection}}
+            <section class="story-facts">
+              <div class="story-grid{{if eq (len .Facts) 1}} story-grid--single{{end}}">
+                {{if .Facts}}
+                  {{range .Facts}}
+                    <article class="story-card" style="--fact-color: {{.Color}};">
+                      <div class="story-card-top">
+                        <span class="story-index">{{.Index}}</span>
+                        <span class="story-kicker">{{.Title}}</span>
+                      </div>
+                      <p>{{.Summary}}</p>
+                    </article>
+                  {{end}}
+                {{else}}
+                  <article class="story-card-empty">
+                    <p>No detected facts are stored yet for this activity. Refresh or re-apply the activity to generate them first.</p>
                   </article>
                 {{end}}
-              {{else}}
-                <article class="story-card-empty">
-                  <p>No detected facts are stored yet for this activity. Refresh or re-apply the activity to generate them first.</p>
-                </article>
-              {{end}}
-            </div>
-          </section>
+              </div>
+            </section>
+          {{end}}
         </div>
       </article>
     </div>

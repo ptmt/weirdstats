@@ -242,6 +242,22 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 	trace.AddField("detected_facts_present", detectedFactsPresent)
 	trace.AddField("detected_facts", len(detectedFacts))
 
+	if len(detectedFacts) > 0 {
+		stepStart = time.Now()
+		metrics, err := s.store.ListActivityFactMetrics(r.Context(), activityID)
+		if err != nil {
+			log.Printf("activity fact metrics load failed for activity %d: %v", activityID, err)
+		} else if len(metrics) > 0 {
+			histories, err := s.store.ListUserFactMetricHistories(r.Context(), userID, 0, activity.StartTime.UTC().Year(), metrics)
+			if err != nil {
+				log.Printf("activity fact history load failed for activity %d: %v", activityID, err)
+			} else {
+				detectedFacts = applyDetectedFactRecordBadges(detectedFacts, metrics, histories, activity.StartTime.UTC().Year())
+			}
+		}
+		trace.AddStep("decorate_fact_badges", stepStart)
+	}
+
 	type mapPoint struct {
 		Lat float64 `json:"lat"`
 		Lon float64 `json:"lon"`

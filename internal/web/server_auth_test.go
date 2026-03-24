@@ -282,6 +282,31 @@ func TestActivityDetail_ShowsMapLinkedFacts(t *testing.T) {
 	}, time.Now()); err != nil {
 		t.Fatalf("replace stops: %v", err)
 	}
+	prevActivityID, err := store.InsertActivity(ctx, storage.Activity{
+		UserID:    505,
+		Type:      "Ride",
+		Name:      "Older Record Ride",
+		StartTime: time.Date(2025, time.March, 17, 8, 0, 0, 0, time.UTC),
+	}, []gps.Point{
+		{Lat: 52.5200, Lon: 13.4040, Time: time.Date(2025, time.March, 17, 8, 0, 0, 0, time.UTC), Speed: 8},
+		{Lat: 52.5204, Lon: 13.4048, Time: time.Date(2025, time.March, 17, 8, 1, 0, 0, time.UTC), Speed: 8},
+	})
+	if err != nil {
+		t.Fatalf("insert previous record activity: %v", err)
+	}
+	if err := store.ReplaceActivityFactMetrics(ctx, storage.Activity{ID: prevActivityID, UserID: 505, StartTime: time.Date(2025, time.March, 17, 8, 0, 0, 0, time.UTC)}, []storage.ActivityFactMetric{
+		{FactID: weirdStatsFactLongestSegment, MetricID: factMetricDistanceMeters, MetricValue: 1800, Summary: "1.8 km at 30 km/h"},
+	}); err != nil {
+		t.Fatalf("replace previous fact metrics: %v", err)
+	}
+	if err := store.ReplaceActivityFactMetrics(ctx, storage.Activity{ID: activityID, UserID: 505, StartTime: start}, []storage.ActivityFactMetric{
+		{FactID: weirdStatsFactLongestSegment, MetricID: factMetricDistanceMeters, MetricValue: 1200, Summary: "1.2 km at 28 km/h"},
+		{FactID: weirdStatsFactStopSummary, MetricID: factMetricStopCount, MetricValue: 1, Summary: "1 detected stop"},
+		{FactID: weirdStatsFactStopSummary, MetricID: factMetricStopTotal, MetricValue: 45, Summary: "1 detected stop"},
+		{FactID: weirdStatsFactTrafficLightStops, MetricID: factMetricCount, MetricValue: 1, Summary: "1 stop at a light"},
+	}); err != nil {
+		t.Fatalf("replace current fact metrics: %v", err)
+	}
 	factsJSON, err := json.Marshal([]ActivityMapFactView{
 		{
 			ID:      "longest_segment",
@@ -348,6 +373,8 @@ func TestActivityDetail_ShowsMapLinkedFacts(t *testing.T) {
 		"data-focus-fact=\"longest_segment\"",
 		"data-focus-fact=\"stop_summary\"",
 		"data-focus-fact=\"traffic_light_stops\"",
+		"2026 best",
+		"All-time best",
 		"The map is the primary view.",
 		"/activity/" + strconv.FormatInt(activityID, 10) + "/poster",
 	} {

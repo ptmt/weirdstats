@@ -113,13 +113,15 @@ type ActivityFactPoint struct {
 }
 
 type ActivityMapFactView struct {
-	ID      string              `json:"id"`
-	Kind    string              `json:"kind"`
-	Title   string              `json:"title"`
-	Summary string              `json:"summary"`
-	Color   string              `json:"color"`
-	Points  []ActivityFactPoint `json:"points,omitempty"`
-	Path    []routePreviewPoint `json:"path,omitempty"`
+	ID         string              `json:"id"`
+	Kind       string              `json:"kind"`
+	Title      string              `json:"title"`
+	Summary    string              `json:"summary"`
+	Color      string              `json:"color"`
+	BadgeLabel string              `json:"badge_label,omitempty"`
+	BadgeTone  string              `json:"badge_tone,omitempty"`
+	Points     []ActivityFactPoint `json:"points,omitempty"`
+	Path       []routePreviewPoint `json:"path,omitempty"`
 }
 
 type ActivityDataItem struct {

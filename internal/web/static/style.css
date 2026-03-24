@@ -378,12 +378,26 @@ a {
 
 .btn.loading {
   pointer-events: none;
-  opacity: 0.7;
+  opacity: 0.85;
+  color: transparent;
+  text-shadow: none;
 }
 
 .btn.loading::after {
-  content: "...";
+  content: "";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--btn-text);
+  text-shadow: var(--btn-text-shadow);
   animation: dots 1s steps(4, end) infinite;
+}
+
+.btn.secondary.loading::after {
+  color: var(--ink);
+  text-shadow: none;
 }
 
 @keyframes dots {

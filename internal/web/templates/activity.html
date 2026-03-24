@@ -198,6 +198,34 @@
         text-transform: uppercase;
         color: var(--ink-muted);
       }
+      .fact-meta {
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .fact-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 3px 8px;
+        border-radius: 999px;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        border: 1px solid transparent;
+      }
+      .fact-badge.record {
+        color: #14532d;
+        background: #dcfce7;
+        border-color: #86efac;
+      }
+      .fact-badge.year {
+        color: #1d4ed8;
+        background: #dbeafe;
+        border-color: #93c5fd;
+      }
       .fact-copy {
         display: grid;
         gap: 4px;
@@ -509,7 +537,10 @@
                   <button type="button" class="fact-row" data-focus-fact="{{.ID}}" style="--fact-color: {{.Color}};">
                     <div class="fact-row-head">
                       <span class="fact-chip">{{.Title}}</span>
-                      <span class="fact-kind">{{.Kind}}</span>
+                      <div class="fact-meta">
+                        {{if .BadgeLabel}}<span class="fact-badge {{.BadgeTone}}">{{.BadgeLabel}}</span>{{end}}
+                        <span class="fact-kind">{{.Kind}}</span>
+                      </div>
                     </div>
                     <div class="fact-copy">
                       <div class="fact-summary">{{.Summary}}</div>

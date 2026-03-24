@@ -1524,6 +1524,38 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	return tx.Commit()
 }
 
+func (s *Store) ListActivityFactMetrics(ctx context.Context, activityID int64) ([]ActivityFactMetric, error) {
+	if activityID == 0 {
+		return nil, errors.New("activity id required")
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+SELECT fact_id, metric_id, metric_value, summary, updated_at
+FROM activity_fact_metrics
+WHERE activity_id = ?
+ORDER BY fact_id, metric_id
+`, activityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var metrics []ActivityFactMetric
+	for rows.Next() {
+		var metric ActivityFactMetric
+		var updatedAt int64
+		if err := rows.Scan(&metric.FactID, &metric.MetricID, &metric.MetricValue, &metric.Summary, &updatedAt); err != nil {
+			return nil, err
+		}
+		metric.UpdatedAt = time.Unix(updatedAt, 0)
+		metrics = append(metrics, metric)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return metrics, nil
+}
+
 func (s *Store) ListUserYearFactRecords(ctx context.Context, userID int64, year int) ([]UserYearFactRecord, error) {
 	if userID == 0 {
 		userID = 1
