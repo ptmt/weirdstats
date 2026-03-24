@@ -315,6 +315,10 @@ func (s *Server) Activity(w http.ResponseWriter, r *http.Request) {
 		s.DownloadActivity(w, r)
 		return
 	}
+	if strings.HasSuffix(r.URL.Path, "/poster") {
+		s.ActivityPoster(w, r)
+		return
+	}
 	if strings.HasSuffix(r.URL.Path, "/refresh") {
 		s.RefreshActivity(w, r)
 		return

@@ -1,0 +1,348 @@
+{{define "poster"}}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{.Title}} Poster - WeirdStats</title>
+    <style>
+      :root {
+        --paper: #f5efe4;
+        --paper-deep: #eadfce;
+        --ink: #19130f;
+        --ink-soft: #5d5348;
+        --accent: #d95d39;
+        --accent-soft: rgba(217, 93, 57, 0.14);
+        --line: rgba(25, 19, 15, 0.12);
+        --line-strong: rgba(25, 19, 15, 0.2);
+        --shadow: 0 36px 90px rgba(10, 8, 7, 0.18);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at top left, rgba(217, 93, 57, 0.18), transparent 28%),
+          radial-gradient(circle at bottom right, rgba(52, 116, 235, 0.12), transparent 32%),
+          linear-gradient(180deg, #efe3d2 0%, #e6dac9 100%);
+        color: var(--ink);
+        font-family: "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
+      }
+      .poster-page {
+        display: grid;
+        justify-items: center;
+        gap: 16px;
+        padding: 20px;
+      }
+      .poster-toolbar {
+        width: min(430px, 92vw);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        color: var(--ink-soft);
+        font-size: 12px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      .poster-toolbar a {
+        color: var(--ink);
+        text-decoration: none;
+        font-weight: 700;
+      }
+      .story-shot {
+        width: min(430px, 92vw);
+        aspect-ratio: 1170 / 2532;
+        border-radius: 42px;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.5), transparent 18%),
+          linear-gradient(180deg, var(--paper) 0%, var(--paper-deep) 100%);
+        box-shadow: var(--shadow);
+        border: 1px solid rgba(255, 255, 255, 0.55);
+        overflow: hidden;
+      }
+      .story-inner {
+        display: grid;
+        grid-template-rows: auto auto 1fr;
+        gap: 18px;
+        height: 100%;
+        padding: 24px 22px 22px;
+      }
+      .story-head {
+        display: grid;
+        gap: 8px;
+      }
+      .story-brand {
+        display: inline-flex;
+        width: fit-content;
+        align-items: center;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(25, 19, 15, 0.06);
+        color: var(--ink-soft);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.16em;
+      }
+      .story-head h1 {
+        margin: 0;
+        font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+        font-size: clamp(30px, 5vw, 40px);
+        line-height: 0.98;
+        letter-spacing: -0.03em;
+      }
+      .story-meta {
+        margin: 0;
+        color: var(--ink-soft);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      .story-map {
+        display: grid;
+        gap: 10px;
+      }
+      .story-map-label {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        color: var(--ink-soft);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      .story-map-frame {
+        position: relative;
+        border-radius: 30px;
+        border: 1px solid var(--line-strong);
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.34)),
+          repeating-linear-gradient(
+            90deg,
+            rgba(25, 19, 15, 0.035) 0,
+            rgba(25, 19, 15, 0.035) 1px,
+            transparent 1px,
+            transparent 64px
+          ),
+          repeating-linear-gradient(
+            180deg,
+            rgba(25, 19, 15, 0.03) 0,
+            rgba(25, 19, 15, 0.03) 1px,
+            transparent 1px,
+            transparent 64px
+          );
+        overflow: hidden;
+      }
+      .story-map svg {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      .story-map-empty {
+        display: grid;
+        place-items: center;
+        min-height: 320px;
+        color: var(--ink-soft);
+        font-size: 14px;
+      }
+      .story-facts {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        gap: 10px;
+        min-height: 0;
+      }
+      .story-facts-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .story-facts-head h2 {
+        margin: 0;
+        font-size: 12px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+      .story-facts-head span {
+        color: var(--ink-soft);
+        font-size: 12px;
+      }
+      .story-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        align-content: start;
+      }
+      .story-grid--single {
+        grid-template-columns: 1fr;
+      }
+      .story-card,
+      .story-card-empty {
+        display: grid;
+        gap: 10px;
+        padding: 14px;
+        border-radius: 24px;
+        min-height: 0;
+        background: rgba(255, 255, 255, 0.56);
+        border: 1px solid rgba(25, 19, 15, 0.1);
+      }
+      .story-card-top {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .story-index {
+        display: inline-grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        background: var(--fact-color, var(--accent));
+        color: #fff;
+        font-size: 13px;
+        font-weight: 800;
+      }
+      .story-kicker {
+        min-width: 0;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .story-card p,
+      .story-card-empty p {
+        margin: 0;
+        color: var(--ink-soft);
+        font-size: 14px;
+        line-height: 1.45;
+      }
+      .story-card-empty {
+        place-items: center;
+        text-align: center;
+      }
+      .route-base {
+        fill: none;
+        stroke: rgba(25, 19, 15, 0.22);
+        stroke-width: 10;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .route-accent {
+        fill: none;
+        stroke-width: 14;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        opacity: 0.92;
+      }
+      .fact-dot {
+        stroke: rgba(255, 255, 255, 0.85);
+        stroke-width: 3;
+      }
+      .start-dot,
+      .end-dot {
+        stroke: rgba(25, 19, 15, 0.18);
+        stroke-width: 4;
+      }
+      .fact-marker circle {
+        stroke: rgba(255, 255, 255, 0.9);
+        stroke-width: 4;
+      }
+      .fact-marker text {
+        fill: #fff;
+        font-size: 15px;
+        font-weight: 800;
+        text-anchor: middle;
+        dominant-baseline: middle;
+      }
+      @media (max-width: 520px) {
+        .poster-page {
+          padding: 14px;
+        }
+        .poster-toolbar {
+          width: 100%;
+          flex-direction: column;
+          align-items: flex-start;
+        }
+        .story-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="poster-page">
+      <div class="poster-toolbar">
+        <a href="/activity/{{.ActivityID}}">← Back to activity</a>
+        <span>Numbers on the map match the fact cards</span>
+      </div>
+      <article class="story-shot">
+        <div class="story-inner">
+          <header class="story-head">
+            <div class="story-brand">WEIRDSTATS SHARE CARD</div>
+            <h1>{{.ActivityName}}</h1>
+            <p class="story-meta">{{.ActivityType}} · {{.ActivityTime}}{{if .Distance}} · {{.Distance}}{{end}}{{if .Duration}} · {{.Duration}}{{end}}</p>
+          </header>
+
+          <section class="story-map">
+            <div class="story-map-label">
+              <span>Route + Fact Anchors</span>
+              <span>{{len .Facts}} facts</span>
+            </div>
+            <div class="story-map-frame">
+              {{if .HasRoute}}
+                <svg viewBox="0 0 1000 1120" role="img" aria-label="Route poster for {{.ActivityName}}">
+                  <path class="route-base" d="{{.RoutePath}}" />
+                  {{range .Facts}}
+                    {{if .OverlayPath}}<path class="route-accent" d="{{.OverlayPath}}" stroke="{{.Color}}" />{{end}}
+                  {{end}}
+                  {{range .Facts}}
+                    {{$fact := .}}
+                    {{range .Points}}<circle class="fact-dot" cx="{{printf "%.1f" .X}}" cy="{{printf "%.1f" .Y}}" r="7" fill="{{$fact.Color}}" />{{end}}
+                    {{if .HasMarker}}
+                      <g class="fact-marker" transform="translate({{printf "%.1f" .MarkerX}}, {{printf "%.1f" .MarkerY}})">
+                        <circle r="20" fill="{{.Color}}" />
+                        <text x="0" y="1">{{.Index}}</text>
+                      </g>
+                    {{end}}
+                  {{end}}
+                  <circle class="start-dot" cx="{{printf "%.1f" .RouteStartX}}" cy="{{printf "%.1f" .RouteStartY}}" r="11" fill="#ffffff" />
+                  <circle class="end-dot" cx="{{printf "%.1f" .RouteEndX}}" cy="{{printf "%.1f" .RouteEndY}}" r="11" fill="#19130f" />
+                </svg>
+              {{else}}
+                <div class="story-map-empty">No route points stored for this activity yet.</div>
+              {{end}}
+            </div>
+          </section>
+
+          <section class="story-facts">
+            <div class="story-facts-head">
+              <h2>Selected Facts</h2>
+              <span>Open on a phone and screenshot to share</span>
+            </div>
+            <div class="story-grid{{if eq (len .Facts) 1}} story-grid--single{{end}}">
+              {{if .Facts}}
+                {{range .Facts}}
+                  <article class="story-card" style="--fact-color: {{.Color}};">
+                    <div class="story-card-top">
+                      <span class="story-index">{{.Index}}</span>
+                      <span class="story-kicker">{{.Title}}</span>
+                    </div>
+                    <p>{{.Summary}}</p>
+                  </article>
+                {{end}}
+              {{else}}
+                <article class="story-card-empty">
+                  <p>No detected facts are stored yet for this activity. Refresh or re-apply the activity to generate them first.</p>
+                </article>
+              {{end}}
+            </div>
+          </section>
+        </div>
+      </article>
+    </div>
+  </body>
+</html>
+{{end}}

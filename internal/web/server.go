@@ -325,6 +325,13 @@ func NewServer(store *storage.Store, ingestor *ingest.Ingestor, mapAPI maps.API,
 	if err != nil {
 		return nil, err
 	}
+	poster, err := template.New("poster").Funcs(funcs).ParseFS(
+		templatesFS,
+		"templates/poster.html",
+	)
+	if err != nil {
+		return nil, err
+	}
 	return &Server{
 		store:         store,
 		ingestor:      ingestor,
@@ -339,6 +346,7 @@ func NewServer(store *storage.Store, ingestor *ingest.Ingestor, mapAPI maps.API,
 			"settings": settings,
 			"admin":    admin,
 			"activity": activity,
+			"poster":   poster,
 		},
 	}, nil
 }

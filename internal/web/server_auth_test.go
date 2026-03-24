@@ -349,6 +349,7 @@ func TestActivityDetail_ShowsMapLinkedFacts(t *testing.T) {
 		"data-focus-fact=\"stop_summary\"",
 		"data-focus-fact=\"traffic_light_stops\"",
 		"The map is the primary view.",
+		"/activity/" + strconv.FormatInt(activityID, 10) + "/poster",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in detail response", want)
