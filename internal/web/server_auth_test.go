@@ -375,11 +375,15 @@ func TestActivityDetail_ShowsMapLinkedFacts(t *testing.T) {
 		"2026 best",
 		"All-time best",
 		"The map is the primary view.",
+		"Speed timeline",
 		"/activity/" + strconv.FormatInt(activityID, 10) + "/poster",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in detail response", want)
 		}
+	}
+	if strings.Contains(body, "Speed &amp; events") {
+		t.Fatalf("did not expect legacy speed section title")
 	}
 }
 

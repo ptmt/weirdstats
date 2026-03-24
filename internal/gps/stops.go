@@ -3,11 +3,14 @@ package gps
 import "time"
 
 type Point struct {
-	Lat   float64
-	Lon   float64
-	Time  time.Time
-	Speed float64
-	Power float64
+	Lat      float64
+	Lon      float64
+	Time     time.Time
+	Speed    float64
+	Power    float64
+	HasPower bool
+	Grade    float64
+	HasGrade bool
 }
 
 type Stop struct {
@@ -31,7 +34,7 @@ func DetectStops(points []Point, opts StopOptions) []Stop {
 	var stops []Stop
 	var inStop bool
 	var stopStart Point
-	var lastSlow Point       // last point at or below threshold
+	var lastSlow Point        // last point at or below threshold
 	var glitchStart time.Time // when the current above-threshold glitch began
 
 	for i, p := range points {

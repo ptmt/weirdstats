@@ -342,6 +342,13 @@
         display: grid;
         gap: 12px;
       }
+      .chart-head {
+        display: grid;
+        gap: 6px;
+      }
+      .chart-head h3 {
+        margin: 0;
+      }
       .chart-wrap {
         height: 260px;
         position: relative;
@@ -350,33 +357,46 @@
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
-        margin-bottom: 12px;
       }
       .layer-toggle {
         display: inline-flex;
         align-items: center;
-        gap: 6px;
+        gap: 8px;
         padding: 8px 12px;
-        border-radius: 8px;
+        border-radius: 999px;
         font-size: 12px;
-        background: var(--surface);
+        font-weight: 700;
+        background: rgba(255, 255, 255, 0.04);
         border: 1px solid var(--border);
         color: var(--ink-muted);
         cursor: pointer;
-        user-select: none;
         transition: all 0.2s ease;
       }
       .layer-toggle:hover {
-        border-color: var(--purple);
+        border-color: var(--border-bright);
         color: var(--ink);
       }
-      .layer-toggle.active {
-        background: rgba(168, 85, 247, 0.15);
-        border-color: var(--purple);
-        color: var(--purple);
+      .layer-toggle:focus-visible {
+        outline: 2px solid var(--cyan);
+        outline-offset: 2px;
       }
-      .layer-toggle input {
-        display: none;
+      .layer-toggle.active {
+        background: rgba(34, 197, 94, 0.12);
+        border-color: rgba(34, 197, 94, 0.28);
+        color: var(--ink);
+      }
+      .layer-toggle-count {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 20px;
+        padding: 1px 6px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        font-size: 11px;
+        line-height: 1.2;
+        color: var(--ink);
       }
     </style>
     <a href="/activities/" class="back-link">← Feed</a>
@@ -583,20 +603,15 @@
       </div>
     </article>
     <article class="card chart-card">
-      <h3>Speed &amp; events</h3>
-      <div class="layer-controls">
-        <label class="layer-toggle active" data-layer="stops">
-          <input type="checkbox" checked> Stop regions
-        </label>
-        <label class="layer-toggle active" data-layer="lights">
-          <input type="checkbox" checked> Traffic lights
-        </label>
-        <label class="layer-toggle active" data-layer="crossings">
-          <input type="checkbox" checked> Road crossings
-        </label>
-        <label class="layer-toggle" data-layer="avgSpeed">
-          <input type="checkbox"> Avg speed between stops
-        </label>
+      <div class="chart-head">
+        <h3>Speed timeline</h3>
+        <div class="map-note">Only overlays with actual data are shown here. Toggle layers on the chart without affecting the map.</div>
+      </div>
+      <div class="layer-controls" id="speed-layer-controls">
+        <button type="button" class="layer-toggle active" data-layer="stops" aria-pressed="true">Stop regions</button>
+        <button type="button" class="layer-toggle active" data-layer="lights" aria-pressed="true">Traffic lights</button>
+        <button type="button" class="layer-toggle active" data-layer="crossings" aria-pressed="true">Road crossings</button>
+        <button type="button" class="layer-toggle" data-layer="avgSpeed" aria-pressed="false">Between-stop avg</button>
       </div>
       {{if .HasSpeedSeries}}
         <div class="chart-wrap">
@@ -1021,25 +1036,48 @@
         }]
       });
 
-      // Layer toggle handlers
+      const layerAvailability = {
+        stops: segments.length > 0,
+        lights: lightStops.length > 0,
+        crossings: crossingStops.length > 0,
+        avgSpeed: avgSpeedSegments.length > 0
+      };
+      const layerCounts = {
+        stops: segments.length,
+        lights: lightStops.length,
+        crossings: crossingStops.length,
+        avgSpeed: avgSpeedSegments.length
+      };
+      const controls = document.getElementById('speed-layer-controls');
+
       document.querySelectorAll('.layer-toggle').forEach(toggle => {
         const layerName = toggle.dataset.layer;
-        const checkbox = toggle.querySelector('input');
+        if (!layerAvailability[layerName]) {
+          toggle.hidden = true;
+          return;
+        }
 
-        toggle.addEventListener('click', (e) => {
-          if (e.target === checkbox) return;
-          checkbox.checked = !checkbox.checked;
-          layers[layerName] = checkbox.checked;
-          toggle.classList.toggle('active', checkbox.checked);
-          chart.update('none');
-        });
+        const count = layerCounts[layerName];
+        if (count > 0) {
+          const badge = document.createElement('span');
+          badge.className = 'layer-toggle-count';
+          badge.textContent = count;
+          toggle.appendChild(badge);
+        }
 
-        checkbox.addEventListener('change', () => {
-          layers[layerName] = checkbox.checked;
-          toggle.classList.toggle('active', checkbox.checked);
+        toggle.classList.toggle('active', layers[layerName]);
+        toggle.setAttribute('aria-pressed', String(layers[layerName]));
+        toggle.addEventListener('click', () => {
+          layers[layerName] = !layers[layerName];
+          toggle.classList.toggle('active', layers[layerName]);
+          toggle.setAttribute('aria-pressed', String(layers[layerName]));
           chart.update('none');
         });
       });
+
+      if (controls && controls.querySelectorAll('.layer-toggle:not([hidden])').length === 0) {
+        controls.hidden = true;
+      }
     })();
   </script>
 {{end}}

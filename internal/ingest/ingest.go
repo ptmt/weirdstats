@@ -220,6 +220,11 @@ func buildPoints(start time.Time, streams strava.StreamSet) ([]gps.Point, error)
 		}
 		if idx < len(streams.Watts) {
 			p.Power = streams.Watts[idx]
+			p.HasPower = true
+		}
+		if idx < len(streams.GradeSmooth) {
+			p.Grade = streams.GradeSmooth[idx]
+			p.HasGrade = true
 		}
 		points = append(points, p)
 	}

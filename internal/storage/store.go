@@ -241,6 +241,8 @@ func (s *Store) InitSchema(ctx context.Context) error {
 		`ALTER TABLE activity_stats ADD COLUMN road_crossing_count INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE activities ADD COLUMN photo_url TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE user_fact_preferences ADD COLUMN post_to_strava INTEGER NOT NULL DEFAULT 1`,
+		`ALTER TABLE activity_points ADD COLUMN power REAL`,
+		`ALTER TABLE activity_points ADD COLUMN grade REAL`,
 	}
 	for _, m := range migrations {
 		_, _ = s.db.ExecContext(ctx, m) // ignore errors (column already exists)
@@ -272,6 +274,8 @@ CREATE TABLE IF NOT EXISTS activity_points (
 	lon REAL NOT NULL,
 	ts INTEGER NOT NULL,
 	speed REAL NOT NULL,
+	power REAL,
+	grade REAL,
 	PRIMARY KEY (activity_id, seq)
 );
 CREATE TABLE IF NOT EXISTS activity_stats (
@@ -470,8 +474,8 @@ WHERE activity_id = ?
 	}
 
 	stmt, err := tx.PrepareContext(ctx, `
-INSERT INTO activity_points (activity_id, seq, lat, lon, ts, speed)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO activity_points (activity_id, seq, lat, lon, ts, speed, power, grade)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `)
 	if err != nil {
 		return 0, err
@@ -479,7 +483,15 @@ VALUES (?, ?, ?, ?, ?, ?)
 	defer stmt.Close()
 
 	for i, p := range points {
-		_, err = stmt.ExecContext(ctx, activityID, i, p.Lat, p.Lon, p.Time.Unix(), p.Speed)
+		var power any
+		if p.HasPower {
+			power = p.Power
+		}
+		var grade any
+		if p.HasGrade {
+			grade = p.Grade
+		}
+		_, err = stmt.ExecContext(ctx, activityID, i, p.Lat, p.Lon, p.Time.Unix(), p.Speed, power, grade)
 		if err != nil {
 			return 0, err
 		}
@@ -1352,7 +1364,7 @@ WHERE id = ?
 
 func (s *Store) LoadActivityPoints(ctx context.Context, activityID int64) ([]gps.Point, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT lat, lon, ts, speed
+SELECT lat, lon, ts, speed, power, grade
 FROM activity_points
 WHERE activity_id = ?
 ORDER BY seq
@@ -1366,10 +1378,20 @@ ORDER BY seq
 	for rows.Next() {
 		var p gps.Point
 		var ts int64
-		if err := rows.Scan(&p.Lat, &p.Lon, &ts, &p.Speed); err != nil {
+		var power sql.NullFloat64
+		var grade sql.NullFloat64
+		if err := rows.Scan(&p.Lat, &p.Lon, &ts, &p.Speed, &power, &grade); err != nil {
 			return nil, err
 		}
 		p.Time = time.Unix(ts, 0)
+		if power.Valid {
+			p.Power = power.Float64
+			p.HasPower = true
+		}
+		if grade.Valid {
+			p.Grade = grade.Float64
+			p.HasGrade = true
+		}
 		points = append(points, p)
 	}
 	if err := rows.Err(); err != nil {

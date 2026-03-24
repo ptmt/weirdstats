@@ -11,13 +11,13 @@ import (
 func TestDetectSpeedMilestoneFacts(t *testing.T) {
 	start := time.Date(2026, time.March, 24, 8, 0, 0, 0, time.UTC)
 	points := []gps.Point{
-		{Lat: 52.5200, Lon: 13.4040, Time: start, Speed: 0},
-		{Lat: 52.5201, Lon: 13.4041, Time: start.Add(1 * time.Second), Speed: 1},
-		{Lat: 52.5202, Lon: 13.4042, Time: start.Add(3 * time.Second), Speed: 30.0 / 3.6},
-		{Lat: 52.5203, Lon: 13.4043, Time: start.Add(5 * time.Second), Speed: 40.0 / 3.6},
-		{Lat: 52.5204, Lon: 13.4044, Time: start.Add(6 * time.Second), Speed: 10},
-		{Lat: 52.5205, Lon: 13.4045, Time: start.Add(7 * time.Second), Speed: 30.0 / 3.6},
-		{Lat: 52.5206, Lon: 13.4046, Time: start.Add(9 * time.Second), Speed: speedMilestoneStopThresholdMPS},
+		{Lat: 52.5200, Lon: 13.4040, Time: start, Speed: 0, Grade: 0, HasGrade: true},
+		{Lat: 52.5201, Lon: 13.4041, Time: start.Add(1 * time.Second), Speed: 1, Grade: 0.2, HasGrade: true},
+		{Lat: 52.5202, Lon: 13.4042, Time: start.Add(3 * time.Second), Speed: 30.0 / 3.6, Grade: 0.5, HasGrade: true},
+		{Lat: 52.5203, Lon: 13.4043, Time: start.Add(5 * time.Second), Speed: 40.0 / 3.6, Grade: 0.1, HasGrade: true},
+		{Lat: 52.5204, Lon: 13.4044, Time: start.Add(6 * time.Second), Speed: 10, Grade: -0.2, HasGrade: true},
+		{Lat: 52.5205, Lon: 13.4045, Time: start.Add(7 * time.Second), Speed: 30.0 / 3.6, Grade: -0.1, HasGrade: true},
+		{Lat: 52.5206, Lon: 13.4046, Time: start.Add(9 * time.Second), Speed: speedMilestoneStopThresholdMPS, Grade: 0, HasGrade: true},
 	}
 
 	facts := detectSpeedMilestoneFacts("Ride", points)
@@ -83,5 +83,38 @@ func TestBuildActivityMapFactsIncludesSpeedMilestones(t *testing.T) {
 	}
 	if len(facts[0].Path) != 4 || len(facts[0].Points) != 2 {
 		t.Fatalf("expected segment path and endpoints for speed fact, got %+v", facts[0])
+	}
+}
+
+func TestDetectSpeedMilestoneFacts_IgnoresImplausibleOutliers(t *testing.T) {
+	start := time.Date(2026, time.March, 24, 8, 0, 0, 0, time.UTC)
+	points := []gps.Point{
+		{Lat: 52.5200, Lon: 13.4040, Time: start, Speed: 0, Grade: -8, HasGrade: true},
+		{Lat: 52.5201, Lon: 13.4041, Time: start.Add(1 * time.Second), Speed: 30.0 / 3.6, Grade: -8, HasGrade: true},
+		{Lat: 52.5202, Lon: 13.4042, Time: start.Add(2 * time.Second), Speed: 40.0 / 3.6, Grade: -7.5, HasGrade: true},
+		{Lat: 52.5203, Lon: 13.4043, Time: start.Add(3 * time.Second), Speed: 0, Grade: -7, HasGrade: true},
+	}
+
+	facts := detectSpeedMilestoneFacts("Ride", points)
+	for _, fact := range facts {
+		if fact.FactID == weirdStatsFactAcceleration030 || fact.FactID == weirdStatsFactAcceleration040 {
+			t.Fatalf("expected downhill acceleration milestones to be ignored, got %+v", facts)
+		}
+	}
+}
+
+func TestDetectSpeedMilestoneFacts_SkipsAccelerationWithoutGradeData(t *testing.T) {
+	start := time.Date(2026, time.March, 24, 8, 0, 0, 0, time.UTC)
+	points := []gps.Point{
+		{Lat: 52.5200, Lon: 13.4040, Time: start, Speed: 0},
+		{Lat: 52.5201, Lon: 13.4041, Time: start.Add(2 * time.Second), Speed: 30.0 / 3.6},
+		{Lat: 52.5202, Lon: 13.4042, Time: start.Add(4 * time.Second), Speed: 40.0 / 3.6},
+	}
+
+	facts := detectSpeedMilestoneFacts("Ride", points)
+	for _, fact := range facts {
+		if fact.FactID == weirdStatsFactAcceleration030 || fact.FactID == weirdStatsFactAcceleration040 {
+			t.Fatalf("expected acceleration milestones without grade data to be skipped, got %+v", facts)
+		}
 	}
 }

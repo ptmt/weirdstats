@@ -20,7 +20,8 @@ func TestClientGetsActivityAndStreams(t *testing.T) {
   "latlng":{"data":[[1.0,2.0],[3.0,4.0]]},
   "time":{"data":[0,60]},
   "velocity_smooth":{"data":[1.2,2.3]},
-  "watts":{"data":[210.0,220.0]}
+  "watts":{"data":[210.0,220.0]},
+  "grade_smooth":{"data":[-4.0,-3.5]}
 }`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -47,5 +48,8 @@ func TestClientGetsActivityAndStreams(t *testing.T) {
 	}
 	if len(streams.Watts) != 2 || streams.Watts[0] != 210 || streams.Watts[1] != 220 {
 		t.Fatalf("unexpected power stream: %#v", streams.Watts)
+	}
+	if len(streams.GradeSmooth) != 2 || streams.GradeSmooth[0] != -4 || streams.GradeSmooth[1] != -3.5 {
+		t.Fatalf("unexpected grade stream: %#v", streams.GradeSmooth)
 	}
 }
