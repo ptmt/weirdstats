@@ -31,10 +31,10 @@ const (
 	posterExportWidth          = 1170
 	posterExportHeight         = 2532
 	posterContextBBoxPaddingM  = 1400.0
-	posterContextRoadLimit     = 5
-	posterContextWaterLimit    = 3
-	posterContextWaterwayLimit = 4
-	posterContextPeakLimit     = 3
+	posterContextRoadLimit     = 6
+	posterContextWaterLimit    = 4
+	posterContextWaterwayLimit = 6
+	posterContextPeakLimit     = 4
 	posterContextLoadTimeout   = 3 * time.Second
 )
 
@@ -103,6 +103,14 @@ type posterMapContextView struct {
 	Peaks     []posterPeakView
 }
 
+type posterStatView struct {
+	Class  string
+	Label  string
+	Value  string
+	Unit   string
+	Detail string
+}
+
 type posterRenderOptions struct {
 	ShowHeader  bool
 	ShowMeta    bool
@@ -133,6 +141,7 @@ type posterPageData struct {
 	Waterways        []posterLineView
 	Waters           []posterAreaView
 	Peaks            []posterPeakView
+	Stats            []posterStatView
 	Facts            []posterFactView
 	Options          posterRenderOptions
 	PNGExport        bool
@@ -360,6 +369,91 @@ func posterLimitFacts(facts []ActivityMapFactView, limit int) []ActivityMapFactV
 	return facts[:limit]
 }
 
+func buildPosterStats(activity storage.Activity, storedStops []storage.ActivityStop) []posterStatView {
+	distanceValue, distanceUnit := formatDistanceParts(activity.Distance)
+	speedLabel, speedValue, speedUnit := formatPaceOrSpeed(activity.Type, activity.Distance, activity.MovingTime)
+	stats := []posterStatView{
+		{
+			Class: "story-stat--nw story-stat--distance",
+			Label: "Distance",
+			Value: distanceValue,
+			Unit:  distanceUnit,
+		},
+		{
+			Class: "story-stat--ne story-stat--speed",
+			Label: speedLabel,
+			Value: speedValue,
+			Unit:  speedUnit,
+		},
+		{
+			Class: "story-stat--sw story-stat--moving",
+			Label: "Moving",
+			Value: formatDuration(activity.MovingTime),
+		},
+	}
+
+	stopCount := len(storedStops)
+	stopTotalSeconds := 0
+	trafficLights := 0
+	roadCrossings := 0
+	for _, stop := range storedStops {
+		stopTotalSeconds += stop.DurationSeconds
+		if stop.HasTrafficLight {
+			trafficLights++
+		}
+		if stop.HasRoadCrossing {
+			roadCrossings++
+		}
+	}
+
+	stopDetailParts := make([]string, 0, 3)
+	if stopTotalSeconds > 0 {
+		stopDetailParts = append(stopDetailParts, formatDuration(stopTotalSeconds))
+	}
+	if trafficLights > 0 {
+		stopDetailParts = append(stopDetailParts, formatCountLabel(trafficLights, "light", "lights"))
+	}
+	if roadCrossings > 0 {
+		stopDetailParts = append(stopDetailParts, formatCountLabel(roadCrossings, "crossing", "crossings"))
+	}
+
+	if stopCount > 0 || len(stopDetailParts) > 0 {
+		stats = append(stats, posterStatView{
+			Class:  "story-stat--se story-stat--stops",
+			Label:  "Stops",
+			Value:  strconv.Itoa(stopCount),
+			Unit:   pluralizePosterStat(stopCount, "stop", "stops"),
+			Detail: strings.Join(stopDetailParts, " · "),
+		})
+		return stats
+	}
+
+	if value, unit, ok := formatPower(activity.AveragePower); ok {
+		stats = append(stats, posterStatView{
+			Class: "story-stat--se story-stat--power",
+			Label: "Avg power",
+			Value: value,
+			Unit:  unit,
+		})
+		return stats
+	}
+
+	stats = append(stats, posterStatView{
+		Class:  "story-stat--se story-stat--started",
+		Label:  "Started",
+		Value:  activity.StartTime.Format("15:04"),
+		Detail: activity.StartTime.Format("Jan 2"),
+	})
+	return stats
+}
+
+func pluralizePosterStat(count int, singular, plural string) string {
+	if count == 1 {
+		return singular
+	}
+	return plural
+}
+
 func (s *Server) posterPageData(ctx context.Context, userID, activityID int64, pngExport bool, options posterRenderOptions) (posterPageData, error) {
 	trace := newRequestTrace("poster_page_data")
 	trace.AddField("user_id", userID)
@@ -406,6 +500,8 @@ func (s *Server) posterPageData(ctx context.Context, userID, activityID int64, p
 
 	visibleFacts := posterLimitFacts(detectedFacts, options.FactsLimit)
 	trace.AddField("visible_facts", len(visibleFacts))
+	posterStats := buildPosterStats(activity, storedStops)
+	trace.AddField("stats", len(posterStats))
 
 	stepStart = time.Now()
 	routePoints := posterRoutePoints(points)
@@ -457,6 +553,7 @@ func (s *Server) posterPageData(ctx context.Context, userID, activityID int64, p
 		Waterways:        mapContext.Waterways,
 		Waters:           mapContext.Waters,
 		Peaks:            mapContext.Peaks,
+		Stats:            posterStats,
 		Facts:            projectedFacts,
 		Options:          options,
 		PNGExport:        pngExport,
@@ -623,16 +720,20 @@ func (s *Server) posterMapContext(ctx context.Context, activityID int64, points 
 	}
 
 	stepStart = time.Now()
-	view := buildPosterMapContextView(contextData, proj)
+	view := buildPosterMapContextView(contextData, points, proj)
 	trace.AddStep("project_context", stepStart)
 	trace.AddField("roads", len(view.Roads))
 	trace.AddField("waterways", len(view.Waterways))
 	trace.AddField("waters", len(view.Waters))
 	trace.AddField("peaks", len(view.Peaks))
+	trace.AddField("road_names", fmt.Sprintf("%q", posterSelectedLineNames(view.Roads)))
+	trace.AddField("waterway_names", fmt.Sprintf("%q", posterSelectedLineNames(view.Waterways)))
+	trace.AddField("water_names", fmt.Sprintf("%q", posterSelectedAreaNames(view.Waters)))
+	trace.AddField("peak_names", fmt.Sprintf("%q", posterSelectedPeakNames(view.Peaks)))
 	return view, nil
 }
 
-func buildPosterMapContextView(contextData maps.MapContext, proj posterProjection) posterMapContextView {
+func buildPosterMapContextView(contextData maps.MapContext, routePoints []gps.Point, proj posterProjection) posterMapContextView {
 	view := posterMapContextView{
 		Roads:     make([]posterLineView, 0, posterContextRoadLimit),
 		Waterways: make([]posterLineView, 0, posterContextWaterwayLimit),
@@ -640,22 +741,22 @@ func buildPosterMapContextView(contextData maps.MapContext, proj posterProjectio
 		Peaks:     make([]posterPeakView, 0, posterContextPeakLimit),
 	}
 
-	for _, road := range selectPosterRoads(contextData.Roads, posterContextRoadLimit) {
+	for _, road := range selectPosterRoads(contextData.Roads, routePoints, posterContextRoadLimit) {
 		if lineView, ok := buildPosterLineView(road.Name, road.Geometry, proj, posterRoadStrokeWidth(road.Highway)); ok {
 			view.Roads = append(view.Roads, lineView)
 		}
 	}
-	for _, waterway := range selectPosterWaterways(contextData.Waterways, posterContextWaterwayLimit) {
+	for _, waterway := range selectPosterWaterways(contextData.Waterways, routePoints, posterContextWaterwayLimit) {
 		if lineView, ok := buildPosterLineView(waterway.Name, waterway.Geometry, proj, 5.5); ok {
 			view.Waterways = append(view.Waterways, lineView)
 		}
 	}
-	for _, water := range selectPosterWaters(contextData.Waters, posterContextWaterLimit) {
+	for _, water := range selectPosterWaters(contextData.Waters, routePoints, posterContextWaterLimit) {
 		if areaView, ok := buildPosterAreaView(water.Name, water.Geometry, proj); ok {
 			view.Waters = append(view.Waters, areaView)
 		}
 	}
-	for _, peak := range selectPosterPeaks(contextData.Peaks, posterContextPeakLimit) {
+	for _, peak := range selectPosterPeaks(contextData.Peaks, routePoints, posterContextPeakLimit) {
 		x, y := proj.project(peak.Lat, peak.Lon)
 		view.Peaks = append(view.Peaks, posterPeakView{
 			Name: peak.Name,
@@ -666,52 +767,78 @@ func buildPosterMapContextView(contextData maps.MapContext, proj posterProjectio
 	return view
 }
 
-func selectPosterRoads(roads []maps.Road, max int) []maps.Road {
-	if len(roads) <= max || max <= 0 {
-		return roads
+func selectPosterRoads(roads []maps.Road, routePoints []gps.Point, max int) []maps.Road {
+	if len(roads) == 0 || max <= 0 {
+		return nil
 	}
 
 	selected := append([]maps.Road(nil), roads...)
-	sortPosterRoads(selected)
-	return selected[:max]
+	sortPosterRoads(selected, routePoints)
+	if len(selected) > max {
+		selected = selected[:max]
+	}
+	return selected
 }
 
-func selectPosterWaterways(features []maps.PolylineFeature, max int) []maps.PolylineFeature {
-	if len(features) <= max || max <= 0 {
-		return features
+func selectPosterWaterways(features []maps.PolylineFeature, routePoints []gps.Point, max int) []maps.PolylineFeature {
+	if len(features) == 0 || max <= 0 {
+		return nil
 	}
 
 	selected := append([]maps.PolylineFeature(nil), features...)
-	sortPosterPolylineFeatures(selected)
-	return selected[:max]
+	sortPosterPolylineFeatures(selected, routePoints)
+	if len(selected) > max {
+		selected = selected[:max]
+	}
+	return selected
 }
 
-func selectPosterWaters(features []maps.PolygonFeature, max int) []maps.PolygonFeature {
-	if len(features) <= max || max <= 0 {
-		return features
+func selectPosterWaters(features []maps.PolygonFeature, routePoints []gps.Point, max int) []maps.PolygonFeature {
+	if len(features) == 0 || max <= 0 {
+		return nil
 	}
 
 	selected := append([]maps.PolygonFeature(nil), features...)
-	sortPosterPolygonFeatures(selected)
-	return selected[:max]
+	sortPosterPolygonFeatures(selected, routePoints)
+	if len(selected) > max {
+		selected = selected[:max]
+	}
+	return selected
 }
 
-func selectPosterPeaks(peaks []maps.POI, max int) []maps.POI {
+func selectPosterPeaks(peaks []maps.POI, routePoints []gps.Point, max int) []maps.POI {
 	if max <= 0 {
 		return nil
 	}
-	if len(peaks) <= max {
-		return peaks
+	selected := append([]maps.POI(nil), peaks...)
+	sortPosterPeaks(selected, routePoints)
+	if len(selected) > max {
+		selected = selected[:max]
 	}
-	return peaks[:max]
+	return selected
 }
 
-func sortPosterRoads(roads []maps.Road) {
+func sortPosterRoads(roads []maps.Road, routePoints []gps.Point) {
 	sort.Slice(roads, func(i, j int) bool {
+		leftDistance := posterRouteDistanceForGeometry(roads[i].Geometry, routePoints)
+		rightDistance := posterRouteDistanceForGeometry(roads[j].Geometry, routePoints)
+		leftDistanceBucket := posterContextDistanceBucket(leftDistance)
+		rightDistanceBucket := posterContextDistanceBucket(rightDistance)
+		if leftDistanceBucket != rightDistanceBucket {
+			return leftDistanceBucket < rightDistanceBucket
+		}
 		leftRank := posterRoadRank(roads[i].Highway)
 		rightRank := posterRoadRank(roads[j].Highway)
 		if leftRank != rightRank {
 			return leftRank > rightRank
+		}
+		leftNamed := posterNamedRank(roads[i].Name)
+		rightNamed := posterNamedRank(roads[j].Name)
+		if leftNamed != rightNamed {
+			return leftNamed > rightNamed
+		}
+		if leftDistance != rightDistance {
+			return leftDistance < rightDistance
 		}
 		if len(roads[i].Geometry) != len(roads[j].Geometry) {
 			return len(roads[i].Geometry) > len(roads[j].Geometry)
@@ -720,8 +847,28 @@ func sortPosterRoads(roads []maps.Road) {
 	})
 }
 
-func sortPosterPolylineFeatures(features []maps.PolylineFeature) {
+func sortPosterPolylineFeatures(features []maps.PolylineFeature, routePoints []gps.Point) {
 	sort.Slice(features, func(i, j int) bool {
+		leftDistance := posterRouteDistanceForGeometry(features[i].Geometry, routePoints)
+		rightDistance := posterRouteDistanceForGeometry(features[j].Geometry, routePoints)
+		leftDistanceBucket := posterContextDistanceBucket(leftDistance)
+		rightDistanceBucket := posterContextDistanceBucket(rightDistance)
+		if leftDistanceBucket != rightDistanceBucket {
+			return leftDistanceBucket < rightDistanceBucket
+		}
+		leftNamed := posterNamedRank(features[i].Name)
+		rightNamed := posterNamedRank(features[j].Name)
+		if leftNamed != rightNamed {
+			return leftNamed > rightNamed
+		}
+		leftRank := posterWaterwayRank(features[i].Kind)
+		rightRank := posterWaterwayRank(features[j].Kind)
+		if leftRank != rightRank {
+			return leftRank > rightRank
+		}
+		if leftDistance != rightDistance {
+			return leftDistance < rightDistance
+		}
 		if len(features[i].Geometry) != len(features[j].Geometry) {
 			return len(features[i].Geometry) > len(features[j].Geometry)
 		}
@@ -729,12 +876,53 @@ func sortPosterPolylineFeatures(features []maps.PolylineFeature) {
 	})
 }
 
-func sortPosterPolygonFeatures(features []maps.PolygonFeature) {
+func sortPosterPolygonFeatures(features []maps.PolygonFeature, routePoints []gps.Point) {
 	sort.Slice(features, func(i, j int) bool {
+		leftDistance := posterRouteDistanceForGeometry(features[i].Geometry, routePoints)
+		rightDistance := posterRouteDistanceForGeometry(features[j].Geometry, routePoints)
+		leftDistanceBucket := posterContextDistanceBucket(leftDistance)
+		rightDistanceBucket := posterContextDistanceBucket(rightDistance)
+		if leftDistanceBucket != rightDistanceBucket {
+			return leftDistanceBucket < rightDistanceBucket
+		}
+		leftNamed := posterNamedRank(features[i].Name)
+		rightNamed := posterNamedRank(features[j].Name)
+		if leftNamed != rightNamed {
+			return leftNamed > rightNamed
+		}
+		leftRank := posterWaterAreaRank(features[i].Kind)
+		rightRank := posterWaterAreaRank(features[j].Kind)
+		if leftRank != rightRank {
+			return leftRank > rightRank
+		}
+		if leftDistance != rightDistance {
+			return leftDistance < rightDistance
+		}
 		if len(features[i].Geometry) != len(features[j].Geometry) {
 			return len(features[i].Geometry) > len(features[j].Geometry)
 		}
 		return features[i].Name < features[j].Name
+	})
+}
+
+func sortPosterPeaks(peaks []maps.POI, routePoints []gps.Point) {
+	sort.Slice(peaks, func(i, j int) bool {
+		leftDistance := minDistanceToRouteMeters(peaks[i].Lat, peaks[i].Lon, routePoints)
+		rightDistance := minDistanceToRouteMeters(peaks[j].Lat, peaks[j].Lon, routePoints)
+		leftDistanceBucket := posterContextDistanceBucket(leftDistance)
+		rightDistanceBucket := posterContextDistanceBucket(rightDistance)
+		if leftDistanceBucket != rightDistanceBucket {
+			return leftDistanceBucket < rightDistanceBucket
+		}
+		leftNamed := posterNamedRank(peaks[i].Name)
+		rightNamed := posterNamedRank(peaks[j].Name)
+		if leftNamed != rightNamed {
+			return leftNamed > rightNamed
+		}
+		if leftDistance != rightDistance {
+			return leftDistance < rightDistance
+		}
+		return peaks[i].Name < peaks[j].Name
 	})
 }
 
@@ -764,6 +952,135 @@ func posterRoadStrokeWidth(highway string) float64 {
 	default:
 		return 5.5
 	}
+}
+
+func posterNamedRank(name string) int {
+	if strings.TrimSpace(name) == "" {
+		return 0
+	}
+	return 1
+}
+
+func posterWaterwayRank(kind string) int {
+	switch kind {
+	case "river":
+		return 3
+	case "canal":
+		return 2
+	case "stream":
+		return 1
+	default:
+		return 0
+	}
+}
+
+func posterWaterAreaRank(kind string) int {
+	switch kind {
+	case "riverbank":
+		return 3
+	case "water":
+		return 2
+	case "reservoir":
+		return 1
+	default:
+		return 0
+	}
+}
+
+func posterContextDistanceBucket(distance float64) int {
+	switch {
+	case distance <= 80:
+		return 0
+	case distance <= 180:
+		return 1
+	case distance <= 320:
+		return 2
+	case distance <= 600:
+		return 3
+	default:
+		return 4
+	}
+}
+
+func posterRouteDistanceForGeometry(geometry []maps.LatLon, routePoints []gps.Point) float64 {
+	if len(routePoints) == 0 || len(geometry) == 0 {
+		return math.Inf(1)
+	}
+	best := math.Inf(1)
+	for _, point := range samplePosterLatLonPoints(geometry, 12) {
+		distance := minDistanceToRouteMeters(point.Lat, point.Lon, routePoints)
+		if distance < best {
+			best = distance
+		}
+	}
+	return best
+}
+
+func samplePosterLatLonPoints(points []maps.LatLon, max int) []maps.LatLon {
+	if len(points) <= max || max <= 0 {
+		return points
+	}
+
+	step := float64(len(points)-1) / float64(max-1)
+	sampled := make([]maps.LatLon, 0, max)
+	lastIdx := -1
+	for i := 0; i < max; i++ {
+		idx := int(math.Round(float64(i) * step))
+		if idx <= lastIdx {
+			idx = lastIdx + 1
+		}
+		if idx >= len(points) {
+			idx = len(points) - 1
+		}
+		sampled = append(sampled, points[idx])
+		lastIdx = idx
+		if idx == len(points)-1 {
+			break
+		}
+	}
+	return sampled
+}
+
+func posterSelectedLineNames(lines []posterLineView) string {
+	names := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if strings.TrimSpace(line.Name) == "" {
+			continue
+		}
+		names = append(names, line.Name)
+	}
+	if len(names) == 0 {
+		return "-"
+	}
+	return strings.Join(names, " | ")
+}
+
+func posterSelectedAreaNames(areas []posterAreaView) string {
+	names := make([]string, 0, len(areas))
+	for _, area := range areas {
+		if strings.TrimSpace(area.Name) == "" {
+			continue
+		}
+		names = append(names, area.Name)
+	}
+	if len(names) == 0 {
+		return "-"
+	}
+	return strings.Join(names, " | ")
+}
+
+func posterSelectedPeakNames(peaks []posterPeakView) string {
+	names := make([]string, 0, len(peaks))
+	for _, peak := range peaks {
+		if strings.TrimSpace(peak.Name) == "" {
+			continue
+		}
+		names = append(names, peak.Name)
+	}
+	if len(names) == 0 {
+		return "-"
+	}
+	return strings.Join(names, " | ")
 }
 
 func buildPosterLineView(name string, geometry []maps.LatLon, proj posterProjection, strokeWidth float64) (posterLineView, bool) {

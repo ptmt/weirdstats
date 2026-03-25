@@ -169,6 +169,7 @@ type PageData struct {
 
 type LandingPageData struct {
 	PageData
+	Facts []SettingsFact
 }
 
 type ProfilePageData struct {
@@ -562,6 +563,7 @@ func (s *Server) Landing(w http.ResponseWriter, r *http.Request) {
 			Strava:     s.getStravaInfo(r.Context(), userID),
 			UserCount:  s.userCount(r.Context()),
 		},
+		Facts: buildSettingsFacts(defaultWeirdStatsFactSettings()),
 	}
 	if err := s.templates["landing"].ExecuteTemplate(w, "base", data); err != nil {
 		http.Error(w, "template render failed", http.StatusInternalServerError)

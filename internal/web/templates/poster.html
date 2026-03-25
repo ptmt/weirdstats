@@ -55,10 +55,13 @@
         background: transparent;
       }
       .poster-page {
+        width: min(1240px, 100%);
+        margin: 0 auto;
         display: grid;
-        justify-items: center;
-        gap: 16px;
-        padding: 20px;
+        grid-template-columns: minmax(300px, 340px) minmax(0, 1fr);
+        align-items: start;
+        gap: 24px;
+        padding: 24px;
       }
       .poster-page--export {
         display: block;
@@ -67,14 +70,35 @@
         padding: 0;
       }
       .poster-controls {
-        width: min(430px, 92vw);
+        width: 100%;
         display: grid;
-        gap: 12px;
-        padding: 14px;
-        border-radius: 28px;
+        gap: 14px;
+        padding: 18px;
+        border-radius: 30px;
         border: 1px solid rgba(22, 11, 57, 0.12);
-        background: rgba(255, 255, 255, 0.42);
-        box-shadow: 0 14px 32px rgba(22, 11, 57, 0.08);
+        background: rgba(255, 255, 255, 0.48);
+        box-shadow: 0 18px 44px rgba(22, 11, 57, 0.1);
+        position: sticky;
+        top: 24px;
+      }
+      .poster-controls-head {
+        display: grid;
+        gap: 6px;
+      }
+      .poster-controls-head h2 {
+        margin: 0;
+        font-family: "Avenir Next Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
+        font-size: 30px;
+        font-style: italic;
+        font-weight: 900;
+        letter-spacing: -0.05em;
+        line-height: 0.92;
+      }
+      .poster-controls-head p {
+        margin: 0;
+        color: rgba(22, 11, 57, 0.72);
+        font-size: 13px;
+        line-height: 1.45;
       }
       .poster-controls-grid {
         display: grid;
@@ -142,9 +166,14 @@
       .poster-controls-actions button:last-child {
         background: linear-gradient(90deg, rgba(255, 255, 255, 0.86), rgba(0, 216, 255, 0.22));
       }
+      .poster-preview {
+        display: grid;
+        place-items: start center;
+        min-width: 0;
+      }
       .story-shot {
         position: relative;
-        width: min(430px, 92vw);
+        width: min(430px, 100%);
         aspect-ratio: 1170 / 2532;
         border-radius: 42px;
         background:
@@ -216,6 +245,11 @@
           linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.08)),
           radial-gradient(circle at top right, var(--fact-color, var(--hot)) 0, transparent 44%);
       }
+      .story-shot--transparent .story-stat {
+        background: rgba(255, 255, 255, 0.18);
+        border-color: rgba(22, 11, 57, 0.16);
+        box-shadow: none;
+      }
       .story-shot--uppercase .story-head h1,
       .story-shot--uppercase .story-meta,
       .story-shot--uppercase .story-kicker,
@@ -235,7 +269,7 @@
         z-index: 1;
         display: grid;
         grid-template-rows: auto 1fr auto;
-        gap: 18px;
+        gap: 16px;
         height: 100%;
         padding: 24px 22px 22px;
       }
@@ -286,14 +320,105 @@
         border-radius: 30px;
         border: 1px solid var(--line-strong);
         background:
-          radial-gradient(circle at 18% 16%, rgba(117, 255, 87, 0.22), transparent 24%),
-          radial-gradient(circle at 84% 24%, rgba(0, 216, 255, 0.22), transparent 24%),
-          linear-gradient(180deg, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.18)),
-          repeating-linear-gradient(90deg, rgba(22, 11, 57, 0.05) 0 1px, transparent 1px 56px),
-          repeating-linear-gradient(180deg, rgba(22, 11, 57, 0.045) 0 1px, transparent 1px 56px),
-          linear-gradient(160deg, rgba(255, 247, 163, 0.9), rgba(255, 120, 122, 0.4));
+          radial-gradient(circle at 16% 18%, rgba(117, 255, 87, 0.18), transparent 24%),
+          radial-gradient(circle at 86% 18%, rgba(0, 216, 255, 0.18), transparent 24%),
+          linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.22)),
+          repeating-linear-gradient(90deg, rgba(22, 11, 57, 0.035) 0 1px, transparent 1px 60px),
+          repeating-linear-gradient(180deg, rgba(22, 11, 57, 0.03) 0 1px, transparent 1px 60px),
+          linear-gradient(165deg, rgba(255, 246, 209, 0.98), rgba(255, 232, 240, 0.78));
         overflow: hidden;
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+      }
+      .story-map-stats {
+        position: absolute;
+        inset: 14px;
+        pointer-events: none;
+      }
+      .story-stat {
+        --stat-accent: var(--ink);
+        position: absolute;
+        display: grid;
+        gap: 4px;
+        min-width: 108px;
+        max-width: 134px;
+        padding: 10px 11px 9px;
+        border-radius: 18px;
+        border: 1px solid rgba(22, 11, 57, 0.12);
+        background: rgba(255, 255, 255, 0.72);
+        box-shadow: 0 12px 28px rgba(22, 11, 57, 0.12);
+        backdrop-filter: blur(18px) saturate(1.1);
+      }
+      .story-stat::before {
+        content: "";
+        width: 38px;
+        height: 3px;
+        border-radius: 999px;
+        background: var(--stat-accent);
+      }
+      .story-stat--distance {
+        --stat-accent: var(--cyan);
+      }
+      .story-stat--speed {
+        --stat-accent: var(--hot);
+      }
+      .story-stat--moving {
+        --stat-accent: #75ff57;
+      }
+      .story-stat--stops,
+      .story-stat--power,
+      .story-stat--started {
+        --stat-accent: var(--ink);
+      }
+      .story-stat--nw {
+        top: 0;
+        left: 0;
+      }
+      .story-stat--ne {
+        top: 0;
+        right: 0;
+      }
+      .story-stat--sw {
+        bottom: 0;
+        left: 0;
+      }
+      .story-stat--se {
+        bottom: 0;
+        right: 0;
+      }
+      .story-stat-label {
+        color: rgba(22, 11, 57, 0.62);
+        font-size: 9px;
+        font-weight: 900;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+      .story-stat-value {
+        display: flex;
+        align-items: baseline;
+        gap: 4px;
+        min-width: 0;
+      }
+      .story-stat-number {
+        min-width: 0;
+        font-family: "Avenir Next Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
+        font-size: 24px;
+        font-style: italic;
+        font-weight: 900;
+        letter-spacing: -0.07em;
+        line-height: 0.9;
+      }
+      .story-stat-unit {
+        color: rgba(22, 11, 57, 0.7);
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .story-stat-detail {
+        color: rgba(22, 11, 57, 0.74);
+        font-size: 10px;
+        font-weight: 700;
+        line-height: 1.28;
       }
       .story-map svg {
         display: block;
@@ -327,16 +452,16 @@
       .story-card-empty {
         position: relative;
         display: grid;
-        gap: 10px;
-        padding: 15px;
-        border-radius: 24px;
+        gap: 8px;
+        padding: 13px;
+        border-radius: 22px;
         min-height: 0;
         background:
           linear-gradient(180deg, rgba(255, 255, 255, 0.44), rgba(255, 255, 255, 0.2)),
           radial-gradient(circle at top right, rgba(255, 255, 255, 0.04) 0, transparent 52%),
           linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
         border: 1px solid rgba(22, 11, 57, 0.08);
-        box-shadow: 0 10px 18px rgba(22, 11, 57, 0.06);
+        box-shadow: 0 8px 16px rgba(22, 11, 57, 0.05);
       }
       .story-card-top {
         display: flex;
@@ -358,7 +483,7 @@
       .story-kicker {
         min-width: 0;
         font-family: "Avenir Next Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
-        font-size: 15px;
+        font-size: 14px;
         font-style: italic;
         font-weight: 900;
         letter-spacing: 0.02em;
@@ -367,7 +492,7 @@
       .story-card-empty p {
         margin: 0;
         color: rgba(22, 11, 57, 0.82);
-        font-size: 14px;
+        font-size: 13px;
         line-height: 1.45;
       }
       .story-card-empty {
@@ -375,19 +500,19 @@
         text-align: center;
       }
       .context-water-area {
-        fill: var(--water-fill);
-        stroke: rgba(0, 143, 183, 0.42);
-        stroke-width: 2;
+        fill: rgba(0, 216, 255, 0.24);
+        stroke: rgba(0, 143, 183, 0.56);
+        stroke-width: 2.5;
       }
       .context-waterway {
         fill: none;
-        stroke: var(--water-stroke);
+        stroke: rgba(0, 138, 178, 0.84);
         stroke-linecap: round;
         stroke-linejoin: round;
       }
       .context-road {
         fill: none;
-        stroke: var(--road-stroke);
+        stroke: rgba(86, 50, 113, 0.3);
         stroke-linecap: round;
         stroke-linejoin: round;
       }
@@ -396,14 +521,18 @@
       .context-peak-label {
         fill: rgba(22, 11, 57, 0.58);
         font-family: "Avenir Next Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
-        font-size: 18px;
+        font-size: 14px;
         font-style: italic;
         font-weight: 800;
         letter-spacing: 0.05em;
         text-anchor: middle;
+        paint-order: stroke fill;
+        stroke: rgba(255, 255, 255, 0.82);
+        stroke-width: 6px;
+        stroke-linejoin: round;
       }
       .context-water-label {
-        fill: rgba(0, 123, 156, 0.8);
+        fill: rgba(0, 123, 156, 0.84);
       }
       .context-peak path {
         fill: rgba(22, 11, 57, 0.74);
@@ -416,13 +545,13 @@
       .route-base {
         fill: none;
         stroke: rgba(22, 11, 57, 0.24);
-        stroke-width: 10;
+        stroke-width: 8;
         stroke-linecap: round;
         stroke-linejoin: round;
       }
       .route-accent {
         fill: none;
-        stroke-width: 14;
+        stroke-width: 12;
         stroke-linecap: round;
         stroke-linejoin: round;
         opacity: 0.94;
@@ -454,11 +583,20 @@
       }
       @media (max-width: 520px) {
         .poster-page {
+          grid-template-columns: 1fr;
           padding: 14px;
         }
         .poster-controls-grid,
         .story-grid {
           grid-template-columns: 1fr;
+        }
+      }
+      @media (max-width: 960px) {
+        .poster-page {
+          grid-template-columns: 1fr;
+        }
+        .poster-controls {
+          position: static;
         }
       }
     </style>
@@ -467,6 +605,10 @@
     <div class="poster-page{{if .PNGExport}} poster-page--export{{end}}">
       {{if not .PNGExport}}
         <form class="poster-controls" method="get" action="/activity/{{.ActivityID}}/poster">
+          <div class="poster-controls-head">
+            <h2>Export card</h2>
+            <p>Trim the poster down, switch the treatment, then export the exact same render as PNG.</p>
+          </div>
           <div class="poster-controls-grid">
             <div class="poster-toggle">
               <input type="hidden" name="header" value="0" />
@@ -515,89 +657,105 @@
           </div>
         </form>
       {{end}}
-      <article class="story-shot{{if .PNGExport}} story-shot--export{{end}}{{if not .ShowHeaderBlock}} story-shot--no-header{{end}}{{if not .ShowFactsSection}} story-shot--route-only{{end}}{{if .Options.Transparent}} story-shot--transparent{{end}}{{if .Options.Uppercase}} story-shot--uppercase{{end}}{{if .Options.Monochrome}} story-shot--mono{{end}}">
-        <div class="story-inner">
-          {{if .ShowHeaderBlock}}
-            <header class="story-head">
-              {{if .Options.ShowHeader}}
-                <div class="story-brand">WeirdStats Share Card</div>
-                <h1>{{.ActivityName}}</h1>
-              {{end}}
-              {{if .Options.ShowMeta}}
-                <p class="story-meta">{{.ActivityType}} · {{.ActivityTime}}{{if .Distance}} · {{.Distance}}{{end}}{{if .Duration}} · {{.Duration}}{{end}}</p>
-              {{end}}
-            </header>
-          {{end}}
+      <div class="poster-preview">
+        <article class="story-shot{{if .PNGExport}} story-shot--export{{end}}{{if not .ShowHeaderBlock}} story-shot--no-header{{end}}{{if not .ShowFactsSection}} story-shot--route-only{{end}}{{if .Options.Transparent}} story-shot--transparent{{end}}{{if .Options.Uppercase}} story-shot--uppercase{{end}}{{if .Options.Monochrome}} story-shot--mono{{end}}">
+          <div class="story-inner">
+            {{if .ShowHeaderBlock}}
+              <header class="story-head">
+                {{if .Options.ShowHeader}}
+                  <div class="story-brand">WeirdStats Share Card</div>
+                  <h1>{{.ActivityName}}</h1>
+                {{end}}
+                {{if .Options.ShowMeta}}
+                  <p class="story-meta">{{.ActivityType}} · {{.ActivityTime}}{{if .Distance}} · {{.Distance}}{{end}}{{if .Duration}} · {{.Duration}}{{end}}</p>
+                {{end}}
+              </header>
+            {{end}}
 
-          <section class="story-map">
-            <div class="story-map-frame">
-              {{if .HasRoute}}
-                <svg viewBox="0 0 1000 1120" role="img" aria-label="Route poster for {{.ActivityName}}" preserveAspectRatio="xMidYMid meet">
-                  {{range .Waters}}
-                    <path class="context-water-area" d="{{.Path}}" />
-                    {{if .HasLabel}}<text class="context-water-label" x="{{printf "%.1f" .LabelX}}" y="{{printf "%.1f" .LabelY}}">{{.Name}}</text>{{end}}
-                  {{end}}
-                  {{range .Waterways}}
-                    <path class="context-waterway" d="{{.Path}}" stroke-width="{{printf "%.1f" .StrokeWidth}}" />
-                    {{if .HasLabel}}<text class="context-water-label" x="{{printf "%.1f" .LabelX}}" y="{{printf "%.1f" .LabelY}}">{{.Name}}</text>{{end}}
-                  {{end}}
-                  {{range .Roads}}
-                    <path class="context-road" d="{{.Path}}" stroke-width="{{printf "%.1f" .StrokeWidth}}" />
-                    {{if .HasLabel}}<text class="context-road-label" x="{{printf "%.1f" .LabelX}}" y="{{printf "%.1f" .LabelY}}">{{.Name}}</text>{{end}}
-                  {{end}}
-                  {{range .Peaks}}
-                    <g class="context-peak" transform="translate({{printf "%.1f" .X}}, {{printf "%.1f" .Y}})">
-                      <path d="M 0 -12 L 10 10 L -10 10 Z" />
-                      <circle cy="14" r="3.5" />
-                    </g>
-                    <text class="context-peak-label" x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" dy="-20">{{.Name}}</text>
-                  {{end}}
-                  <path class="route-base" d="{{.RoutePath}}" />
-                  {{range .Facts}}
-                    {{if .OverlayPath}}<path class="route-accent" d="{{.OverlayPath}}" stroke="{{.Color}}" />{{end}}
-                  {{end}}
-                  {{range .Facts}}
-                    {{$fact := .}}
-                    {{range .Points}}<circle class="fact-dot" cx="{{printf "%.1f" .X}}" cy="{{printf "%.1f" .Y}}" r="7" fill="{{$fact.Color}}" />{{end}}
-                    {{if .HasMarker}}
-                      <g class="fact-marker" transform="translate({{printf "%.1f" .MarkerX}}, {{printf "%.1f" .MarkerY}})">
-                        <circle r="20" fill="{{.Color}}" />
-                        <text x="0" y="1">{{.Index}}</text>
-                      </g>
+            <section class="story-map">
+              <div class="story-map-frame">
+                {{if .HasRoute}}
+                  <svg viewBox="0 0 1000 1120" role="img" aria-label="Route poster for {{.ActivityName}}" preserveAspectRatio="xMidYMid meet">
+                    {{range .Waters}}
+                      <path class="context-water-area" d="{{.Path}}" />
+                      {{if .HasLabel}}<text class="context-water-label" x="{{printf "%.1f" .LabelX}}" y="{{printf "%.1f" .LabelY}}">{{.Name}}</text>{{end}}
                     {{end}}
-                  {{end}}
-                  <circle class="start-dot" cx="{{printf "%.1f" .RouteStartX}}" cy="{{printf "%.1f" .RouteStartY}}" r="11" fill="#75ff57" />
-                  <circle class="end-dot" cx="{{printf "%.1f" .RouteEndX}}" cy="{{printf "%.1f" .RouteEndY}}" r="11" fill="#160b39" />
-                </svg>
-              {{else}}
-                <div class="story-map-empty">No route points stored for this activity yet.</div>
-              {{end}}
-            </div>
-          </section>
-
-          {{if .ShowFactsSection}}
-            <section class="story-facts">
-              <div class="story-grid{{if eq (len .Facts) 1}} story-grid--single{{end}}">
-                {{if .Facts}}
-                  {{range .Facts}}
-                    <article class="story-card" style="--fact-color: {{.Color}};">
-                      <div class="story-card-top">
-                        <span class="story-index">{{.Index}}</span>
-                        <span class="story-kicker">{{.Title}}</span>
-                      </div>
-                      <p>{{.Summary}}</p>
-                    </article>
+                    {{range .Waterways}}
+                      <path class="context-waterway" d="{{.Path}}" stroke-width="{{printf "%.1f" .StrokeWidth}}" />
+                      {{if .HasLabel}}<text class="context-water-label" x="{{printf "%.1f" .LabelX}}" y="{{printf "%.1f" .LabelY}}">{{.Name}}</text>{{end}}
+                    {{end}}
+                    {{range .Roads}}
+                      <path class="context-road" d="{{.Path}}" stroke-width="{{printf "%.1f" .StrokeWidth}}" />
+                      {{if .HasLabel}}<text class="context-road-label" x="{{printf "%.1f" .LabelX}}" y="{{printf "%.1f" .LabelY}}">{{.Name}}</text>{{end}}
+                    {{end}}
+                    {{range .Peaks}}
+                      <g class="context-peak" transform="translate({{printf "%.1f" .X}}, {{printf "%.1f" .Y}})">
+                        <path d="M 0 -12 L 10 10 L -10 10 Z" />
+                        <circle cy="14" r="3.5" />
+                      </g>
+                      <text class="context-peak-label" x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" dy="-20">{{.Name}}</text>
+                    {{end}}
+                    <path class="route-base" d="{{.RoutePath}}" />
+                    {{range .Facts}}
+                      {{if .OverlayPath}}<path class="route-accent" d="{{.OverlayPath}}" stroke="{{.Color}}" />{{end}}
+                    {{end}}
+                    {{range .Facts}}
+                      {{$fact := .}}
+                      {{range .Points}}<circle class="fact-dot" cx="{{printf "%.1f" .X}}" cy="{{printf "%.1f" .Y}}" r="7" fill="{{$fact.Color}}" />{{end}}
+                      {{if .HasMarker}}
+                        <g class="fact-marker" transform="translate({{printf "%.1f" .MarkerX}}, {{printf "%.1f" .MarkerY}})">
+                          <circle r="20" fill="{{.Color}}" />
+                          <text x="0" y="1">{{.Index}}</text>
+                        </g>
+                      {{end}}
+                    {{end}}
+                    <circle class="start-dot" cx="{{printf "%.1f" .RouteStartX}}" cy="{{printf "%.1f" .RouteStartY}}" r="11" fill="#75ff57" />
+                    <circle class="end-dot" cx="{{printf "%.1f" .RouteEndX}}" cy="{{printf "%.1f" .RouteEndY}}" r="11" fill="#160b39" />
+                  </svg>
+                  {{if .Stats}}
+                    <div class="story-map-stats">
+                      {{range .Stats}}
+                        <div class="story-stat {{.Class}}">
+                          <span class="story-stat-label">{{.Label}}</span>
+                          <div class="story-stat-value">
+                            <span class="story-stat-number">{{.Value}}</span>
+                            {{if .Unit}}<span class="story-stat-unit">{{.Unit}}</span>{{end}}
+                          </div>
+                          {{if .Detail}}<span class="story-stat-detail">{{.Detail}}</span>{{end}}
+                        </div>
+                      {{end}}
+                    </div>
                   {{end}}
                 {{else}}
-                  <article class="story-card-empty">
-                    <p>No detected facts are stored yet for this activity. Refresh or re-apply the activity to generate them first.</p>
-                  </article>
+                  <div class="story-map-empty">No route points stored for this activity yet.</div>
                 {{end}}
               </div>
             </section>
-          {{end}}
-        </div>
-      </article>
+
+            {{if .ShowFactsSection}}
+              <section class="story-facts">
+                <div class="story-grid{{if eq (len .Facts) 1}} story-grid--single{{end}}">
+                  {{if .Facts}}
+                    {{range .Facts}}
+                      <article class="story-card" style="--fact-color: {{.Color}};">
+                        <div class="story-card-top">
+                          <span class="story-index">{{.Index}}</span>
+                          <span class="story-kicker">{{.Title}}</span>
+                        </div>
+                        <p>{{.Summary}}</p>
+                      </article>
+                    {{end}}
+                  {{else}}
+                    <article class="story-card-empty">
+                      <p>No detected facts are stored yet for this activity. Refresh or re-apply the activity to generate them first.</p>
+                    </article>
+                  {{end}}
+                </div>
+              </section>
+            {{end}}
+          </div>
+        </article>
+      </div>
     </div>
   </body>
 </html>

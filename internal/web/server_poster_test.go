@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"weirdstats/internal/gps"
+	"weirdstats/internal/maps"
 	"weirdstats/internal/storage"
 )
 
@@ -121,6 +122,8 @@ func TestActivityPoster_RendersStoredDetectedFacts(t *testing.T) {
 		"Longest uninterrupted segment",
 		"3.2 km without a real stop",
 		"Stop summary",
+		"story-map-stats",
+		"Distance",
 		"Export PNG",
 	} {
 		if !strings.Contains(body, want) {
@@ -309,6 +312,7 @@ func TestActivityPoster_AppliesRenderOptions(t *testing.T) {
 		"story-shot--transparent",
 		"story-shot--uppercase",
 		"story-shot--mono",
+		"story-map-stats",
 		"Export PNG",
 		"Longest uninterrupted segment",
 	} {
@@ -450,6 +454,52 @@ func TestFindPosterBrowser_ReportsProbeSummary(t *testing.T) {
 	}
 	if !strings.Contains(gotProbe, posterBrowserProbeLabel(browserPath)+":hit") {
 		t.Fatalf("expected hit entry in probe summary, got %q", gotProbe)
+	}
+}
+
+func TestSelectPosterWaterways_PrioritizesNamedRiverNearRoute(t *testing.T) {
+	routePoints := []gps.Point{
+		{Lat: 48.1370, Lon: 11.5750},
+		{Lat: 48.1378, Lon: 11.5762},
+		{Lat: 48.1386, Lon: 11.5774},
+	}
+
+	waterways := []maps.PolylineFeature{
+		{
+			Name: "Small Stream",
+			Kind: "stream",
+			Geometry: []maps.LatLon{
+				{Lat: 48.1371, Lon: 11.5752},
+				{Lat: 48.1379, Lon: 11.5764},
+			},
+		},
+		{
+			Name: "Isar",
+			Kind: "river",
+			Geometry: []maps.LatLon{
+				{Lat: 48.1368, Lon: 11.5748},
+				{Lat: 48.1388, Lon: 11.5770},
+			},
+		},
+		{
+			Name: "Far Canal",
+			Kind: "canal",
+			Geometry: []maps.LatLon{
+				{Lat: 48.1450, Lon: 11.5900},
+				{Lat: 48.1460, Lon: 11.5910},
+			},
+		},
+	}
+
+	selected := selectPosterWaterways(waterways, routePoints, 2)
+	if len(selected) != 2 {
+		t.Fatalf("expected 2 waterways, got %d", len(selected))
+	}
+	if selected[0].Name != "Isar" {
+		t.Fatalf("expected Isar to be prioritized, got %+v", selected)
+	}
+	if selected[1].Name != "Small Stream" {
+		t.Fatalf("expected Small Stream to remain after Isar, got %+v", selected)
 	}
 }
 
