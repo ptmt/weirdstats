@@ -437,67 +437,50 @@
       }
       .story-facts {
         display: grid;
+        gap: 8px;
         min-height: 0;
+        padding: 0 2px 2px;
       }
-      .story-grid {
+      .story-fact-list {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 12px;
+        gap: 6px;
         align-content: start;
       }
-      .story-grid--single {
-        grid-template-columns: 1fr;
+      .story-fact-line,
+      .story-fact-note {
+        margin: 0;
+        color: rgba(22, 11, 57, 0.78);
+        font-size: 11px;
+        line-height: 1.35;
       }
-      .story-card,
-      .story-card-empty {
-        position: relative;
+      .story-fact-line {
         display: grid;
+        grid-template-columns: auto 1fr;
         gap: 8px;
-        padding: 13px;
-        border-radius: 22px;
-        min-height: 0;
-        background:
-          linear-gradient(180deg, rgba(255, 255, 255, 0.44), rgba(255, 255, 255, 0.2)),
-          radial-gradient(circle at top right, rgba(255, 255, 255, 0.04) 0, transparent 52%),
-          linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
-        border: 1px solid rgba(22, 11, 57, 0.08);
-        box-shadow: 0 8px 16px rgba(22, 11, 57, 0.05);
+        align-items: start;
       }
-      .story-card-top {
-        display: flex;
-        align-items: flex-start;
-        gap: 10px;
-      }
-      .story-index {
-        display: inline-grid;
-        place-items: center;
-        width: 28px;
-        height: 28px;
-        border-radius: 999px;
-        background: var(--fact-color, var(--hot));
-        color: #fff;
-        font-size: 13px;
-        font-weight: 800;
-        box-shadow: 0 8px 18px rgba(22, 11, 57, 0.18);
-      }
-      .story-kicker {
-        min-width: 0;
+      .story-fact-index {
+        color: rgba(22, 11, 57, 0.46);
         font-family: "Avenir Next Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
-        font-size: 14px;
+        font-size: 10px;
         font-style: italic;
         font-weight: 900;
-        letter-spacing: 0.02em;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
       }
-      .story-card p,
-      .story-card-empty p {
-        margin: 0;
-        color: rgba(22, 11, 57, 0.82);
-        font-size: 13px;
-        line-height: 1.45;
+      .story-fact-copy {
+        min-width: 0;
       }
-      .story-card-empty {
-        place-items: center;
-        text-align: center;
+      .story-fact-copy strong {
+        font-family: "Avenir Next Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
+        font-size: 12px;
+        font-style: italic;
+        font-weight: 900;
+        letter-spacing: 0.01em;
+        color: var(--fact-color, var(--ink));
+      }
+      .story-fact-note {
+        color: rgba(22, 11, 57, 0.6);
       }
       .context-water-area {
         fill: rgba(0, 216, 255, 0.24);
@@ -586,8 +569,7 @@
           grid-template-columns: 1fr;
           padding: 14px;
         }
-        .poster-controls-grid,
-        .story-grid {
+        .poster-controls-grid {
           grid-template-columns: 1fr;
         }
       }
@@ -734,23 +716,18 @@
 
             {{if .ShowFactsSection}}
               <section class="story-facts">
-                <div class="story-grid{{if eq (len .Facts) 1}} story-grid--single{{end}}">
-                  {{if .Facts}}
+                {{if .Facts}}
+                  <div class="story-fact-list">
                     {{range .Facts}}
-                      <article class="story-card" style="--fact-color: {{.Color}};">
-                        <div class="story-card-top">
-                          <span class="story-index">{{.Index}}</span>
-                          <span class="story-kicker">{{.Title}}</span>
-                        </div>
-                        <p>{{.Summary}}</p>
-                      </article>
+                      <p class="story-fact-line" style="--fact-color: {{.Color}};">
+                        <span class="story-fact-index">{{printf "%02d" .Index}}</span>
+                        <span class="story-fact-copy"><strong>{{.Title}}</strong> · {{.Summary}}</span>
+                      </p>
                     {{end}}
-                  {{else}}
-                    <article class="story-card-empty">
-                      <p>No detected facts are stored yet for this activity. Refresh or re-apply the activity to generate them first.</p>
-                    </article>
-                  {{end}}
-                </div>
+                  </div>
+                {{else}}
+                  <p class="story-fact-note">No stored facts yet.</p>
+                {{end}}
               </section>
             {{end}}
           </div>
