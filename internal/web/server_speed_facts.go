@@ -12,7 +12,10 @@ const (
 	speedMilestoneStopThresholdMPS    = 0.5
 	speedMilestoneMaxAccelerationMPS2 = 3.5
 	speedMilestoneMaxDecelerationMPS2 = 5.0
-	speedMilestoneMaxDownhillGradePct = 3.0
+	// Require three observed intervals across the milestone so a missing sample
+	// cannot fabricate a near-record launch or braking event.
+	speedMilestoneMinRawPoints = 4
+	speedMilestoneMaxSampleGap = 2 * time.Second
 )
 
 type speedMilestoneDefinition struct {
@@ -151,7 +154,7 @@ func detectAccelerationMilestoneFact(points []gps.Point, definition speedMilesto
 				active = false
 				continue
 			}
-			if !accelerationMilestoneTrusted(points, startCandidate, crossing) {
+			if !speedMilestoneHasSufficientSampleQuality(points, startCandidate.index, crossing.index) {
 				active = false
 				continue
 			}
@@ -200,6 +203,10 @@ func detectDecelerationMilestoneFact(points []gps.Point, definition speedMilesto
 				active = false
 				continue
 			}
+			if !speedMilestoneHasSufficientSampleQuality(points, startCandidate.index, crossing.index) {
+				active = false
+				continue
+			}
 			candidate := newSpeedMilestoneFact(definition, duration, startCandidate, crossing)
 			if best.Duration <= 0 || candidate.Duration < best.Duration {
 				best = candidate
@@ -217,19 +224,17 @@ func detectDecelerationMilestoneFact(points []gps.Point, definition speedMilesto
 }
 
 type thresholdCrossing struct {
-	Time     time.Time
-	Lat      float64
-	Lon      float64
-	Grade    float64
-	HasGrade bool
-	index    int
+	Time  time.Time
+	Lat   float64
+	Lon   float64
+	index int
 }
 
 func upwardThresholdCrossing(prev, curr gps.Point, thresholdMPS float64) (thresholdCrossing, bool) {
 	if curr.Speed <= prev.Speed {
 		return thresholdCrossing{}, false
 	}
-	if prev.Speed > thresholdMPS || curr.Speed < thresholdMPS {
+	if prev.Speed >= thresholdMPS || curr.Speed < thresholdMPS {
 		return thresholdCrossing{}, false
 	}
 	return interpolateThresholdCrossing(prev, curr, thresholdMPS), true
@@ -239,7 +244,7 @@ func downwardThresholdCrossing(prev, curr gps.Point, thresholdMPS float64) (thre
 	if curr.Speed >= prev.Speed {
 		return thresholdCrossing{}, false
 	}
-	if prev.Speed < thresholdMPS || curr.Speed > thresholdMPS {
+	if prev.Speed <= thresholdMPS || curr.Speed > thresholdMPS {
 		return thresholdCrossing{}, false
 	}
 	return interpolateThresholdCrossing(prev, curr, thresholdMPS), true
@@ -248,11 +253,9 @@ func downwardThresholdCrossing(prev, curr gps.Point, thresholdMPS float64) (thre
 func interpolateThresholdCrossing(prev, curr gps.Point, thresholdMPS float64) thresholdCrossing {
 	if !curr.Time.After(prev.Time) || curr.Speed == prev.Speed {
 		return thresholdCrossing{
-			Time:     curr.Time,
-			Lat:      curr.Lat,
-			Lon:      curr.Lon,
-			Grade:    curr.Grade,
-			HasGrade: curr.HasGrade,
+			Time: curr.Time,
+			Lat:  curr.Lat,
+			Lon:  curr.Lon,
 		}
 	}
 	fraction := (thresholdMPS - prev.Speed) / (curr.Speed - prev.Speed)
@@ -266,13 +269,6 @@ func interpolateThresholdCrossing(prev, curr gps.Point, thresholdMPS float64) th
 		Time: prev.Time.Add(time.Duration(float64(delta) * fraction)),
 		Lat:  prev.Lat + (curr.Lat-prev.Lat)*fraction,
 		Lon:  prev.Lon + (curr.Lon-prev.Lon)*fraction,
-		Grade: func() float64 {
-			if !prev.HasGrade || !curr.HasGrade {
-				return 0
-			}
-			return prev.Grade + (curr.Grade-prev.Grade)*fraction
-		}(),
-		HasGrade: prev.HasGrade && curr.HasGrade,
 	}
 }
 
@@ -313,44 +309,20 @@ func speedMilestoneMinDuration(startThresholdMPS, endThresholdMPS, maxDeltaMPS2 
 	return time.Duration(seconds * float64(time.Second))
 }
 
-func accelerationMilestoneTrusted(points []gps.Point, start, end thresholdCrossing) bool {
-	avgGrade, ok := averageGradeBetween(points, start, end)
-	if !ok {
+func speedMilestoneHasSufficientSampleQuality(points []gps.Point, startIndex, endIndex int) bool {
+	if startIndex < 0 || endIndex < 0 || startIndex >= len(points) || endIndex >= len(points) || startIndex >= endIndex {
 		return false
 	}
-	return avgGrade >= -speedMilestoneMaxDownhillGradePct
-}
-
-func averageGradeBetween(points []gps.Point, start, end thresholdCrossing) (float64, bool) {
-	if start.index < 0 || end.index < 0 || start.index >= len(points) || end.index >= len(points) || start.index > end.index {
-		return 0, false
+	if endIndex-startIndex+1 < speedMilestoneMinRawPoints {
+		return false
 	}
-
-	total := 0.0
-	count := 0
-
-	if start.HasGrade {
-		total += start.Grade
-		count++
-	}
-
-	for idx := start.index; idx <= end.index; idx++ {
-		if !points[idx].HasGrade {
-			continue
+	for idx := startIndex + 1; idx <= endIndex; idx++ {
+		gap := points[idx].Time.Sub(points[idx-1].Time)
+		if gap <= 0 || gap > speedMilestoneMaxSampleGap {
+			return false
 		}
-		total += points[idx].Grade
-		count++
 	}
-
-	if end.HasGrade && (end.index != start.index || !start.HasGrade || end.Grade != start.Grade) {
-		total += end.Grade
-		count++
-	}
-
-	if count == 0 {
-		return 0, false
-	}
-	return total / float64(count), true
+	return true
 }
 
 func buildSpeedMilestonePart(fact speedMilestoneFact) string {

@@ -9,6 +9,8 @@ import (
 	"image/png"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -416,6 +418,38 @@ func TestActivityPosterPNG_RendersImage(t *testing.T) {
 	}
 	if !bytes.Equal(rec.Body.Bytes(), wantPNG) {
 		t.Fatalf("unexpected png body")
+	}
+}
+
+func TestFindPosterBrowser_ReportsProbeSummary(t *testing.T) {
+	origCandidates := posterBrowserCandidates
+	defer func() {
+		posterBrowserCandidates = origCandidates
+	}()
+
+	tempDir := t.TempDir()
+	browserPath := filepath.Join(tempDir, "fake-browser")
+	if err := os.WriteFile(browserPath, []byte("fake"), 0o755); err != nil {
+		t.Fatalf("write fake browser: %v", err)
+	}
+
+	posterBrowserCandidates = []string{
+		"definitely-not-a-real-browser-for-weirdstats",
+		browserPath,
+	}
+
+	gotPath, gotProbe, err := findPosterBrowser()
+	if err != nil {
+		t.Fatalf("find poster browser: %v", err)
+	}
+	if gotPath != browserPath {
+		t.Fatalf("expected browser path %q, got %q", browserPath, gotPath)
+	}
+	if !strings.Contains(gotProbe, "definitely-not-a-real-browser-for-weirdstats:miss") {
+		t.Fatalf("expected miss entry in probe summary, got %q", gotProbe)
+	}
+	if !strings.Contains(gotProbe, posterBrowserProbeLabel(browserPath)+":hit") {
+		t.Fatalf("expected hit entry in probe summary, got %q", gotProbe)
 	}
 }
 

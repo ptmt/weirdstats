@@ -919,13 +919,15 @@ func capturePosterPNGWithHeadlessBrowser(ctx context.Context, html []byte) ([]by
 	defer trace.Log()
 
 	stepStart := time.Now()
-	browserPath, err := findPosterBrowser()
+	browserPath, browserProbe, err := findPosterBrowser()
 	trace.AddStep("find_browser", stepStart)
+	trace.AddField("browser_probe", browserProbe)
 	if err != nil {
 		trace.AddField("error", "find_browser")
 		return nil, err
 	}
-	trace.AddField("browser", filepath.Base(browserPath))
+	trace.AddField("browser", fmt.Sprintf("%q", filepath.Base(browserPath)))
+	trace.AddField("browser_path", fmt.Sprintf("%q", browserPath))
 
 	stepStart = time.Now()
 	tempDir, err := os.MkdirTemp("", "weirdstats-poster-*")
@@ -982,18 +984,28 @@ func capturePosterPNGWithHeadlessBrowser(ctx context.Context, html []byte) ([]by
 	return png, nil
 }
 
-func findPosterBrowser() (string, error) {
+func findPosterBrowser() (string, string, error) {
+	probes := make([]string, 0, len(posterBrowserCandidates))
 	for _, candidate := range posterBrowserCandidates {
+		label := posterBrowserProbeLabel(candidate)
 		if strings.Contains(candidate, string(filepath.Separator)) {
 			if _, err := os.Stat(candidate); err == nil {
-				return candidate, nil
+				probes = append(probes, label+":hit")
+				return candidate, strings.Join(probes, "|"), nil
 			}
+			probes = append(probes, label+":miss")
 			continue
 		}
 		path, err := exec.LookPath(candidate)
 		if err == nil {
-			return path, nil
+			probes = append(probes, label+":hit")
+			return path, strings.Join(probes, "|"), nil
 		}
+		probes = append(probes, label+":miss")
 	}
-	return "", errPosterBrowserUnavailable
+	return "", strings.Join(probes, "|"), errPosterBrowserUnavailable
+}
+
+func posterBrowserProbeLabel(value string) string {
+	return strings.ReplaceAll(value, " ", "_")
 }
