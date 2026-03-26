@@ -38,7 +38,7 @@ A personal Strava analytics app that tracks additional statistics.
 
 4. Open http://localhost:8080
 
-For OAuth flows behind Strava callbacks, set `BASE_URL` to the public URL that reaches your server. The iOS prototype under [ios/README.md](ios/README.md) uses the mobile endpoints exposed by the backend.
+For OAuth flows behind Strava callbacks, set `BASE_URL` to the public URL that reaches your server. `BASE_URL=weirdstats.com` is accepted and normalized to `https://weirdstats.com`. The iOS prototype under [ios/README.md](ios/README.md) uses the mobile endpoints exposed by the backend.
 
 ## Docker
 

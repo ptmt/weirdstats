@@ -14,13 +14,13 @@ It uses:
 Run the server with a reachable base URL so Strava can call back into:
 
 ```bash
-BASE_URL=https://your-tunnel.example
+BASE_URL=weirdstats.com
 STRAVA_CLIENT_ID=...
 STRAVA_CLIENT_SECRET=...
 go run ./cmd/weirdstats
 ```
 
-`MOBILE_APP_REDIRECT_URL` is optional for this prototype because the app passes `weirdstats://auth/strava` as `app_redirect` when it starts the mobile flow.
+`MOBILE_APP_REDIRECT_URL` is optional for this prototype because the app passes `weirdstats://auth/strava` as `app_redirect` when it starts the mobile flow. The backend normalizes `BASE_URL=weirdstats.com` to `https://weirdstats.com` automatically.
 
 ## Generate the Xcode Project
 

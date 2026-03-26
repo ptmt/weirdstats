@@ -55,7 +55,7 @@ func Load(path string) (Config, error) {
 
 	cfg.DatabasePath = getenv("DATABASE_PATH", "weirdstats.db")
 	cfg.ServerAddr = getenv("SERVER_ADDR", cfg.ServerAddr)
-	cfg.BaseURL = strings.TrimRight(os.Getenv("BASE_URL"), "/")
+	cfg.BaseURL = normalizeBaseURL(os.Getenv("BASE_URL"))
 	cfg.SessionSecret = os.Getenv("SESSION_SECRET")
 	cfg.MobileAppRedirectURL = strings.TrimSpace(os.Getenv("MOBILE_APP_REDIRECT_URL"))
 	cfg.StravaAccessToken = os.Getenv("STRAVA_ACCESS_TOKEN")
@@ -200,4 +200,24 @@ func joinURL(base, path string) string {
 		path = "/" + path
 	}
 	return base + path
+}
+
+func normalizeBaseURL(raw string) string {
+	base := strings.TrimSpace(raw)
+	base = strings.TrimRight(base, "/")
+	if base == "" {
+		return ""
+	}
+	if strings.Contains(base, "://") {
+		return base
+	}
+	host := base
+	if slash := strings.Index(host, "/"); slash >= 0 {
+		host = host[:slash]
+	}
+	lowerHost := strings.ToLower(host)
+	if strings.HasPrefix(lowerHost, "localhost") || strings.HasPrefix(lowerHost, "127.0.0.1") || strings.HasPrefix(lowerHost, "[::1]") {
+		return "http://" + base
+	}
+	return "https://" + base
 }

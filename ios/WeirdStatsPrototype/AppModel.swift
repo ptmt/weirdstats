@@ -18,7 +18,7 @@ final class AppModel: ObservableObject {
     private var didBootstrap = false
 
     init() {
-        serverURLText = defaults.string(forKey: serverURLKey) ?? "http://localhost:8080"
+        serverURLText = defaults.string(forKey: serverURLKey) ?? "https://weirdstats.com"
     }
 
     var isSignedIn: Bool {
