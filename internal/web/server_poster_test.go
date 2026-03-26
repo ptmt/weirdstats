@@ -119,11 +119,11 @@ func TestActivityPoster_RendersStoredDetectedFacts(t *testing.T) {
 	for _, want := range []string{
 		"WeirdStats Share Card",
 		"Route poster for Poster Route",
-		"Longest uninterrupted segment",
+		"Longest segment",
 		"3.2 km without a real stop",
-		"Stop summary",
-		"story-map-stats",
-		"Distance",
+		"Stops",
+		`class="story-basics"`,
+		`class="story-weird-stats"`,
 		"Export PNG",
 	} {
 		if !strings.Contains(body, want) {
@@ -211,9 +211,9 @@ func TestActivityPoster_FallsBackToRebuiltFactsWhenCacheMissing(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		"Road crossings",
+		"Crossings",
 		"Broadway",
-		"Stop summary",
+		"Stops",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in poster response", want)
@@ -291,7 +291,7 @@ func TestActivityPoster_AppliesRenderOptions(t *testing.T) {
 		t.Fatalf("new server: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/activity/"+strconv.FormatInt(activityID, 10)+"/poster?header=0&meta=0&facts=1&transparent=1&uppercase=1&mono=1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/activity/"+strconv.FormatInt(activityID, 10)+"/poster?header=0&meta=0&basics=0&facts=1&transparent=1&uppercase=1&mono=1", nil)
 	sessionRec := httptest.NewRecorder()
 	if err := server.setSession(sessionRec, req, 818); err != nil {
 		t.Fatalf("set session: %v", err)
@@ -312,9 +312,9 @@ func TestActivityPoster_AppliesRenderOptions(t *testing.T) {
 		"story-shot--transparent",
 		"story-shot--uppercase",
 		"story-shot--mono",
-		"story-map-stats",
+		`class="story-weird-stats"`,
 		"Export PNG",
-		"Longest uninterrupted segment",
+		"Longest segment",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in poster response", want)
@@ -323,7 +323,8 @@ func TestActivityPoster_AppliesRenderOptions(t *testing.T) {
 	for _, unwanted := range []string{
 		"WEIRDSTATS SHARE CARD",
 		"Ride ·",
-		"Stop summary",
+		"Stops",
+		`class="story-basics"`,
 	} {
 		if strings.Contains(body, unwanted) {
 			t.Fatalf("did not expect %q in poster response", unwanted)
@@ -352,7 +353,7 @@ func TestActivityPosterPNG_RendersImage(t *testing.T) {
 		}
 		for _, unwanted := range [][]byte{
 			[]byte("WEIRDSTATS SHARE CARD"),
-			[]byte("Stop summary"),
+			[]byte(`class="story-basics"`),
 		} {
 			if bytes.Contains(html, unwanted) {
 				t.Fatalf("did not expect rendered html to contain %q", string(unwanted))
@@ -399,7 +400,7 @@ func TestActivityPosterPNG_RendersImage(t *testing.T) {
 		t.Fatalf("new server: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/activity/"+strconv.FormatInt(activityID, 10)+"/poster.png?header=0&meta=0&facts=0&transparent=1&uppercase=1&mono=1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/activity/"+strconv.FormatInt(activityID, 10)+"/poster.png?header=0&meta=0&basics=0&facts=0&transparent=1&uppercase=1&mono=1", nil)
 	sessionRec := httptest.NewRecorder()
 	if err := server.setSession(sessionRec, req, 909); err != nil {
 		t.Fatalf("set session: %v", err)
@@ -503,34 +504,46 @@ func TestSelectPosterWaterways_PrioritizesNamedRiverNearRoute(t *testing.T) {
 	}
 }
 
-func TestBuildPosterStats_SimplifiesOverlayCopy(t *testing.T) {
-	start := time.Date(2026, time.March, 24, 7, 30, 0, 0, time.UTC)
-	stats := buildPosterStats(storage.Activity{
-		Type:       "Ride",
-		Distance:   18420,
-		MovingTime: 2700,
-		StartTime:  start,
-	}, []storage.ActivityStop{
-		{DurationSeconds: 35, HasTrafficLight: true, HasRoadCrossing: true},
+func TestBuildPosterBasicStats_SimplifiesBaselineCopy(t *testing.T) {
+	stats := buildPosterBasicStats(storage.Activity{
+		Type:         "Ride",
+		Distance:     18420,
+		MovingTime:   2700,
+		AveragePower: 212,
 	})
 
-	if len(stats) != 4 {
-		t.Fatalf("expected 4 stats, got %d", len(stats))
+	if len(stats) != 3 {
+		t.Fatalf("expected 3 stats, got %d", len(stats))
 	}
-	if stats[0].Label != "Distance" {
-		t.Fatalf("expected first stat label %q, got %q", "Distance", stats[0].Label)
+	if stats[0].Label != "Speed" {
+		t.Fatalf("expected speed label to be simplified, got %q", stats[0].Label)
 	}
-	if stats[1].Label != "Speed" {
-		t.Fatalf("expected speed label to be simplified, got %q", stats[1].Label)
+	if stats[1].Label != "Time" {
+		t.Fatalf("expected moving time label to be simplified, got %q", stats[1].Label)
 	}
-	if stats[2].Label != "Time" {
-		t.Fatalf("expected moving time label to be simplified, got %q", stats[2].Label)
+	if stats[2].Label != "Power" || stats[2].Unit != "W" {
+		t.Fatalf("unexpected power stat: %+v", stats[2])
 	}
-	if stats[3].Label != "Stops" || stats[3].Value != "1" {
-		t.Fatalf("unexpected stop stat: %+v", stats[3])
+}
+
+func TestBuildPosterWeirdStats_ShortensLabelsAndAlternatesColumns(t *testing.T) {
+	left, right := buildPosterWeirdStats([]ActivityMapFactView{
+		{ID: weirdStatsFactLongestSegment, Title: "Longest uninterrupted segment", Summary: "3.2 km", Color: "#22c55e"},
+		{ID: weirdStatsFactStopSummary, Title: "Stop summary", Summary: "1 stop", Color: "#ec4899"},
+		{ID: weirdStatsFactRoadCrossings, Title: "Road crossings", Summary: "Broadway", Color: "#3b82f6"},
+	})
+
+	if len(left) != 2 || len(right) != 1 {
+		t.Fatalf("unexpected weird stat columns: left=%d right=%d", len(left), len(right))
 	}
-	if stats[3].Unit != "" || stats[3].Detail != "" {
-		t.Fatalf("expected stop stat copy to stay minimal, got %+v", stats[3])
+	if left[0].Label != "Longest segment" {
+		t.Fatalf("expected shortened label, got %+v", left[0])
+	}
+	if right[0].Label != "Stops" {
+		t.Fatalf("expected stop label to be shortened, got %+v", right[0])
+	}
+	if left[1].Label != "Crossings" {
+		t.Fatalf("expected road crossing label to be shortened, got %+v", left[1])
 	}
 }
 

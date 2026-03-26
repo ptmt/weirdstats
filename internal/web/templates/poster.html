@@ -217,12 +217,6 @@
         transform-origin: top left;
       }
       .story-shot--no-header .story-inner {
-        grid-template-rows: 1fr auto;
-      }
-      .story-shot--route-only .story-inner {
-        grid-template-rows: auto 1fr;
-      }
-      .story-shot--no-header.story-shot--route-only .story-inner {
         grid-template-rows: 1fr;
       }
       .story-shot--transparent {
@@ -245,14 +239,16 @@
           linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.08)),
           radial-gradient(circle at top right, var(--fact-color, var(--hot)) 0, transparent 44%);
       }
-      .story-shot--transparent .story-stat {
+      .story-shot--transparent .story-weird-stat,
+      .story-shot--transparent .story-basics {
         background: rgba(255, 255, 255, 0.18);
         border-color: rgba(22, 11, 57, 0.16);
         box-shadow: none;
       }
       .story-shot--uppercase .story-head h1,
       .story-shot--uppercase .story-meta,
-      .story-shot--uppercase .story-kicker,
+      .story-shot--uppercase .story-basic-label,
+      .story-shot--uppercase .story-weird-stat-label,
       .story-shot--uppercase .context-water-label,
       .story-shot--uppercase .context-road-label,
       .story-shot--uppercase .context-peak-label {
@@ -268,7 +264,7 @@
         position: relative;
         z-index: 1;
         display: grid;
-        grid-template-rows: auto 1fr auto;
+        grid-template-rows: auto 1fr;
         gap: 16px;
         height: 100%;
         padding: 24px 22px 22px;
@@ -329,18 +325,26 @@
         overflow: hidden;
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
       }
-      .story-map-stats {
+      .story-weird-stats {
         position: absolute;
-        inset: 14px;
+        inset: 14px 14px 64px;
+        display: grid;
+        grid-template-columns: minmax(98px, 114px) 1fr minmax(98px, 114px);
         pointer-events: none;
       }
-      .story-stat {
-        --stat-accent: var(--ink);
-        position: absolute;
+      .story-weird-stats-col {
         display: grid;
-        gap: 3px;
-        min-width: 100px;
-        max-width: 122px;
+        align-content: start;
+        gap: 8px;
+      }
+      .story-weird-stats-col--right {
+        justify-items: end;
+      }
+      .story-weird-stat {
+        --fact-color: var(--hot);
+        display: grid;
+        gap: 4px;
+        width: 100%;
         padding: 9px 10px 8px;
         border-radius: 18px;
         border: 1px solid rgba(22, 11, 57, 0.12);
@@ -348,77 +352,74 @@
         box-shadow: 0 12px 28px rgba(22, 11, 57, 0.12);
         backdrop-filter: blur(18px) saturate(1.1);
       }
-      .story-stat::before {
+      .story-weird-stat::before {
         content: "";
-        width: 38px;
+        width: 34px;
         height: 3px;
         border-radius: 999px;
-        background: var(--stat-accent);
+        background: var(--fact-color);
       }
-      .story-stat--distance {
-        --stat-accent: var(--cyan);
-      }
-      .story-stat--speed {
-        --stat-accent: var(--hot);
-      }
-      .story-stat--moving {
-        --stat-accent: #75ff57;
-      }
-      .story-stat--stops,
-      .story-stat--power,
-      .story-stat--started {
-        --stat-accent: var(--ink);
-      }
-      .story-stat--nw {
-        top: 0;
-        left: 0;
-      }
-      .story-stat--ne {
-        top: 0;
-        right: 0;
-      }
-      .story-stat--sw {
-        bottom: 0;
-        left: 0;
-      }
-      .story-stat--se {
-        bottom: 0;
-        right: 0;
-      }
-      .story-stat-label {
+      .story-weird-stat-label {
         color: rgba(22, 11, 57, 0.62);
         font-size: 8px;
         font-weight: 900;
         letter-spacing: 0.16em;
         text-transform: uppercase;
       }
-      .story-stat-value {
-        display: flex;
+      .story-weird-stat-summary {
+        color: rgba(22, 11, 57, 0.86);
+        font-size: 11px;
+        font-weight: 800;
+        line-height: 1.28;
+      }
+      .story-basics {
+        position: absolute;
+        left: 50%;
+        bottom: 14px;
+        transform: translateX(-50%);
+        display: inline-flex;
+        align-items: baseline;
+        gap: 0;
+        padding: 8px 12px;
+        border-radius: 999px;
+        border: 1px solid rgba(22, 11, 57, 0.12);
+        background: rgba(255, 255, 255, 0.78);
+        box-shadow: 0 12px 28px rgba(22, 11, 57, 0.12);
+        backdrop-filter: blur(18px) saturate(1.1);
+        pointer-events: none;
+      }
+      .story-basic-stat {
+        display: inline-flex;
         align-items: baseline;
         gap: 4px;
-        min-width: 0;
+        white-space: nowrap;
       }
-      .story-stat-number {
-        min-width: 0;
+      .story-basic-stat + .story-basic-stat {
+        margin-left: 10px;
+        padding-left: 10px;
+        border-left: 1px solid rgba(22, 11, 57, 0.12);
+      }
+      .story-basic-label {
+        color: rgba(22, 11, 57, 0.6);
+        font-size: 8px;
+        font-weight: 900;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+      .story-basic-number {
         font-family: "Avenir Next Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
-        font-size: 22px;
+        font-size: 16px;
         font-style: italic;
         font-weight: 900;
         letter-spacing: -0.07em;
         line-height: 0.9;
       }
-      .story-stat-unit {
+      .story-basic-unit {
         color: rgba(22, 11, 57, 0.7);
-        font-size: 10px;
+        font-size: 9px;
         font-weight: 800;
         letter-spacing: 0.08em;
         text-transform: uppercase;
-      }
-      .story-stat-detail {
-        color: rgba(22, 11, 57, 0.74);
-        font-size: 10px;
-        font-weight: 700;
-        line-height: 1.28;
       }
       .story-map svg {
         display: block;
@@ -608,6 +609,11 @@
               <span>Context</span>
             </div>
             <div class="poster-toggle">
+              <input type="hidden" name="basics" value="0" />
+              <input type="checkbox" id="poster-basics" name="basics" value="1" {{if .Options.ShowBasics}}checked{{end}} onchange="this.form.submit()" />
+              <span>Basics</span>
+            </div>
+            <div class="poster-toggle">
               <input type="hidden" name="transparent" value="0" />
               <input type="checkbox" id="poster-transparent" name="transparent" value="1" {{if .Options.Transparent}}checked{{end}} onchange="this.form.submit()" />
               <span>Transparent</span>
@@ -623,11 +629,12 @@
               <span>B/W only</span>
             </div>
             <label class="poster-select">
-              <span>Facts</span>
+              <span>Weird stats</span>
               <select name="facts" onchange="this.form.submit()">
                 <option value="all" {{if eq .Options.FactsLimit -1}}selected{{end}}>All</option>
-                <option value="2" {{if eq .Options.FactsLimit 2}}selected{{end}}>2 facts</option>
-                <option value="1" {{if eq .Options.FactsLimit 1}}selected{{end}}>1 fact</option>
+                <option value="4" {{if eq .Options.FactsLimit 4}}selected{{end}}>4 cards</option>
+                <option value="2" {{if eq .Options.FactsLimit 2}}selected{{end}}>2 cards</option>
+                <option value="1" {{if eq .Options.FactsLimit 1}}selected{{end}}>1 card</option>
                 <option value="0" {{if eq .Options.FactsLimit 0}}selected{{end}}>Off</option>
               </select>
             </label>
@@ -640,7 +647,7 @@
         </form>
       {{end}}
       <div class="poster-preview">
-        <article class="story-shot{{if .PNGExport}} story-shot--export{{end}}{{if not .ShowHeaderBlock}} story-shot--no-header{{end}}{{if not .ShowFactsSection}} story-shot--route-only{{end}}{{if .Options.Transparent}} story-shot--transparent{{end}}{{if .Options.Uppercase}} story-shot--uppercase{{end}}{{if .Options.Monochrome}} story-shot--mono{{end}}">
+        <article class="story-shot{{if .PNGExport}} story-shot--export{{end}}{{if not .ShowHeaderBlock}} story-shot--no-header{{end}}{{if .Options.Transparent}} story-shot--transparent{{end}}{{if .Options.Uppercase}} story-shot--uppercase{{end}}{{if .Options.Monochrome}} story-shot--mono{{end}}">
           <div class="story-inner">
             {{if .ShowHeaderBlock}}
               <header class="story-head">
@@ -649,7 +656,7 @@
                   <h1>{{.ActivityName}}</h1>
                 {{end}}
                 {{if .Options.ShowMeta}}
-                  <p class="story-meta">{{.ActivityType}} · {{.ActivityTime}}{{if .Distance}} · {{.Distance}}{{end}}{{if .Duration}} · {{.Duration}}{{end}}</p>
+                  <p class="story-meta">{{.ActivityType}} · {{.ActivityTime}}{{if .Distance}} · {{.Distance}}{{end}}</p>
                 {{end}}
               </header>
             {{end}}
@@ -694,16 +701,34 @@
                     <circle class="start-dot" cx="{{printf "%.1f" .RouteStartX}}" cy="{{printf "%.1f" .RouteStartY}}" r="12" fill="#75ff57" />
                     <circle class="end-dot" cx="{{printf "%.1f" .RouteEndX}}" cy="{{printf "%.1f" .RouteEndY}}" r="12" fill="#160b39" />
                   </svg>
-                  {{if .Stats}}
-                    <div class="story-map-stats">
-                      {{range .Stats}}
-                        <div class="story-stat {{.Class}}">
-                          <span class="story-stat-label">{{.Label}}</span>
-                          <div class="story-stat-value">
-                            <span class="story-stat-number">{{.Value}}</span>
-                            {{if .Unit}}<span class="story-stat-unit">{{.Unit}}</span>{{end}}
+                  {{if or .WeirdStatsLeft .WeirdStatsRight}}
+                    <div class="story-weird-stats">
+                      <div class="story-weird-stats-col">
+                        {{range .WeirdStatsLeft}}
+                          <div class="story-weird-stat" style="--fact-color: {{.Color}};">
+                            <span class="story-weird-stat-label">{{.Label}}</span>
+                            <span class="story-weird-stat-summary">{{.Summary}}</span>
                           </div>
-                          {{if .Detail}}<span class="story-stat-detail">{{.Detail}}</span>{{end}}
+                        {{end}}
+                      </div>
+                      <div></div>
+                      <div class="story-weird-stats-col story-weird-stats-col--right">
+                        {{range .WeirdStatsRight}}
+                          <div class="story-weird-stat" style="--fact-color: {{.Color}};">
+                            <span class="story-weird-stat-label">{{.Label}}</span>
+                            <span class="story-weird-stat-summary">{{.Summary}}</span>
+                          </div>
+                        {{end}}
+                      </div>
+                    </div>
+                  {{end}}
+                  {{if and .Options.ShowBasics .BasicStats}}
+                    <div class="story-basics">
+                      {{range .BasicStats}}
+                        <div class="story-basic-stat">
+                          <span class="story-basic-label">{{.Label}}</span>
+                          <span class="story-basic-number">{{.Value}}</span>
+                          {{if .Unit}}<span class="story-basic-unit">{{.Unit}}</span>{{end}}
                         </div>
                       {{end}}
                     </div>
@@ -713,23 +738,6 @@
                 {{end}}
               </div>
             </section>
-
-            {{if .ShowFactsSection}}
-              <section class="story-facts">
-                {{if .Facts}}
-                  <div class="story-fact-list">
-                    {{range .Facts}}
-                      <p class="story-fact-line" style="--fact-color: {{.Color}};">
-                        <span class="story-fact-index">{{printf "%02d" .Index}}</span>
-                        <span class="story-fact-copy"><strong>{{.Title}}</strong> · {{.Summary}}</span>
-                      </p>
-                    {{end}}
-                  </div>
-                {{else}}
-                  <p class="story-fact-note">No stored facts yet.</p>
-                {{end}}
-              </section>
-            {{end}}
           </div>
         </article>
       </div>

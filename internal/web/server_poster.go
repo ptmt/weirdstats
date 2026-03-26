@@ -105,18 +105,23 @@ type posterMapContextView struct {
 	Peaks     []posterPeakView
 }
 
-type posterStatView struct {
-	Class  string
-	Label  string
-	Value  string
-	Unit   string
-	Detail string
+type posterBasicStatView struct {
+	Label string
+	Value string
+	Unit  string
+}
+
+type posterWeirdStatView struct {
+	Label   string
+	Summary string
+	Color   string
 }
 
 type posterRenderOptions struct {
 	ShowHeader  bool
 	ShowMeta    bool
 	ShowContext bool
+	ShowBasics  bool
 	FactsLimit  int
 	Transparent bool
 	Uppercase   bool
@@ -124,29 +129,30 @@ type posterRenderOptions struct {
 }
 
 type posterPageData struct {
-	Title            string
-	ActivityID       int64
-	ActivityName     string
-	ActivityType     string
-	ActivityTime     string
-	Distance         string
-	Duration         string
-	RoutePath        string
-	RouteStartX      float64
-	RouteStartY      float64
-	RouteEndX        float64
-	RouteEndY        float64
-	HasRoute         bool
-	ShowHeaderBlock  bool
-	ShowFactsSection bool
-	Roads            []posterLineView
-	Waterways        []posterLineView
-	Waters           []posterAreaView
-	Peaks            []posterPeakView
-	Stats            []posterStatView
-	Facts            []posterFactView
-	Options          posterRenderOptions
-	PNGExport        bool
+	Title           string
+	ActivityID      int64
+	ActivityName    string
+	ActivityType    string
+	ActivityTime    string
+	Distance        string
+	Duration        string
+	RoutePath       string
+	RouteStartX     float64
+	RouteStartY     float64
+	RouteEndX       float64
+	RouteEndY       float64
+	HasRoute        bool
+	ShowHeaderBlock bool
+	Roads           []posterLineView
+	Waterways       []posterLineView
+	Waters          []posterAreaView
+	Peaks           []posterPeakView
+	BasicStats      []posterBasicStatView
+	WeirdStatsLeft  []posterWeirdStatView
+	WeirdStatsRight []posterWeirdStatView
+	Facts           []posterFactView
+	Options         posterRenderOptions
+	PNGExport       bool
 }
 
 type posterProjection struct {
@@ -177,6 +183,7 @@ func (s *Server) ActivityPoster(w http.ResponseWriter, r *http.Request) {
 	options := posterRenderOptionsFromRequest(r)
 	trace.AddField("facts_limit", options.FactsLimit)
 	trace.AddField("show_context", options.ShowContext)
+	trace.AddField("show_basics", options.ShowBasics)
 	trace.AddField("transparent", options.Transparent)
 	trace.AddField("uppercase", options.Uppercase)
 	trace.AddField("monochrome", options.Monochrome)
@@ -238,6 +245,7 @@ func (s *Server) ActivityPosterPNG(w http.ResponseWriter, r *http.Request) {
 	options := posterRenderOptionsFromRequest(r)
 	trace.AddField("facts_limit", options.FactsLimit)
 	trace.AddField("show_context", options.ShowContext)
+	trace.AddField("show_basics", options.ShowBasics)
 	trace.AddField("transparent", options.Transparent)
 	trace.AddField("uppercase", options.Uppercase)
 	trace.AddField("monochrome", options.Monochrome)
@@ -310,6 +318,7 @@ func posterDefaultRenderOptions() posterRenderOptions {
 		ShowHeader:  true,
 		ShowMeta:    true,
 		ShowContext: true,
+		ShowBasics:  true,
 		FactsLimit:  -1,
 	}
 }
@@ -320,6 +329,7 @@ func posterRenderOptionsFromRequest(r *http.Request) posterRenderOptions {
 	options.ShowHeader = posterQueryBool(values, "header", options.ShowHeader)
 	options.ShowMeta = posterQueryBool(values, "meta", options.ShowMeta)
 	options.ShowContext = posterQueryBool(values, "context", options.ShowContext)
+	options.ShowBasics = posterQueryBool(values, "basics", options.ShowBasics)
 	options.Transparent = posterQueryBool(values, "transparent", false)
 	options.Uppercase = posterQueryBool(values, "uppercase", false)
 	options.Monochrome = posterQueryBool(values, "mono", false)
@@ -352,7 +362,7 @@ func posterFactsLimit(values url.Values) int {
 	switch strings.ToLower(strings.TrimSpace(rawValues[len(rawValues)-1])) {
 	case "", "all":
 		return -1
-	case "0", "1", "2":
+	case "0", "1", "2", "4":
 		limit, err := strconv.Atoi(rawValues[len(rawValues)-1])
 		if err == nil {
 			return limit
@@ -371,59 +381,73 @@ func posterLimitFacts(facts []ActivityMapFactView, limit int) []ActivityMapFactV
 	return facts[:limit]
 }
 
-func buildPosterStats(activity storage.Activity, storedStops []storage.ActivityStop) []posterStatView {
-	distanceValue, distanceUnit := formatDistanceParts(activity.Distance)
+func buildPosterBasicStats(activity storage.Activity) []posterBasicStatView {
 	speedLabel, speedValue, speedUnit := formatPaceOrSpeed(activity.Type, activity.Distance, activity.MovingTime)
 	if speedLabel == "Avg speed" {
 		speedLabel = "Speed"
 	}
-	stats := []posterStatView{
+
+	stats := []posterBasicStatView{
 		{
-			Class: "story-stat--nw story-stat--distance",
-			Label: "Distance",
-			Value: distanceValue,
-			Unit:  distanceUnit,
-		},
-		{
-			Class: "story-stat--ne story-stat--speed",
 			Label: speedLabel,
 			Value: speedValue,
 			Unit:  speedUnit,
 		},
 		{
-			Class: "story-stat--sw story-stat--moving",
 			Label: "Time",
 			Value: formatDuration(activity.MovingTime),
 		},
 	}
 
-	stopCount := len(storedStops)
-
-	if stopCount > 0 {
-		stats = append(stats, posterStatView{
-			Class: "story-stat--se story-stat--stops",
-			Label: "Stops",
-			Value: strconv.Itoa(stopCount),
-		})
-		return stats
-	}
-
 	if value, unit, ok := formatPower(activity.AveragePower); ok {
-		stats = append(stats, posterStatView{
-			Class: "story-stat--se story-stat--power",
+		stats = append(stats, posterBasicStatView{
 			Label: "Power",
 			Value: value,
 			Unit:  unit,
 		})
-		return stats
 	}
 
-	stats = append(stats, posterStatView{
-		Class: "story-stat--se story-stat--started",
-		Label: "Start",
-		Value: activity.StartTime.Format("15:04"),
-	})
 	return stats
+}
+
+func buildPosterWeirdStats(facts []ActivityMapFactView) ([]posterWeirdStatView, []posterWeirdStatView) {
+	left := make([]posterWeirdStatView, 0, (len(facts)+1)/2)
+	right := make([]posterWeirdStatView, 0, len(facts)/2)
+
+	for idx, fact := range facts {
+		view := posterWeirdStatView{
+			Label:   posterWeirdStatLabel(fact),
+			Summary: strings.TrimSpace(fact.Summary),
+			Color:   fact.Color,
+		}
+		if view.Label == "" || view.Summary == "" {
+			continue
+		}
+		if idx%2 == 0 {
+			left = append(left, view)
+		} else {
+			right = append(right, view)
+		}
+	}
+
+	return left, right
+}
+
+func posterWeirdStatLabel(fact ActivityMapFactView) string {
+	switch fact.ID {
+	case weirdStatsFactLongestSegment:
+		return "Longest segment"
+	case weirdStatsFactStopSummary:
+		return "Stops"
+	case weirdStatsFactTrafficLightStops:
+		return "Traffic lights"
+	case weirdStatsFactRoadCrossings:
+		return "Crossings"
+	case weirdStatsFactRouteHighlights:
+		return "Highlights"
+	default:
+		return strings.TrimSpace(fact.Title)
+	}
 }
 
 func (s *Server) posterPageData(ctx context.Context, userID, activityID int64, pngExport bool, options posterRenderOptions) (posterPageData, error) {
@@ -433,6 +457,7 @@ func (s *Server) posterPageData(ctx context.Context, userID, activityID int64, p
 	trace.AddField("png_export", pngExport)
 	trace.AddField("facts_limit", options.FactsLimit)
 	trace.AddField("show_context", options.ShowContext)
+	trace.AddField("show_basics", options.ShowBasics)
 	defer trace.Log()
 
 	stepStart := time.Now()
@@ -472,8 +497,10 @@ func (s *Server) posterPageData(ctx context.Context, userID, activityID int64, p
 
 	visibleFacts := posterLimitFacts(detectedFacts, options.FactsLimit)
 	trace.AddField("visible_facts", len(visibleFacts))
-	posterStats := buildPosterStats(activity, storedStops)
-	trace.AddField("stats", len(posterStats))
+	basicStats := buildPosterBasicStats(activity)
+	weirdStatsLeft, weirdStatsRight := buildPosterWeirdStats(visibleFacts)
+	trace.AddField("basic_stats", len(basicStats))
+	trace.AddField("weird_stats", len(weirdStatsLeft)+len(weirdStatsRight))
 
 	stepStart = time.Now()
 	routePoints := posterRoutePoints(points)
@@ -521,29 +548,30 @@ func (s *Server) posterPageData(ctx context.Context, userID, activityID int64, p
 	trace.AddField("context_peaks", len(mapContext.Peaks))
 
 	return posterPageData{
-		Title:            activity.Name,
-		ActivityID:       activity.ID,
-		ActivityName:     activity.Name,
-		ActivityType:     activity.Type,
-		ActivityTime:     activity.StartTime.Format("Jan 2, 2006 15:04"),
-		Distance:         formatDistance(activity.Distance),
-		Duration:         formatDuration(activity.MovingTime),
-		RoutePath:        routePath,
-		RouteStartX:      startX,
-		RouteStartY:      startY,
-		RouteEndX:        endX,
-		RouteEndY:        endY,
-		HasRoute:         hasRoute,
-		ShowHeaderBlock:  options.ShowHeader || options.ShowMeta,
-		ShowFactsSection: options.FactsLimit != 0,
-		Roads:            mapContext.Roads,
-		Waterways:        mapContext.Waterways,
-		Waters:           mapContext.Waters,
-		Peaks:            mapContext.Peaks,
-		Stats:            posterStats,
-		Facts:            projectedFacts,
-		Options:          options,
-		PNGExport:        pngExport,
+		Title:           activity.Name,
+		ActivityID:      activity.ID,
+		ActivityName:    activity.Name,
+		ActivityType:    activity.Type,
+		ActivityTime:    activity.StartTime.Format("Jan 2, 2006 15:04"),
+		Distance:        formatDistance(activity.Distance),
+		Duration:        formatDuration(activity.MovingTime),
+		RoutePath:       routePath,
+		RouteStartX:     startX,
+		RouteStartY:     startY,
+		RouteEndX:       endX,
+		RouteEndY:       endY,
+		HasRoute:        hasRoute,
+		ShowHeaderBlock: options.ShowHeader || options.ShowMeta,
+		Roads:           mapContext.Roads,
+		Waterways:       mapContext.Waterways,
+		Waters:          mapContext.Waters,
+		Peaks:           mapContext.Peaks,
+		BasicStats:      basicStats,
+		WeirdStatsLeft:  weirdStatsLeft,
+		WeirdStatsRight: weirdStatsRight,
+		Facts:           projectedFacts,
+		Options:         options,
+		PNGExport:       pngExport,
 	}, nil
 }
 
