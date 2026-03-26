@@ -9,6 +9,7 @@ A personal Strava analytics app that tracks additional statistics.
 - Identify stops near traffic lights using OpenStreetMap data
 - View activity details with route visualization
 - Download activity data as JSON for testing
+- Native iOS prototype with backend-owned Strava sign-in
 
 ## Running Locally
 
@@ -36,6 +37,8 @@ A personal Strava analytics app that tracks additional statistics.
    ```
 
 4. Open http://localhost:8080
+
+For OAuth flows behind Strava callbacks, set `BASE_URL` to the public URL that reaches your server. The iOS prototype under [ios/README.md](ios/README.md) uses the mobile endpoints exposed by the backend.
 
 ## Docker
 
@@ -84,6 +87,11 @@ volumes:
 ## Environment Variables
 
 See [.env.example](.env.example) for all available configuration options.
+
+Mobile/iOS-related variables:
+
+- `BASE_URL`: used to derive `/connect/strava/callback`, `/connect/strava/mobile/callback`, and `/webhook`
+- `MOBILE_APP_REDIRECT_URL`: optional native-app callback like `weirdstats://auth/strava`
 
 ## CI/CD
 

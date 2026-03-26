@@ -1,0 +1,23 @@
+name: WeirdStatsPrototype
+options:
+  bundleIdPrefix: com.ptmt
+configs:
+  Debug: debug
+  Release: release
+targets:
+  WeirdStatsPrototype:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: WeirdStatsPrototype
+    info:
+      path: WeirdStatsPrototype/Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ptmt.weirdstats.prototype
+        PRODUCT_NAME: WeirdStatsPrototype
+        SWIFT_VERSION: 5.10
+        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: 0.1.0
+        DEVELOPMENT_TEAM: ""

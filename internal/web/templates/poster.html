@@ -338,10 +338,10 @@
         --stat-accent: var(--ink);
         position: absolute;
         display: grid;
-        gap: 4px;
-        min-width: 108px;
-        max-width: 134px;
-        padding: 10px 11px 9px;
+        gap: 3px;
+        min-width: 100px;
+        max-width: 122px;
+        padding: 9px 10px 8px;
         border-radius: 18px;
         border: 1px solid rgba(22, 11, 57, 0.12);
         background: rgba(255, 255, 255, 0.72);
@@ -387,7 +387,7 @@
       }
       .story-stat-label {
         color: rgba(22, 11, 57, 0.62);
-        font-size: 9px;
+        font-size: 8px;
         font-weight: 900;
         letter-spacing: 0.16em;
         text-transform: uppercase;
@@ -401,7 +401,7 @@
       .story-stat-number {
         min-width: 0;
         font-family: "Avenir Next Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
-        font-size: 24px;
+        font-size: 22px;
         font-style: italic;
         font-weight: 900;
         letter-spacing: -0.07em;
@@ -528,13 +528,13 @@
       .route-base {
         fill: none;
         stroke: rgba(22, 11, 57, 0.24);
-        stroke-width: 8;
+        stroke-width: 12;
         stroke-linecap: round;
         stroke-linejoin: round;
       }
       .route-accent {
         fill: none;
-        stroke-width: 12;
+        stroke-width: 18;
         stroke-linecap: round;
         stroke-linejoin: round;
         opacity: 0.94;
@@ -691,8 +691,8 @@
                         </g>
                       {{end}}
                     {{end}}
-                    <circle class="start-dot" cx="{{printf "%.1f" .RouteStartX}}" cy="{{printf "%.1f" .RouteStartY}}" r="11" fill="#75ff57" />
-                    <circle class="end-dot" cx="{{printf "%.1f" .RouteEndX}}" cy="{{printf "%.1f" .RouteEndY}}" r="11" fill="#160b39" />
+                    <circle class="start-dot" cx="{{printf "%.1f" .RouteStartX}}" cy="{{printf "%.1f" .RouteStartY}}" r="12" fill="#75ff57" />
+                    <circle class="end-dot" cx="{{printf "%.1f" .RouteEndX}}" cy="{{printf "%.1f" .RouteEndY}}" r="12" fill="#160b39" />
                   </svg>
                   {{if .Stats}}
                     <div class="story-map-stats">

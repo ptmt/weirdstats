@@ -26,11 +26,13 @@ import (
 const (
 	posterMapWidth             = 1000.0
 	posterMapHeight            = 1120.0
-	posterMapPadding           = 58.0
+	posterMapPadding           = 36.0
 	posterFactMarkerLimit      = 6
 	posterExportWidth          = 1170
 	posterExportHeight         = 2532
-	posterContextBBoxPaddingM  = 1400.0
+	posterContextMinPaddingM   = 280.0
+	posterContextMaxPaddingM   = 900.0
+	posterContextPaddingFactor = 0.35
 	posterContextRoadLimit     = 6
 	posterContextWaterLimit    = 4
 	posterContextWaterwayLimit = 6
@@ -372,6 +374,9 @@ func posterLimitFacts(facts []ActivityMapFactView, limit int) []ActivityMapFactV
 func buildPosterStats(activity storage.Activity, storedStops []storage.ActivityStop) []posterStatView {
 	distanceValue, distanceUnit := formatDistanceParts(activity.Distance)
 	speedLabel, speedValue, speedUnit := formatPaceOrSpeed(activity.Type, activity.Distance, activity.MovingTime)
+	if speedLabel == "Avg speed" {
+		speedLabel = "Speed"
+	}
 	stats := []posterStatView{
 		{
 			Class: "story-stat--nw story-stat--distance",
@@ -387,43 +392,18 @@ func buildPosterStats(activity storage.Activity, storedStops []storage.ActivityS
 		},
 		{
 			Class: "story-stat--sw story-stat--moving",
-			Label: "Moving",
+			Label: "Time",
 			Value: formatDuration(activity.MovingTime),
 		},
 	}
 
 	stopCount := len(storedStops)
-	stopTotalSeconds := 0
-	trafficLights := 0
-	roadCrossings := 0
-	for _, stop := range storedStops {
-		stopTotalSeconds += stop.DurationSeconds
-		if stop.HasTrafficLight {
-			trafficLights++
-		}
-		if stop.HasRoadCrossing {
-			roadCrossings++
-		}
-	}
 
-	stopDetailParts := make([]string, 0, 3)
-	if stopTotalSeconds > 0 {
-		stopDetailParts = append(stopDetailParts, formatDuration(stopTotalSeconds))
-	}
-	if trafficLights > 0 {
-		stopDetailParts = append(stopDetailParts, formatCountLabel(trafficLights, "light", "lights"))
-	}
-	if roadCrossings > 0 {
-		stopDetailParts = append(stopDetailParts, formatCountLabel(roadCrossings, "crossing", "crossings"))
-	}
-
-	if stopCount > 0 || len(stopDetailParts) > 0 {
+	if stopCount > 0 {
 		stats = append(stats, posterStatView{
-			Class:  "story-stat--se story-stat--stops",
-			Label:  "Stops",
-			Value:  strconv.Itoa(stopCount),
-			Unit:   pluralizePosterStat(stopCount, "stop", "stops"),
-			Detail: strings.Join(stopDetailParts, " · "),
+			Class: "story-stat--se story-stat--stops",
+			Label: "Stops",
+			Value: strconv.Itoa(stopCount),
 		})
 		return stats
 	}
@@ -431,7 +411,7 @@ func buildPosterStats(activity storage.Activity, storedStops []storage.ActivityS
 	if value, unit, ok := formatPower(activity.AveragePower); ok {
 		stats = append(stats, posterStatView{
 			Class: "story-stat--se story-stat--power",
-			Label: "Avg power",
+			Label: "Power",
 			Value: value,
 			Unit:  unit,
 		})
@@ -439,19 +419,11 @@ func buildPosterStats(activity storage.Activity, storedStops []storage.ActivityS
 	}
 
 	stats = append(stats, posterStatView{
-		Class:  "story-stat--se story-stat--started",
-		Label:  "Started",
-		Value:  activity.StartTime.Format("15:04"),
-		Detail: activity.StartTime.Format("Jan 2"),
+		Class: "story-stat--se story-stat--started",
+		Label: "Start",
+		Value: activity.StartTime.Format("15:04"),
 	})
 	return stats
-}
-
-func pluralizePosterStat(count int, singular, plural string) string {
-	if count == 1 {
-		return singular
-	}
-	return plural
 }
 
 func (s *Server) posterPageData(ctx context.Context, userID, activityID int64, pngExport bool, options posterRenderOptions) (posterPageData, error) {
@@ -513,11 +485,26 @@ func (s *Server) posterPageData(ctx context.Context, userID, activityID int64, p
 	hasRoute := false
 	mapContext := posterMapContextView{}
 	projectedFacts := []posterFactView{}
+	contextBBox := maps.BBox{}
+	contextPaddingM := 0.0
+	hasContextBBox := false
 
-	if proj, ok := newPosterProjection(routePoints, posterMapWidth, posterMapHeight, posterMapPadding); ok {
-		if options.ShowContext {
+	if options.ShowContext {
+		contextBBox, contextPaddingM, hasContextBBox = posterContextBBox(points)
+		trace.AddField("context_bbox_ready", hasContextBBox)
+		if hasContextBBox {
+			trace.AddField("context_padding_m", contextPaddingM)
+		}
+	}
+
+	proj, ok := newPosterProjection(routePoints, posterMapWidth, posterMapHeight, posterMapPadding)
+	if hasContextBBox {
+		proj, ok = newPosterProjectionFromBBox(contextBBox, posterMapWidth, posterMapHeight, posterMapPadding)
+	}
+	if ok {
+		if options.ShowContext && hasContextBBox {
 			contextStepStart := time.Now()
-			mapContext, err = s.posterMapContext(ctx, activityID, points, proj)
+			mapContext, err = s.posterMapContext(ctx, activityID, points, contextBBox, contextPaddingM, proj)
 			trace.AddStep("load_map_context", contextStepStart)
 			if err != nil {
 				trace.AddField("map_context_error", true)
@@ -604,6 +591,45 @@ func posterRoutePoints(points []gps.Point) []routePreviewPoint {
 	return out
 }
 
+func posterContextBBox(points []gps.Point) (maps.BBox, float64, bool) {
+	paddingMeters := posterContextPaddingMeters(points)
+	bbox, ok := routeBBox(points, paddingMeters)
+	return bbox, paddingMeters, ok
+}
+
+func posterContextPaddingMeters(points []gps.Point) float64 {
+	if len(points) == 0 {
+		return posterContextMinPaddingM
+	}
+
+	minLat, maxLat := points[0].Lat, points[0].Lat
+	minLon, maxLon := points[0].Lon, points[0].Lon
+	for _, point := range points[1:] {
+		if point.Lat < minLat {
+			minLat = point.Lat
+		}
+		if point.Lat > maxLat {
+			maxLat = point.Lat
+		}
+		if point.Lon < minLon {
+			minLon = point.Lon
+		}
+		if point.Lon > maxLon {
+			maxLon = point.Lon
+		}
+	}
+
+	paddingMeters := haversineMeters(minLat, minLon, maxLat, maxLon) * posterContextPaddingFactor
+	switch {
+	case paddingMeters < posterContextMinPaddingM:
+		return posterContextMinPaddingM
+	case paddingMeters > posterContextMaxPaddingM:
+		return posterContextMaxPaddingM
+	default:
+		return paddingMeters
+	}
+}
+
 func newPosterProjection(points []routePreviewPoint, width, height, padding float64) (posterProjection, bool) {
 	if len(points) == 0 {
 		return posterProjection{}, false
@@ -624,6 +650,18 @@ func newPosterProjection(points []routePreviewPoint, width, height, padding floa
 		if point.Lon > maxLon {
 			maxLon = point.Lon
 		}
+	}
+
+	return newPosterProjectionFromBounds(minLat, maxLat, minLon, maxLon, width, height, padding)
+}
+
+func newPosterProjectionFromBBox(bbox maps.BBox, width, height, padding float64) (posterProjection, bool) {
+	return newPosterProjectionFromBounds(bbox.South, bbox.North, bbox.West, bbox.East, width, height, padding)
+}
+
+func newPosterProjectionFromBounds(minLat, maxLat, minLon, maxLon, width, height, padding float64) (posterProjection, bool) {
+	if maxLat < minLat || maxLon < minLon {
+		return posterProjection{}, false
 	}
 
 	latRange := maxLat - minLat
@@ -692,9 +730,10 @@ func buildPosterFactViews(facts []ActivityMapFactView, proj posterProjection) []
 	return views
 }
 
-func (s *Server) posterMapContext(ctx context.Context, activityID int64, points []gps.Point, proj posterProjection) (posterMapContextView, error) {
+func (s *Server) posterMapContext(ctx context.Context, activityID int64, points []gps.Point, bbox maps.BBox, paddingMeters float64, proj posterProjection) (posterMapContextView, error) {
 	trace := newRequestTrace("poster_map_context")
 	trace.AddField("activity_id", activityID)
+	trace.AddField("route_points", len(points))
 	defer trace.Log()
 
 	if s.overpass == nil || len(points) < 2 {
@@ -702,11 +741,13 @@ func (s *Server) posterMapContext(ctx context.Context, activityID int64, points 
 		return posterMapContextView{}, nil
 	}
 
-	bbox, ok := routeBBox(points, posterContextBBoxPaddingM)
-	if !ok {
+	if bbox == (maps.BBox{}) {
 		trace.AddField("skipped", true)
 		return posterMapContextView{}, nil
 	}
+	trace.AddField("bbox", fmt.Sprintf("%q", bbox.String()))
+	trace.AddField("padding_m", paddingMeters)
+	trace.AddField("timeout", posterContextLoadTimeout)
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, posterContextLoadTimeout)
 	defer cancel()
@@ -716,8 +757,13 @@ func (s *Server) posterMapContext(ctx context.Context, activityID int64, points 
 	trace.AddStep("fetch_context", stepStart)
 	if err != nil {
 		trace.AddField("error", "fetch_context")
+		trace.AddField("error_detail", fmt.Sprintf("%q", err.Error()))
 		return posterMapContextView{}, err
 	}
+	trace.AddField("raw_roads", len(contextData.Roads))
+	trace.AddField("raw_waterways", len(contextData.Waterways))
+	trace.AddField("raw_waters", len(contextData.Waters))
+	trace.AddField("raw_peaks", len(contextData.Peaks))
 
 	stepStart = time.Now()
 	view := buildPosterMapContextView(contextData, points, proj)

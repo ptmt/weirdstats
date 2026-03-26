@@ -14,6 +14,7 @@ type Config struct {
 	DatabasePath              string
 	ServerAddr                string
 	SessionSecret             string
+	MobileAppRedirectURL      string
 	StravaAccessToken         string
 	StravaAccessExpiry        int64
 	StravaRefreshToken        string
@@ -22,6 +23,7 @@ type Config struct {
 	StravaBaseURL             string
 	StravaAuthBaseURL         string
 	StravaRedirectURL         string
+	StravaMobileRedirectURL   string
 	StravaVerifyToken         string
 	StravaWebhookSecret       string
 	StravaWebhookCallbackURL  string
@@ -55,6 +57,7 @@ func Load(path string) (Config, error) {
 	cfg.ServerAddr = getenv("SERVER_ADDR", cfg.ServerAddr)
 	cfg.BaseURL = strings.TrimRight(os.Getenv("BASE_URL"), "/")
 	cfg.SessionSecret = os.Getenv("SESSION_SECRET")
+	cfg.MobileAppRedirectURL = strings.TrimSpace(os.Getenv("MOBILE_APP_REDIRECT_URL"))
 	cfg.StravaAccessToken = os.Getenv("STRAVA_ACCESS_TOKEN")
 	cfg.StravaRefreshToken = os.Getenv("STRAVA_REFRESH_TOKEN")
 	cfg.StravaClientID = os.Getenv("STRAVA_CLIENT_ID")
@@ -65,6 +68,7 @@ func Load(path string) (Config, error) {
 	cfg.StravaWebhookSecret = os.Getenv("STRAVA_WEBHOOK_SECRET")
 	if cfg.BaseURL != "" {
 		cfg.StravaRedirectURL = joinURL(cfg.BaseURL, "/connect/strava/callback")
+		cfg.StravaMobileRedirectURL = joinURL(cfg.BaseURL, "/connect/strava/mobile/callback")
 		cfg.StravaWebhookCallbackURL = joinURL(cfg.BaseURL, "/webhook")
 	}
 	cfg.MapsAPIKey = os.Getenv("MAPS_API_KEY")

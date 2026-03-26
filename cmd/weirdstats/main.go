@@ -97,13 +97,15 @@ func main() {
 	}
 
 	webServer, err := web.NewServer(store, ingestor, mapAPI, overpassClient, stopOpts, web.StravaConfig{
-		ClientID:        cfg.StravaClientID,
-		ClientSecret:    cfg.StravaClientSecret,
-		AuthBaseURL:     cfg.StravaAuthBaseURL,
-		RedirectURL:     cfg.StravaRedirectURL,
-		InitialSyncDays: cfg.StravaInitialSyncDays,
-		Clients:         stravaFactory,
-		SessionSecret:   cfg.SessionSecret,
+		ClientID:             cfg.StravaClientID,
+		ClientSecret:         cfg.StravaClientSecret,
+		AuthBaseURL:          cfg.StravaAuthBaseURL,
+		RedirectURL:          cfg.StravaRedirectURL,
+		MobileRedirectURL:    cfg.StravaMobileRedirectURL,
+		MobileAppRedirectURL: cfg.MobileAppRedirectURL,
+		InitialSyncDays:      cfg.StravaInitialSyncDays,
+		Clients:              stravaFactory,
+		SessionSecret:        cfg.SessionSecret,
 	})
 	if err != nil {
 		log.Fatalf("load templates: %v", err)
@@ -116,10 +118,15 @@ func main() {
 	mux.HandleFunc("/", webServer.Landing)
 	mux.HandleFunc("/connect/strava", webServer.ConnectStrava)
 	mux.HandleFunc("/connect/strava/callback", webServer.StravaCallback)
+	mux.HandleFunc("/connect/strava/mobile", webServer.ConnectStravaMobile)
+	mux.HandleFunc("/connect/strava/mobile/callback", webServer.StravaMobileCallback)
 	mux.HandleFunc("/activities", webServer.Activities)
 	mux.HandleFunc("/activities/", webServer.Activities)
 	mux.HandleFunc("/activities/settings", webServer.Settings)
 	mux.HandleFunc("/api/rules/metadata", webServer.RulesMetadata)
+	mux.HandleFunc("/api/mobile/session/exchange", webServer.MobileSessionExchange)
+	mux.HandleFunc("/api/mobile/me", webServer.MobileMe)
+	mux.HandleFunc("/api/mobile/activities", webServer.MobileActivities)
 	mux.HandleFunc("/activity/", webServer.Activity)
 	mux.HandleFunc("/admin", webServer.Admin)
 	mux.HandleFunc("/admin/", webServer.Admin)

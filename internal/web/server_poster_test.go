@@ -503,6 +503,72 @@ func TestSelectPosterWaterways_PrioritizesNamedRiverNearRoute(t *testing.T) {
 	}
 }
 
+func TestBuildPosterStats_SimplifiesOverlayCopy(t *testing.T) {
+	start := time.Date(2026, time.March, 24, 7, 30, 0, 0, time.UTC)
+	stats := buildPosterStats(storage.Activity{
+		Type:       "Ride",
+		Distance:   18420,
+		MovingTime: 2700,
+		StartTime:  start,
+	}, []storage.ActivityStop{
+		{DurationSeconds: 35, HasTrafficLight: true, HasRoadCrossing: true},
+	})
+
+	if len(stats) != 4 {
+		t.Fatalf("expected 4 stats, got %d", len(stats))
+	}
+	if stats[0].Label != "Distance" {
+		t.Fatalf("expected first stat label %q, got %q", "Distance", stats[0].Label)
+	}
+	if stats[1].Label != "Speed" {
+		t.Fatalf("expected speed label to be simplified, got %q", stats[1].Label)
+	}
+	if stats[2].Label != "Time" {
+		t.Fatalf("expected moving time label to be simplified, got %q", stats[2].Label)
+	}
+	if stats[3].Label != "Stops" || stats[3].Value != "1" {
+		t.Fatalf("unexpected stop stat: %+v", stats[3])
+	}
+	if stats[3].Unit != "" || stats[3].Detail != "" {
+		t.Fatalf("expected stop stat copy to stay minimal, got %+v", stats[3])
+	}
+}
+
+func TestNewPosterProjectionFromBBox_KeepsContextWithinCanvas(t *testing.T) {
+	routeProj, ok := newPosterProjection([]routePreviewPoint{
+		{Lat: 52.5200, Lon: 13.4040},
+		{Lat: 52.5207, Lon: 13.4050},
+	}, posterMapWidth, posterMapHeight, posterMapPadding)
+	if !ok {
+		t.Fatal("expected route projection")
+	}
+
+	bboxProj, ok := newPosterProjectionFromBBox(maps.BBox{
+		South: 52.5194,
+		West:  13.4028,
+		North: 52.5213,
+		East:  13.4063,
+	}, posterMapWidth, posterMapHeight, posterMapPadding)
+	if !ok {
+		t.Fatal("expected bbox projection")
+	}
+
+	lat := 52.5204
+	lon := 13.4030
+	oldX, _ := routeProj.project(lat, lon)
+	if oldX >= 0 {
+		t.Fatalf("expected route-only projection to push context off canvas, got x=%.1f", oldX)
+	}
+
+	x, y := bboxProj.project(lat, lon)
+	if x < posterMapPadding || x > posterMapWidth-posterMapPadding {
+		t.Fatalf("expected projected x within padded canvas, got %.1f", x)
+	}
+	if y < posterMapPadding || y > posterMapHeight-posterMapPadding {
+		t.Fatalf("expected projected y within padded canvas, got %.1f", y)
+	}
+}
+
 func tinyPosterPNG(t *testing.T) []byte {
 	t.Helper()
 

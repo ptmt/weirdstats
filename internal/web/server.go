@@ -42,7 +42,10 @@ const (
 	sessionCookieName    = "weirdstats_session"
 	oauthStateCookieName = "weirdstats_oauth_state"
 	oauthNextCookieName  = "weirdstats_oauth_next"
+	oauthAppCookieName   = "weirdstats_oauth_app"
 	sessionDuration      = 30 * 24 * time.Hour
+	bearerTokenDuration  = 30 * 24 * time.Hour
+	mobileGrantDuration  = 5 * time.Minute
 )
 
 type Server struct {
@@ -241,13 +244,15 @@ type JobView struct {
 }
 
 type StravaConfig struct {
-	ClientID        string
-	ClientSecret    string
-	AuthBaseURL     string
-	RedirectURL     string
-	InitialSyncDays int
-	Clients         *strava.ClientFactory
-	SessionSecret   string
+	ClientID             string
+	ClientSecret         string
+	AuthBaseURL          string
+	RedirectURL          string
+	MobileRedirectURL    string
+	MobileAppRedirectURL string
+	InitialSyncDays      int
+	Clients              *strava.ClientFactory
+	SessionSecret        string
 }
 
 // StaticHandler serves embedded static assets (leaflet, chart.js).
@@ -407,6 +412,9 @@ func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) (int64, bo
 }
 
 func (s *Server) currentUserID(ctx context.Context, r *http.Request) (int64, bool) {
+	if userID, ok := s.currentBearerUserID(ctx, r); ok {
+		return userID, true
+	}
 	cookie, err := r.Cookie(sessionCookieName)
 	if err != nil || cookie.Value == "" {
 		return 0, false
@@ -442,6 +450,25 @@ func (s *Server) currentUserID(ctx context.Context, r *http.Request) (int64, boo
 	return payload.UserID, true
 }
 
+func (s *Server) currentBearerUserID(ctx context.Context, r *http.Request) (int64, bool) {
+	raw := strings.TrimSpace(r.Header.Get("Authorization"))
+	if raw == "" {
+		return 0, false
+	}
+	token, ok := strings.CutPrefix(raw, "Bearer ")
+	if !ok {
+		return 0, false
+	}
+	payload, ok := s.parseSignedAuthToken(strings.TrimSpace(token), bearerTokenKind)
+	if !ok {
+		return 0, false
+	}
+	if _, err := s.store.GetStravaToken(ctx, payload.UserID); err != nil {
+		return 0, false
+	}
+	return payload.UserID, true
+}
+
 func (s *Server) setSession(w http.ResponseWriter, r *http.Request, userID int64) error {
 	payload, err := json.Marshal(struct {
 		UserID  int64 `json:"user_id"`
@@ -456,6 +483,73 @@ func (s *Server) setSession(w http.ResponseWriter, r *http.Request, userID int64
 	value := base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(s.sign(payload))
 	setCookie(w, r, sessionCookieName, value, int(sessionDuration.Seconds()))
 	return nil
+}
+
+type signedAuthPayload struct {
+	Kind    string `json:"kind"`
+	UserID  int64  `json:"user_id"`
+	Expires int64  `json:"expires"`
+}
+
+const (
+	bearerTokenKind = "mobile_access"
+	mobileGrantKind = "mobile_grant"
+)
+
+func (s *Server) issueBearerToken(userID int64) (string, time.Time, error) {
+	expiresAt := time.Now().Add(bearerTokenDuration)
+	token, err := s.issueSignedAuthToken(bearerTokenKind, userID, expiresAt)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return token, expiresAt, nil
+}
+
+func (s *Server) issueMobileGrant(userID int64) (string, time.Time, error) {
+	expiresAt := time.Now().Add(mobileGrantDuration)
+	token, err := s.issueSignedAuthToken(mobileGrantKind, userID, expiresAt)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return token, expiresAt, nil
+}
+
+func (s *Server) issueSignedAuthToken(kind string, userID int64, expiresAt time.Time) (string, error) {
+	payload, err := json.Marshal(signedAuthPayload{
+		Kind:    kind,
+		UserID:  userID,
+		Expires: expiresAt.Unix(),
+	})
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(s.sign(payload)), nil
+}
+
+func (s *Server) parseSignedAuthToken(value, kind string) (signedAuthPayload, bool) {
+	parts := strings.Split(value, ".")
+	if len(parts) != 2 {
+		return signedAuthPayload{}, false
+	}
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return signedAuthPayload{}, false
+	}
+	sigBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return signedAuthPayload{}, false
+	}
+	if !hmac.Equal(sigBytes, s.sign(payloadBytes)) {
+		return signedAuthPayload{}, false
+	}
+	var payload signedAuthPayload
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		return signedAuthPayload{}, false
+	}
+	if payload.Kind != kind || payload.UserID == 0 || payload.Expires <= time.Now().Unix() {
+		return signedAuthPayload{}, false
+	}
+	return payload, true
 }
 
 func (s *Server) clearSession(w http.ResponseWriter, r *http.Request) {
@@ -525,6 +619,20 @@ func appendMessage(path, msg string) string {
 		sep = "&"
 	}
 	return path + sep + "msg=" + url.QueryEscape(msg)
+}
+
+func appendQueryValue(rawURL, key, value string) string {
+	if rawURL == "" {
+		return rawURL
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	query := parsed.Query()
+	query.Set(key, value)
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
 }
 
 func readCookieValue(r *http.Request, name string) string {
@@ -869,8 +977,21 @@ func (s *Server) StravaCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	code := r.URL.Query().Get("code")
+	userID, err := s.connectStravaUser(r.Context(), code)
+	if err != nil {
+		http.Redirect(w, r, appendMessage("/", err.Error()), http.StatusFound)
+		return
+	}
+	if err := s.setSession(w, r, userID); err != nil {
+		http.Redirect(w, r, appendMessage("/", "session creation failed"), http.StatusFound)
+		return
+	}
+	http.Redirect(w, r, next, http.StatusFound)
+}
+
+func (s *Server) connectStravaUser(ctx context.Context, code string) (int64, error) {
 	token, err := strava.ExchangeAuthorizationCode(
-		r.Context(),
+		ctx,
 		s.strava.AuthBaseURL,
 		s.strava.ClientID,
 		s.strava.ClientSecret,
@@ -879,15 +1000,13 @@ func (s *Server) StravaCallback(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		log.Printf("strava oauth exchange failed: %v", err)
-		http.Redirect(w, r, appendMessage("/", "strava authorization failed"), http.StatusFound)
-		return
+		return 0, fmt.Errorf("strava authorization failed")
 	}
 	userID := token.Athlete.ID
 	if userID == 0 {
-		http.Redirect(w, r, appendMessage("/", "strava token save failed"), http.StatusFound)
-		return
+		return 0, fmt.Errorf("strava token save failed")
 	}
-	_, err = s.store.GetStravaToken(r.Context(), userID)
+	_, err = s.store.GetStravaToken(ctx, userID)
 	firstConnect := false
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
@@ -900,18 +1019,17 @@ func (s *Server) StravaCallback(w http.ResponseWriter, r *http.Request) {
 		athleteName += " " + token.Athlete.LastName
 	}
 	if userID != 1 {
-		legacy, err := s.store.GetStravaToken(r.Context(), 1)
+		legacy, err := s.store.GetStravaToken(ctx, 1)
 		if err == nil && (legacy.AthleteID == 0 || legacy.AthleteID == userID) {
-			if err := s.store.ReassignUserData(r.Context(), 1, userID); err != nil {
+			if err := s.store.ReassignUserData(ctx, 1, userID); err != nil {
 				log.Printf("legacy user migration failed: %v", err)
-				http.Redirect(w, r, appendMessage("/", "strava token save failed"), http.StatusFound)
-				return
+				return 0, fmt.Errorf("strava token save failed")
 			}
 		}
 	}
 	log.Printf("Saving token: expires_at=%d (%v), athlete=%d %s",
 		token.ExpiresAt, time.Unix(token.ExpiresAt, 0), token.Athlete.ID, athleteName)
-	if err := s.store.UpsertStravaToken(r.Context(), storage.StravaToken{
+	if err := s.store.UpsertStravaToken(ctx, storage.StravaToken{
 		UserID:       userID,
 		AccessToken:  token.AccessToken,
 		RefreshToken: token.RefreshToken,
@@ -920,17 +1038,12 @@ func (s *Server) StravaCallback(w http.ResponseWriter, r *http.Request) {
 		AthleteName:  athleteName,
 	}); err != nil {
 		log.Printf("strava token save failed: %v", err)
-		http.Redirect(w, r, appendMessage("/", "strava token save failed"), http.StatusFound)
-		return
+		return 0, fmt.Errorf("strava token save failed")
 	}
 	if userID != 1 {
-		if legacy, err := s.store.GetStravaToken(r.Context(), 1); err == nil && (legacy.AthleteID == 0 || legacy.AthleteID == userID) {
-			_ = s.store.DeleteStravaToken(r.Context(), 1)
+		if legacy, err := s.store.GetStravaToken(ctx, 1); err == nil && (legacy.AthleteID == 0 || legacy.AthleteID == userID) {
+			_ = s.store.DeleteStravaToken(ctx, 1)
 		}
-	}
-	if err := s.setSession(w, r, userID); err != nil {
-		http.Redirect(w, r, appendMessage("/", "session creation failed"), http.StatusFound)
-		return
 	}
 	if firstConnect {
 		if s.ingestor == nil {
@@ -941,12 +1054,12 @@ func (s *Server) StravaCallback(w http.ResponseWriter, r *http.Request) {
 			days := s.strava.InitialSyncDays
 			log.Printf("strava connected; starting initial sync (%d days)", days)
 			after := time.Now().AddDate(0, 0, -days)
-			if err := s.enqueueSyncJob(r.Context(), userID, after); err != nil {
+			if err := s.enqueueSyncJob(ctx, userID, after); err != nil {
 				log.Printf("initial sync enqueue failed: %v", err)
 			}
 		}
 	}
-	http.Redirect(w, r, next, http.StatusFound)
+	return userID, nil
 }
 
 func compactErrMessage(err error) string {
