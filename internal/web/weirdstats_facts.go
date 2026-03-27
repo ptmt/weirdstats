@@ -51,7 +51,7 @@ var weirdStatsFactDefinitions = []weirdStatsFactDefinition{
 	},
 	{
 		ID:             weirdStatsFactLongestSegment,
-		Label:          "Longest uninterrupted segment",
+		Label:          "Longest segment",
 		Description:    "Write the longest moving segment with distance, speed, and power when available.",
 		DefaultEnabled: true,
 		RideOnly:       true,

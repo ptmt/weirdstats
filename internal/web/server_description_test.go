@@ -22,7 +22,7 @@ func TestApplyWeirdStatsDescription(t *testing.T) {
 	coffeeFact := coffeeStopFact{Name: "Bean Machine"}
 	routeFact := routeHighlightFact{Names: []string{"Victory Column", "Memorial Church"}}
 	roadFact := roadCrossingFact{Count: 2, Roads: []string{"Unter den Linden", "Friedrichstrasse"}}
-	line := "Longest uninterrupted segment: 48km - 200w - 30kmh · Detected Coffee Stop: Bean Machine · Route highlights: Victory Column, Memorial Church · 2 road crossings: Unter den Linden, Friedrichstrasse #weirdstats"
+	line := "Longest segment: 48km - 200w - 30kmh · Detected Coffee Stop: Bean Machine · Route highlights: Victory Column, Memorial Church · 2 road crossings: Unter den Linden, Friedrichstrasse #weirdstats"
 
 	tests := []struct {
 		name       string
@@ -109,12 +109,33 @@ func TestApplyWeirdStatsDescription_WithRideFactOnly(t *testing.T) {
 	}
 
 	got, changed := applyWeirdStatsDescription("", stats.StopStats{}, rideFact, nil, coffeeStopFact{}, routeHighlightFact{}, roadCrossingFact{})
-	want := "Longest uninterrupted segment: 48.3km - 199w - 29.8kmh #weirdstats"
+	want := "Longest segment: 48.3km - 199w - 29.8kmh #weirdstats"
 	if got != want {
 		t.Fatalf("unexpected description\nwant: %q\n got: %q", want, got)
 	}
 	if !changed {
 		t.Fatalf("expected description to change")
+	}
+}
+
+func TestShouldPostWeirdStatsDescription(t *testing.T) {
+	tests := []struct {
+		name      string
+		activity  string
+		distanceM float64
+		want      bool
+	}{
+		{name: "short ride does not post", activity: "Ride", distanceM: 9999, want: false},
+		{name: "10km ride still posts", activity: "Ride", distanceM: 10000, want: true},
+		{name: "run ignores ride threshold", activity: "Run", distanceM: 5000, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldPostWeirdStatsDescription(tt.activity, tt.distanceM); got != tt.want {
+				t.Fatalf("unexpected posting decision: want %v got %v", tt.want, got)
+			}
+		})
 	}
 }
 
@@ -199,12 +220,12 @@ func TestBuildWeirdStatsLine(t *testing.T) {
 			coffeeFact: coffeeFact,
 			routeFact:  routeFact,
 			roadFact:   roadFact,
-			want:       "Longest uninterrupted segment: 48km - 200w - 30kmh · Detected Coffee Stop: Bean Machine · Route highlights: Victory Column, Memorial Church · 2 road crossings: Unter den Linden, Friedrichstrasse",
+			want:       "Longest segment: 48km - 200w - 30kmh · Detected Coffee Stop: Bean Machine · Route highlights: Victory Column, Memorial Church · 2 road crossings: Unter den Linden, Friedrichstrasse",
 		},
 		{
 			name:     "ride fact only",
 			rideFact: rideSegmentFact{DistanceMeters: 48250, AvgPower: 198.7, AvgSpeedMPS: 29.8 / 3.6},
-			want:     "Longest uninterrupted segment: 48.3km - 199w - 29.8kmh",
+			want:     "Longest segment: 48.3km - 199w - 29.8kmh",
 		},
 		{
 			name:       "coffee fact only",
@@ -281,12 +302,12 @@ func TestBuildRideSegmentPart(t *testing.T) {
 		{
 			name: "with power",
 			fact: rideSegmentFact{DistanceMeters: 48000, AvgPower: 200, AvgSpeedMPS: 30.0 / 3.6},
-			want: "Longest uninterrupted segment: 48km - 200w - 30kmh",
+			want: "Longest segment: 48km - 200w - 30kmh",
 		},
 		{
 			name: "without power",
 			fact: rideSegmentFact{DistanceMeters: 12345, AvgSpeedMPS: 25.0 / 3.6},
-			want: "Longest uninterrupted segment: 12.3km - 25kmh",
+			want: "Longest segment: 12.3km - 25kmh",
 		},
 		{
 			name: "missing speed",
@@ -518,7 +539,7 @@ func TestIsWeirdstatsManagedLine(t *testing.T) {
 		},
 		{
 			name: "new stats line",
-			line: "Longest uninterrupted segment: 48km - 200w - 30kmh · Detected Coffee Stop: Bean Machine · Route highlights: Victory Column · 2 road crossings: Unter den Linden, Friedrichstrasse · 2 stops (42s total) #weirdstats",
+			line: "Longest segment: 48km - 200w - 30kmh · Detected Coffee Stop: Bean Machine · Route highlights: Victory Column · 2 road crossings: Unter den Linden, Friedrichstrasse · 2 stops (42s total) #weirdstats",
 			want: true,
 		},
 		{

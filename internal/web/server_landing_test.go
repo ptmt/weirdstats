@@ -43,7 +43,7 @@ func TestLanding_ShowsOptionalFactList(t *testing.T) {
 		"Turn any of them off in settings.",
 		"Stop summary",
 		"Traffic-light stops",
-		"Longest uninterrupted segment",
+		"Longest segment",
 		"Coffee stop",
 		"Route highlights",
 		"Road crossings",

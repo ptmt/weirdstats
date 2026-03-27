@@ -63,7 +63,7 @@ func TestSettings_ShowsFactPreferences(t *testing.T) {
 		"Weirdstats facts",
 		"Stop summary",
 		"Traffic-light stops",
-		"Longest uninterrupted segment",
+		"Longest segment",
 		"Coffee stop",
 		"Route highlights",
 		"Road crossings",

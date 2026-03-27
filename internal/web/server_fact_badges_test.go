@@ -8,7 +8,7 @@ import (
 
 func TestApplyDetectedFactRecordBadges(t *testing.T) {
 	facts := []ActivityMapFactView{
-		{ID: weirdStatsFactLongestSegment, Title: "Longest uninterrupted segment"},
+		{ID: weirdStatsFactLongestSegment, Title: "Longest segment"},
 		{ID: weirdStatsFactStopSummary, Title: "Stop summary"},
 		{ID: weirdStatsFactRouteHighlights, Title: "Route highlights"},
 	}

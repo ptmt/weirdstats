@@ -20,6 +20,8 @@ import (
 	"weirdstats/internal/strava"
 )
 
+const weirdStatsMinRideDistanceMeters = 10000.0
+
 func (s *Server) ApplyActivityRules(w http.ResponseWriter, r *http.Request) {
 	userID, ok := s.requireUserID(w, r)
 	if !ok {
@@ -83,6 +85,8 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 
 	baseDescription := activity.Description
 	baseHideFromHome := activity.HideFromHome
+	descriptionActivityType := activity.Type
+	descriptionDistance := activity.Distance
 	rideFact := rideSegmentFact{}
 	speedFacts := []speedMilestoneFact{}
 	coffeeFact := coffeeStopFact{}
@@ -141,6 +145,8 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 		} else {
 			baseDescription = latest.Description
 			baseHideFromHome = latest.HideFromHome
+			descriptionActivityType = latest.Type
+			descriptionDistance = latest.Distance
 			if needsRideFacts && isRideType(latest.Type) {
 				streams, err := client.GetStreams(ctx, activityID)
 				if err != nil {
@@ -181,13 +187,16 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 
 	var descPtr *string
 	filteredSnapshot := filterWeirdStatsSnapshot(statsSnapshot, factSettings)
-	descriptionLine := buildWeirdStatsLine(filteredSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact)
-	if metrics := collectWeirdStatsCandidateMetrics(buildWeirdStatsFactCandidates(filteredSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact)); len(metrics) > 0 {
-		histories, err := s.store.ListUserFactMetricHistories(ctx, activity.UserID, activity.ID, activity.StartTime.UTC().Year(), metrics)
-		if err != nil {
-			log.Printf("activity fact history load failed for activity %d: %v", activity.ID, err)
-		} else {
-			descriptionLine = buildPrioritizedWeirdStatsLine(filteredSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact, histories)
+	descriptionLine := ""
+	if shouldPostWeirdStatsDescription(descriptionActivityType, descriptionDistance) {
+		descriptionLine = buildWeirdStatsLine(filteredSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact)
+		if metrics := collectWeirdStatsCandidateMetrics(buildWeirdStatsFactCandidates(filteredSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact)); len(metrics) > 0 {
+			histories, err := s.store.ListUserFactMetricHistories(ctx, activity.UserID, activity.ID, activity.StartTime.UTC().Year(), metrics)
+			if err != nil {
+				log.Printf("activity fact history load failed for activity %d: %v", activity.ID, err)
+			} else {
+				descriptionLine = buildPrioritizedWeirdStatsLine(filteredSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact, histories)
+			}
 		}
 	}
 	newDesc, descChanged := applyWeirdStatsDescriptionLine(baseDescription, descriptionLine)
@@ -485,6 +494,13 @@ func buildWeirdStatsLine(statsSnapshot stats.StopStats, rideFact rideSegmentFact
 	return buildPrioritizedWeirdStatsLine(statsSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact, nil)
 }
 
+func shouldPostWeirdStatsDescription(activityType string, distanceMeters float64) bool {
+	if isRideType(activityType) && distanceMeters < weirdStatsMinRideDistanceMeters {
+		return false
+	}
+	return true
+}
+
 func buildRideSegmentPart(fact rideSegmentFact) string {
 	if fact.DistanceMeters <= 0 || fact.AvgSpeedMPS <= 0 {
 		return ""
@@ -494,7 +510,7 @@ func buildRideSegmentPart(fact rideSegmentFact) string {
 		parts = append(parts, formatCompactNumber(fact.AvgPower, 0)+"w")
 	}
 	parts = append(parts, formatCompactNumber(fact.AvgSpeedMPS*3.6, 1)+"kmh")
-	return "Longest uninterrupted segment: " + strings.Join(parts, " - ")
+	return "Longest segment: " + strings.Join(parts, " - ")
 }
 
 func buildCoffeeStopPart(fact coffeeStopFact) string {
@@ -653,6 +669,7 @@ func isWeirdstatsManagedLine(line string) bool {
 	}
 	return strings.Contains(trimmed, "stops") ||
 		strings.Contains(trimmed, "at lights") ||
+		strings.Contains(trimmed, "Longest segment:") ||
 		strings.Contains(trimmed, "Longest uninterrupted segment:") ||
 		strings.Contains(trimmed, "0-30kmh in ") ||
 		strings.Contains(trimmed, "0-40kmh in ") ||

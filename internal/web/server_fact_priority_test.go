@@ -85,7 +85,7 @@ func TestBuildPrioritizedWeirdStatsLineUsesHistoryToSortFacts(t *testing.T) {
 	}
 
 	line := buildPrioritizedWeirdStatsLine(snapshot, rideFact, nil, coffeeFact, routeFact, roadFact, histories)
-	want := "2 road crossings: Unter den Linden, Friedrichstrasse · Route highlights: Victory Column, Memorial Church · Detected Coffee Stop: Bean Machine · Longest uninterrupted segment: 20km - 200w - 30kmh"
+	want := "2 road crossings: Unter den Linden, Friedrichstrasse · Route highlights: Victory Column, Memorial Church · Detected Coffee Stop: Bean Machine · Longest segment: 20km - 200w - 30kmh"
 	if line != want {
 		t.Fatalf("unexpected prioritized line\nwant: %q\n got: %q", want, line)
 	}

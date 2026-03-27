@@ -761,11 +761,11 @@ func buildActivityMapFacts(
 ) []ActivityMapFactView {
 	facts := make([]ActivityMapFactView, 0, 10)
 
-	if summary := trimFactPrefix(buildRideSegmentPart(rideFact), "Longest uninterrupted segment: "); summary != "" {
+	if summary := trimFactPrefix(buildRideSegmentPart(rideFact), "Longest segment: "); summary != "" {
 		fact := ActivityMapFactView{
 			ID:      weirdStatsFactLongestSegment,
 			Kind:    "segment",
-			Title:   "Longest uninterrupted segment",
+			Title:   "Longest segment",
 			Summary: summary,
 			Color:   "#22c55e",
 			Points: []ActivityFactPoint{
