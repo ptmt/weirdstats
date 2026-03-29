@@ -119,9 +119,8 @@ func TestActivityPoster_RendersStoredDetectedFacts(t *testing.T) {
 	for _, want := range []string{
 		"WeirdStats Share Card",
 		"Route poster for Poster Route",
-		"Longest segment",
 		"3.2 km without a real stop",
-		"Stops",
+		"1 detected stop",
 		`class="story-basics"`,
 		`class="story-weird-stats"`,
 		"Export PNG",
@@ -134,6 +133,11 @@ func TestActivityPoster_RendersStoredDetectedFacts(t *testing.T) {
 		"Selected Facts",
 		"Download PNG",
 		"Route + Fact Anchors",
+		"Longest segment",
+		"Stops",
+		`class="route-accent"`,
+		`class="fact-dot"`,
+		`class="fact-marker"`,
 	} {
 		if strings.Contains(body, unwanted) {
 			t.Fatalf("did not expect %q in poster response", unwanted)
@@ -211,12 +215,19 @@ func TestActivityPoster_FallsBackToRebuiltFactsWhenCacheMissing(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		"Crossings",
-		"Broadway",
-		"Stops",
+		"Road crossing: Broadway",
+		"1 stop",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in poster response", want)
+		}
+	}
+	for _, unwanted := range []string{
+		"Crossings",
+		"Stops",
+	} {
+		if strings.Contains(body, unwanted) {
+			t.Fatalf("did not expect %q in poster response", unwanted)
 		}
 	}
 }
@@ -314,7 +325,7 @@ func TestActivityPoster_AppliesRenderOptions(t *testing.T) {
 		"story-shot--mono",
 		`class="story-weird-stats"`,
 		"Export PNG",
-		"Longest segment",
+		"3.2 km without a real stop",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in poster response", want)
@@ -323,7 +334,7 @@ func TestActivityPoster_AppliesRenderOptions(t *testing.T) {
 	for _, unwanted := range []string{
 		"WEIRDSTATS SHARE CARD",
 		"Ride ·",
-		"Stops",
+		"Longest segment",
 		`class="story-basics"`,
 	} {
 		if strings.Contains(body, unwanted) {
@@ -526,7 +537,7 @@ func TestBuildPosterBasicStats_SimplifiesBaselineCopy(t *testing.T) {
 	}
 }
 
-func TestBuildPosterWeirdStats_ShortensLabelsAndAlternatesColumns(t *testing.T) {
+func TestBuildPosterWeirdStats_UsesSummariesAndAlternatesColumns(t *testing.T) {
 	left, right := buildPosterWeirdStats([]ActivityMapFactView{
 		{ID: weirdStatsFactLongestSegment, Title: "Longest uninterrupted segment", Summary: "3.2 km", Color: "#22c55e"},
 		{ID: weirdStatsFactStopSummary, Title: "Stop summary", Summary: "1 stop", Color: "#ec4899"},
@@ -536,14 +547,14 @@ func TestBuildPosterWeirdStats_ShortensLabelsAndAlternatesColumns(t *testing.T) 
 	if len(left) != 2 || len(right) != 1 {
 		t.Fatalf("unexpected weird stat columns: left=%d right=%d", len(left), len(right))
 	}
-	if left[0].Label != "Longest segment" {
-		t.Fatalf("expected shortened label, got %+v", left[0])
+	if left[0].Summary != "3.2 km" {
+		t.Fatalf("expected first summary to remain, got %+v", left[0])
 	}
-	if right[0].Label != "Stops" {
-		t.Fatalf("expected stop label to be shortened, got %+v", right[0])
+	if right[0].Summary != "1 stop" {
+		t.Fatalf("expected second summary to alternate right, got %+v", right[0])
 	}
-	if left[1].Label != "Crossings" {
-		t.Fatalf("expected road crossing label to be shortened, got %+v", left[1])
+	if left[1].Summary != "Broadway" {
+		t.Fatalf("expected third summary to return left, got %+v", left[1])
 	}
 }
 

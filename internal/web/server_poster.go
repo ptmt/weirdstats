@@ -27,7 +27,6 @@ const (
 	posterMapWidth             = 1000.0
 	posterMapHeight            = 1120.0
 	posterMapPadding           = 36.0
-	posterFactMarkerLimit      = 6
 	posterExportWidth          = 1170
 	posterExportHeight         = 2532
 	posterContextMinPaddingM   = 280.0
@@ -61,18 +60,6 @@ var (
 type posterPoint struct {
 	X float64
 	Y float64
-}
-
-type posterFactView struct {
-	Index       int
-	Title       string
-	Summary     string
-	Color       string
-	OverlayPath string
-	Points      []posterPoint
-	MarkerX     float64
-	MarkerY     float64
-	HasMarker   bool
 }
 
 type posterLineView struct {
@@ -112,9 +99,7 @@ type posterBasicStatView struct {
 }
 
 type posterWeirdStatView struct {
-	Label   string
 	Summary string
-	Color   string
 }
 
 type posterRenderOptions struct {
@@ -150,7 +135,6 @@ type posterPageData struct {
 	BasicStats      []posterBasicStatView
 	WeirdStatsLeft  []posterWeirdStatView
 	WeirdStatsRight []posterWeirdStatView
-	Facts           []posterFactView
 	Options         posterRenderOptions
 	PNGExport       bool
 }
@@ -201,7 +185,7 @@ func (s *Server) ActivityPoster(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to build poster", http.StatusInternalServerError)
 		return
 	}
-	trace.AddField("facts", len(data.Facts))
+	trace.AddField("facts", len(data.WeirdStatsLeft)+len(data.WeirdStatsRight))
 	trace.AddField("has_route", data.HasRoute)
 
 	stepStart = time.Now()
@@ -263,7 +247,7 @@ func (s *Server) ActivityPosterPNG(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to build poster", http.StatusInternalServerError)
 		return
 	}
-	trace.AddField("facts", len(data.Facts))
+	trace.AddField("facts", len(data.WeirdStatsLeft)+len(data.WeirdStatsRight))
 	trace.AddField("has_route", data.HasRoute)
 
 	stepStart = time.Now()
@@ -413,41 +397,24 @@ func buildPosterBasicStats(activity storage.Activity) []posterBasicStatView {
 func buildPosterWeirdStats(facts []ActivityMapFactView) ([]posterWeirdStatView, []posterWeirdStatView) {
 	left := make([]posterWeirdStatView, 0, (len(facts)+1)/2)
 	right := make([]posterWeirdStatView, 0, len(facts)/2)
+	visibleIdx := 0
 
-	for idx, fact := range facts {
+	for _, fact := range facts {
 		view := posterWeirdStatView{
-			Label:   posterWeirdStatLabel(fact),
 			Summary: strings.TrimSpace(fact.Summary),
-			Color:   fact.Color,
 		}
-		if view.Label == "" || view.Summary == "" {
+		if view.Summary == "" {
 			continue
 		}
-		if idx%2 == 0 {
+		if visibleIdx%2 == 0 {
 			left = append(left, view)
 		} else {
 			right = append(right, view)
 		}
+		visibleIdx++
 	}
 
 	return left, right
-}
-
-func posterWeirdStatLabel(fact ActivityMapFactView) string {
-	switch fact.ID {
-	case weirdStatsFactLongestSegment:
-		return "Longest segment"
-	case weirdStatsFactStopSummary:
-		return "Stops"
-	case weirdStatsFactTrafficLightStops:
-		return "Traffic lights"
-	case weirdStatsFactRoadCrossings:
-		return "Crossings"
-	case weirdStatsFactRouteHighlights:
-		return "Highlights"
-	default:
-		return strings.TrimSpace(fact.Title)
-	}
 }
 
 func (s *Server) posterPageData(ctx context.Context, userID, activityID int64, pngExport bool, options posterRenderOptions) (posterPageData, error) {
@@ -511,7 +478,6 @@ func (s *Server) posterPageData(ctx context.Context, userID, activityID int64, p
 	endY := 0.0
 	hasRoute := false
 	mapContext := posterMapContextView{}
-	projectedFacts := []posterFactView{}
 	contextBBox := maps.BBox{}
 	contextPaddingM := 0.0
 	hasContextBBox := false
@@ -538,7 +504,6 @@ func (s *Server) posterPageData(ctx context.Context, userID, activityID int64, p
 			}
 		}
 		routePath, startX, startY, endX, endY, hasRoute = buildPosterRoutePath(routePoints, proj)
-		projectedFacts = buildPosterFactViews(visibleFacts, proj)
 	}
 	trace.AddStep("project_poster", stepStart)
 	trace.AddField("has_route", hasRoute)
@@ -569,7 +534,6 @@ func (s *Server) posterPageData(ctx context.Context, userID, activityID int64, p
 		BasicStats:      basicStats,
 		WeirdStatsLeft:  weirdStatsLeft,
 		WeirdStatsRight: weirdStatsRight,
-		Facts:           projectedFacts,
 		Options:         options,
 		PNGExport:       pngExport,
 	}, nil
@@ -735,27 +699,6 @@ func buildPosterRoutePath(points []routePreviewPoint, proj posterProjection) (st
 	start := projected[0]
 	end := projected[len(projected)-1]
 	return path, start.X, start.Y, end.X, end.Y, true
-}
-
-func buildPosterFactViews(facts []ActivityMapFactView, proj posterProjection) []posterFactView {
-	views := make([]posterFactView, 0, len(facts))
-	for idx, fact := range facts {
-		projectedPath := projectPosterRoutePoints(fact.Path, proj)
-		projectedPoints := projectPosterFactPoints(samplePosterFactPoints(fact.Points, posterFactMarkerLimit), proj)
-		markerX, markerY, hasMarker := posterFactMarker(projectedPath, projectedPoints)
-		views = append(views, posterFactView{
-			Index:       idx + 1,
-			Title:       fact.Title,
-			Summary:     fact.Summary,
-			Color:       fact.Color,
-			OverlayPath: posterPathString(projectedPath),
-			Points:      projectedPoints,
-			MarkerX:     markerX,
-			MarkerY:     markerY,
-			HasMarker:   hasMarker,
-		})
-	}
-	return views
 }
 
 func (s *Server) posterMapContext(ctx context.Context, activityID int64, points []gps.Point, bbox maps.BBox, paddingMeters float64, proj posterProjection) (posterMapContextView, error) {
@@ -1208,15 +1151,6 @@ func projectPosterRoutePoints(points []routePreviewPoint, proj posterProjection)
 	return projected
 }
 
-func projectPosterFactPoints(points []ActivityFactPoint, proj posterProjection) []posterPoint {
-	projected := make([]posterPoint, 0, len(points))
-	for _, point := range points {
-		x, y := proj.project(point.Lat, point.Lon)
-		projected = append(projected, posterPoint{X: x, Y: y})
-	}
-	return projected
-}
-
 func posterPathString(points []posterPoint) string {
 	if len(points) < 2 {
 		return ""
@@ -1259,49 +1193,6 @@ func posterAreaLabel(points []posterPoint, name string) (float64, float64, bool)
 		yTotal += point.Y
 	}
 	return xTotal / float64(len(points)), yTotal / float64(len(points)), true
-}
-
-func posterFactMarker(pathPoints []posterPoint, factPoints []posterPoint) (float64, float64, bool) {
-	switch {
-	case len(factPoints) > 0:
-		var xTotal float64
-		var yTotal float64
-		for _, point := range factPoints {
-			xTotal += point.X
-			yTotal += point.Y
-		}
-		return xTotal / float64(len(factPoints)), yTotal / float64(len(factPoints)), true
-	case len(pathPoints) > 0:
-		mid := pathPoints[len(pathPoints)/2]
-		return mid.X, mid.Y, true
-	default:
-		return 0, 0, false
-	}
-}
-
-func samplePosterFactPoints(points []ActivityFactPoint, max int) []ActivityFactPoint {
-	if len(points) <= max || max <= 0 {
-		return points
-	}
-
-	step := float64(len(points)-1) / float64(max-1)
-	sampled := make([]ActivityFactPoint, 0, max)
-	lastIdx := -1
-	for i := 0; i < max; i++ {
-		idx := int(math.Round(float64(i) * step))
-		if idx <= lastIdx {
-			idx = lastIdx + 1
-		}
-		if idx >= len(points) {
-			idx = len(points) - 1
-		}
-		sampled = append(sampled, points[idx])
-		lastIdx = idx
-		if idx == len(points)-1 {
-			break
-		}
-	}
-	return sampled
 }
 
 func capturePosterPNGWithHeadlessBrowser(ctx context.Context, html []byte) ([]byte, error) {

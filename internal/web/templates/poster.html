@@ -239,7 +239,6 @@
           linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.08)),
           radial-gradient(circle at top right, var(--fact-color, var(--hot)) 0, transparent 44%);
       }
-      .story-shot--transparent .story-weird-stat,
       .story-shot--transparent .story-basics {
         background: rgba(255, 255, 255, 0.18);
         border-color: rgba(22, 11, 57, 0.16);
@@ -248,7 +247,7 @@
       .story-shot--uppercase .story-head h1,
       .story-shot--uppercase .story-meta,
       .story-shot--uppercase .story-basic-label,
-      .story-shot--uppercase .story-weird-stat-label,
+      .story-shot--uppercase .story-weird-stat-summary,
       .story-shot--uppercase .context-water-label,
       .story-shot--uppercase .context-road-label,
       .story-shot--uppercase .context-peak-label {
@@ -341,36 +340,17 @@
         justify-items: end;
       }
       .story-weird-stat {
-        --fact-color: var(--hot);
-        display: grid;
-        gap: 4px;
         width: 100%;
-        padding: 9px 10px 8px;
-        border-radius: 18px;
-        border: 1px solid rgba(22, 11, 57, 0.12);
-        background: rgba(255, 255, 255, 0.72);
-        box-shadow: 0 12px 28px rgba(22, 11, 57, 0.12);
-        backdrop-filter: blur(18px) saturate(1.1);
-      }
-      .story-weird-stat::before {
-        content: "";
-        width: 34px;
-        height: 3px;
-        border-radius: 999px;
-        background: var(--fact-color);
-      }
-      .story-weird-stat-label {
-        color: rgba(22, 11, 57, 0.62);
-        font-size: 8px;
-        font-weight: 900;
-        letter-spacing: 0.16em;
-        text-transform: uppercase;
+        max-width: 114px;
       }
       .story-weird-stat-summary {
         color: rgba(22, 11, 57, 0.86);
-        font-size: 11px;
+        display: block;
+        font-size: 12px;
         font-weight: 800;
-        line-height: 1.28;
+        line-height: 1.35;
+        text-wrap: balance;
+        text-shadow: 0 1px 0 rgba(255, 255, 255, 0.48);
       }
       .story-basics {
         position: absolute;
@@ -632,9 +612,9 @@
               <span>Weird stats</span>
               <select name="facts" onchange="this.form.submit()">
                 <option value="all" {{if eq .Options.FactsLimit -1}}selected{{end}}>All</option>
-                <option value="4" {{if eq .Options.FactsLimit 4}}selected{{end}}>4 cards</option>
-                <option value="2" {{if eq .Options.FactsLimit 2}}selected{{end}}>2 cards</option>
-                <option value="1" {{if eq .Options.FactsLimit 1}}selected{{end}}>1 card</option>
+                <option value="4" {{if eq .Options.FactsLimit 4}}selected{{end}}>4 facts</option>
+                <option value="2" {{if eq .Options.FactsLimit 2}}selected{{end}}>2 facts</option>
+                <option value="1" {{if eq .Options.FactsLimit 1}}selected{{end}}>1 fact</option>
                 <option value="0" {{if eq .Options.FactsLimit 0}}selected{{end}}>Off</option>
               </select>
             </label>
@@ -685,19 +665,6 @@
                       <text class="context-peak-label" x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" dy="-20">{{.Name}}</text>
                     {{end}}
                     <path class="route-base" d="{{.RoutePath}}" />
-                    {{range .Facts}}
-                      {{if .OverlayPath}}<path class="route-accent" d="{{.OverlayPath}}" stroke="{{.Color}}" />{{end}}
-                    {{end}}
-                    {{range .Facts}}
-                      {{$fact := .}}
-                      {{range .Points}}<circle class="fact-dot" cx="{{printf "%.1f" .X}}" cy="{{printf "%.1f" .Y}}" r="7" fill="{{$fact.Color}}" />{{end}}
-                      {{if .HasMarker}}
-                        <g class="fact-marker" transform="translate({{printf "%.1f" .MarkerX}}, {{printf "%.1f" .MarkerY}})">
-                          <circle r="20" fill="{{.Color}}" />
-                          <text x="0" y="1">{{.Index}}</text>
-                        </g>
-                      {{end}}
-                    {{end}}
                     <circle class="start-dot" cx="{{printf "%.1f" .RouteStartX}}" cy="{{printf "%.1f" .RouteStartY}}" r="12" fill="#75ff57" />
                     <circle class="end-dot" cx="{{printf "%.1f" .RouteEndX}}" cy="{{printf "%.1f" .RouteEndY}}" r="12" fill="#160b39" />
                   </svg>
@@ -705,8 +672,7 @@
                     <div class="story-weird-stats">
                       <div class="story-weird-stats-col">
                         {{range .WeirdStatsLeft}}
-                          <div class="story-weird-stat" style="--fact-color: {{.Color}};">
-                            <span class="story-weird-stat-label">{{.Label}}</span>
+                          <div class="story-weird-stat">
                             <span class="story-weird-stat-summary">{{.Summary}}</span>
                           </div>
                         {{end}}
@@ -714,8 +680,7 @@
                       <div></div>
                       <div class="story-weird-stats-col story-weird-stats-col--right">
                         {{range .WeirdStatsRight}}
-                          <div class="story-weird-stat" style="--fact-color: {{.Color}};">
-                            <span class="story-weird-stat-label">{{.Label}}</span>
+                          <div class="story-weird-stat">
                             <span class="story-weird-stat-summary">{{.Summary}}</span>
                           </div>
                         {{end}}
