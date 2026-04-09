@@ -3,7 +3,6 @@ package web
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -47,7 +46,7 @@ func TestConnectStravaMobile_StartsOAuthFlow(t *testing.T) {
 		t.Fatalf("expected redirect, got %d", rec.Code)
 	}
 	location := rec.Header().Get("Location")
-	if !strings.HasPrefix(location, "https://strava.example/oauth/authorize?") {
+	if !strings.HasPrefix(location, "https://strava.example/oauth/mobile/authorize?") {
 		t.Fatalf("unexpected redirect: %q", location)
 	}
 	parsed, err := url.Parse(location)
@@ -61,29 +60,57 @@ func TestConnectStravaMobile_StartsOAuthFlow(t *testing.T) {
 	if got := query.Get("scope"); got != "read,activity:read_all,activity:write" {
 		t.Fatalf("unexpected scope: %q", got)
 	}
-	if query.Get("state") == "" {
-		t.Fatalf("expected oauth state in redirect")
+	statePayload, ok := server.parseMobileOAuthState(query.Get("state"))
+	if !ok {
+		t.Fatalf("expected valid oauth state")
+	}
+	if statePayload.AppRedirect != "weirdstats://auth/strava" {
+		t.Fatalf("unexpected state redirect: %q", statePayload.AppRedirect)
+	}
+}
+
+func TestConnectStravaMobile_ReturnsLaunchURLs(t *testing.T) {
+	ctx := context.Background()
+	store, err := storage.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	if err := store.InitSchema(ctx); err != nil {
+		t.Fatalf("init schema: %v", err)
 	}
 
-	var hasStateCookie bool
-	var hasAppCookie bool
-	for _, cookie := range rec.Result().Cookies() {
-		if cookie.Name == oauthStateCookieName && cookie.Value != "" {
-			hasStateCookie = true
-		}
-		if cookie.Name == oauthAppCookieName {
-			decoded, err := base64.RawURLEncoding.DecodeString(cookie.Value)
-			if err != nil {
-				t.Fatalf("decode app cookie: %v", err)
-			}
-			if string(decoded) != "weirdstats://auth/strava" {
-				t.Fatalf("unexpected app redirect cookie: %q", decoded)
-			}
-			hasAppCookie = true
-		}
+	server, err := NewServer(store, nil, nil, nil, gps.StopOptions{}, StravaConfig{
+		ClientID:             "client-123",
+		ClientSecret:         "secret-123",
+		AuthBaseURL:          "https://strava.example",
+		MobileAppRedirectURL: "weirdstats://auth/strava",
+		SessionSecret:        "mobile-test-secret",
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
 	}
-	if !hasStateCookie || !hasAppCookie {
-		t.Fatalf("expected oauth cookies to be set")
+
+	req := httptest.NewRequest(http.MethodGet, "https://weirdstats.example/connect/strava/mobile?format=json", nil)
+	rec := httptest.NewRecorder()
+
+	server.ConnectStravaMobile(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var payload mobileAuthStartResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode start payload: %v", err)
+	}
+	if !strings.HasPrefix(payload.AppOAuthURL, "strava://oauth/mobile/authorize?") {
+		t.Fatalf("unexpected app url: %q", payload.AppOAuthURL)
+	}
+	if !strings.HasPrefix(payload.WebOAuthURL, "https://strava.example/oauth/mobile/authorize?") {
+		t.Fatalf("unexpected web url: %q", payload.WebOAuthURL)
+	}
+	if payload.CallbackScheme != "weirdstats" {
+		t.Fatalf("unexpected callback scheme: %q", payload.CallbackScheme)
 	}
 }
 
@@ -132,9 +159,11 @@ func TestStravaMobileCallback_RedirectsBackToAppWithGrant(t *testing.T) {
 		t.Fatalf("new server: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/connect/strava/mobile/callback?state=state-123&code=mobile-code", nil)
-	req.AddCookie(&http.Cookie{Name: oauthStateCookieName, Value: "state-123"})
-	req.AddCookie(&http.Cookie{Name: oauthAppCookieName, Value: base64.RawURLEncoding.EncodeToString([]byte("weirdstats://auth/strava"))})
+	state, err := server.issueMobileOAuthState("weirdstats://auth/strava")
+	if err != nil {
+		t.Fatalf("issue oauth state: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/connect/strava/mobile/callback?state="+url.QueryEscape(state)+"&code=mobile-code", nil)
 	rec := httptest.NewRecorder()
 
 	server.StravaMobileCallback(rec, req)

@@ -11,6 +11,9 @@ struct WeirdStatsPrototypeApp: App {
                 .task {
                     await model.bootstrap()
                 }
+                .onOpenURL { url in
+                    model.handleOpenURL(url)
+                }
         }
     }
 }

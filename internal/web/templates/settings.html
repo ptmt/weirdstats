@@ -236,6 +236,20 @@
           }
         },
         {
+          id: 'slow-rides-runs',
+          name: 'Hide slow rides or runs',
+          description: 'Hide rides or runs at 6:00/km pace or slower.',
+          tags: ['Ride/Run', '>=6:00/km'],
+          rule: {
+            match: 'all',
+            conditions: [
+              { metric: 'activity_type', op: 'in', values: ['Ride', 'VirtualRide', 'EBikeRide', 'GravelRide', 'Run', 'TrailRun'] },
+              { metric: 'pace_sec_per_km', op: 'gte', values: [360] }
+            ],
+            action: { type: 'hide' }
+          }
+        },
+        {
           id: 'workouts',
           name: 'Hide workouts, unmute every 10th',
           description: 'Hide Workout activities but keep one out of every 10 visible.',

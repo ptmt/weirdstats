@@ -26,6 +26,17 @@ func DefaultRegistry() Registry {
 				return Value{Type: ValueNumber, Num: float64(ctx.Activity.MovingTimeS)}, nil
 			},
 		},
+		"pace_sec_per_km": {
+			ID:          "pace_sec_per_km",
+			Label:       "Pace",
+			Description: "Average pace in seconds per kilometer. Use with ride/run activity types; 6:00/km = 360.",
+			Unit:        "sec/km",
+			Example:     "360",
+			Type:        ValueNumber,
+			Resolve: func(ctx Context) (Value, error) {
+				return Value{Type: ValueNumber, Num: paceSecondsPerKM(ctx.Activity.DistanceM, ctx.Activity.MovingTimeS)}, nil
+			},
+		},
 		"activity_type": {
 			ID:          "activity_type",
 			Label:       "Activity type",
@@ -110,6 +121,13 @@ func DefaultRegistry() Registry {
 			},
 		},
 	}
+}
+
+func paceSecondsPerKM(distanceM float64, movingTimeS int) float64 {
+	if distanceM <= 0 || movingTimeS <= 0 {
+		return 0
+	}
+	return float64(movingTimeS) / (distanceM / 1000)
 }
 
 func DefaultOperators() map[ValueType][]OperatorSpec {

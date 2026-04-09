@@ -90,6 +90,10 @@ final class AppModel: ObservableObject {
         errorMessage = ""
     }
 
+    func handleOpenURL(_ url: URL) {
+        authBroker.handleIncomingURL(url)
+    }
+
     private func normalizedBaseURL() -> URL? {
         let trimmed = serverURLText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed) else {

@@ -77,6 +77,19 @@ func insertRideHideRule(t *testing.T, store *storage.Store) {
 	}
 }
 
+func insertSlowRideRunHideRule(t *testing.T, store *storage.Store) {
+	t.Helper()
+	_, err := store.CreateHideRule(context.Background(), storage.HideRule{
+		UserID:    1,
+		Name:      "Hide slow rides or runs",
+		Enabled:   true,
+		Condition: `{"match":"all","conditions":[{"metric":"activity_type","op":"in","values":["Ride","VirtualRide","EBikeRide","GravelRide","Run","TrailRun"]},{"metric":"pace_sec_per_km","op":"gte","values":[360]}],"action":{"type":"hide"}}`,
+	})
+	if err != nil {
+		t.Fatalf("create hide rule: %v", err)
+	}
+}
+
 func TestRulesProcessorSyncsHideToStrava(t *testing.T) {
 	ctx := context.Background()
 	store := openRulesStore(t)
@@ -192,5 +205,45 @@ func TestRulesProcessorIgnoresStravaSyncError(t *testing.T) {
 	}
 	if activity.HideFromHome {
 		t.Fatalf("expected hide_from_home to stay false when Strava update fails")
+	}
+}
+
+func TestRulesProcessorHidesSlowRunByPace(t *testing.T) {
+	ctx := context.Background()
+	store := openRulesStore(t)
+	insertSlowRideRunHideRule(t, store)
+
+	activityID, err := store.InsertActivity(ctx, storage.Activity{
+		UserID:       1,
+		Type:         "Run",
+		Name:         "Slow run",
+		StartTime:    time.Now().UTC(),
+		Distance:     5000,
+		MovingTime:   1900,
+		HideFromHome: false,
+	}, nil)
+	if err != nil {
+		t.Fatalf("insert activity: %v", err)
+	}
+
+	updater := &stubActivityUpdater{}
+	processor := &RulesProcessor{Store: store, Strava: updater}
+
+	if err := processor.Process(ctx, activityID); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	if updater.calls != 1 {
+		t.Fatalf("expected 1 Strava update call, got %d", updater.calls)
+	}
+
+	activity, err := store.GetActivity(ctx, activityID)
+	if err != nil {
+		t.Fatalf("get activity: %v", err)
+	}
+	if !activity.HiddenByRule {
+		t.Fatalf("expected hidden_by_rule to be true")
+	}
+	if !activity.HideFromHome {
+		t.Fatalf("expected hide_from_home to be true locally")
 	}
 }

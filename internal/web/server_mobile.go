@@ -1,12 +1,14 @@
 package web
 
 import (
+	"crypto/hmac"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"weirdstats/internal/storage"
 )
@@ -53,6 +55,21 @@ type mobileActivityView struct {
 	DetectedFactCount int    `json:"detected_fact_count"`
 	PhotoURL          string `json:"photo_url,omitempty"`
 }
+
+type mobileAuthStartResponse struct {
+	AppOAuthURL     string `json:"app_oauth_url"`
+	WebOAuthURL     string `json:"web_oauth_url"`
+	CallbackScheme  string `json:"callback_scheme"`
+	RedirectURI     string `json:"redirect_uri"`
+}
+
+type mobileOAuthStatePayload struct {
+	Kind        string `json:"kind"`
+	AppRedirect string `json:"app_redirect"`
+	Expires     int64  `json:"expires"`
+}
+
+const mobileOAuthStateKind = "mobile_oauth_state"
 
 func (s *Server) requireAPIUserID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	userID, ok := s.currentUserID(r.Context(), r)
@@ -106,6 +123,98 @@ func (s *Server) mobileAuthorizeRedirectURL(r *http.Request) string {
 	return scheme + "://" + r.Host + "/connect/strava/mobile/callback"
 }
 
+func (s *Server) issueMobileOAuthState(appRedirect string) (string, error) {
+	payload, err := json.Marshal(mobileOAuthStatePayload{
+		Kind:        mobileOAuthStateKind,
+		AppRedirect: appRedirect,
+		Expires:     time.Now().Add(10 * time.Minute).Unix(),
+	})
+	if err != nil {
+		return "", err
+	}
+	return encodeSignedToken(payload, s.sign(payload)), nil
+}
+
+func (s *Server) parseMobileOAuthState(value string) (mobileOAuthStatePayload, bool) {
+	payloadBytes, ok := decodeAndVerifySignedToken(value, s.sign)
+	if !ok {
+		return mobileOAuthStatePayload{}, false
+	}
+	var payload mobileOAuthStatePayload
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		return mobileOAuthStatePayload{}, false
+	}
+	if payload.Kind != mobileOAuthStateKind || payload.Expires <= time.Now().Unix() {
+		return mobileOAuthStatePayload{}, false
+	}
+	if _, ok := validMobileAppRedirect(payload.AppRedirect); !ok {
+		return mobileOAuthStatePayload{}, false
+	}
+	return payload, true
+}
+
+func encodeSignedToken(payload []byte, signature []byte) string {
+	return base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(signature)
+}
+
+func decodeAndVerifySignedToken(value string, signer func([]byte) []byte) ([]byte, bool) {
+	parts := strings.Split(value, ".")
+	if len(parts) != 2 {
+		return nil, false
+	}
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return nil, false
+	}
+	sigBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil, false
+	}
+	if !hmac.Equal(sigBytes, signer(payloadBytes)) {
+		return nil, false
+	}
+	return payloadBytes, true
+}
+
+func (s *Server) buildMobileOAuthStart(r *http.Request, appRedirect string) (mobileAuthStartResponse, error) {
+	base := s.strava.AuthBaseURL
+	if base == "" {
+		base = "https://www.strava.com"
+	}
+	webEndpoint, err := url.JoinPath(base, "/oauth/mobile/authorize")
+	if err != nil {
+		return mobileAuthStartResponse{}, err
+	}
+
+	state, err := s.issueMobileOAuthState(appRedirect)
+	if err != nil {
+		return mobileAuthStartResponse{}, err
+	}
+	redirectURI := s.mobileAuthorizeRedirectURL(r)
+	params := url.Values{}
+	params.Set("client_id", s.strava.ClientID)
+	params.Set("redirect_uri", redirectURI)
+	params.Set("response_type", "code")
+	params.Set("state", state)
+	params.Set("approval_prompt", "auto")
+	params.Set("scope", "read,activity:read_all,activity:write")
+
+	webOAuthURL := webEndpoint + "?" + params.Encode()
+	appParams := url.Values{}
+	for key, values := range params {
+		for _, value := range values {
+			appParams.Add(key, value)
+		}
+	}
+
+	return mobileAuthStartResponse{
+		AppOAuthURL:    "strava://oauth/mobile/authorize?" + appParams.Encode(),
+		WebOAuthURL:    webOAuthURL,
+		CallbackScheme: "weirdstats",
+		RedirectURI:    redirectURI,
+	}, nil
+}
+
 func (s *Server) ConnectStravaMobile(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/connect/strava/mobile" {
 		http.NotFound(w, r)
@@ -121,33 +230,18 @@ func (s *Server) ConnectStravaMobile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	base := s.strava.AuthBaseURL
-	if base == "" {
-		base = "https://www.strava.com"
-	}
-	endpoint, err := url.JoinPath(base, "/oauth/authorize")
+	start, err := s.buildMobileOAuthStart(r, appRedirect)
 	if err != nil {
 		http.Error(w, "failed to build oauth url", http.StatusInternalServerError)
 		return
 	}
 
-	state, err := randomToken(32)
-	if err != nil {
-		http.Error(w, "failed to initialize oauth state", http.StatusInternalServerError)
+	if strings.EqualFold(r.URL.Query().Get("format"), "json") {
+		writeJSON(w, http.StatusOK, start)
 		return
 	}
-	setCookie(w, r, oauthStateCookieName, state, 10*60)
-	setCookie(w, r, oauthAppCookieName, base64.RawURLEncoding.EncodeToString([]byte(appRedirect)), 10*60)
 
-	params := url.Values{}
-	params.Set("client_id", s.strava.ClientID)
-	params.Set("redirect_uri", s.mobileAuthorizeRedirectURL(r))
-	params.Set("response_type", "code")
-	params.Set("state", state)
-	params.Set("approval_prompt", "auto")
-	params.Set("scope", "read,activity:read_all,activity:write")
-
-	http.Redirect(w, r, endpoint+"?"+params.Encode(), http.StatusFound)
+	http.Redirect(w, r, start.WebOAuthURL, http.StatusFound)
 }
 
 func (s *Server) StravaMobileCallback(w http.ResponseWriter, r *http.Request) {
@@ -156,24 +250,12 @@ func (s *Server) StravaMobileCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	expectedState := readCookieValue(r, oauthStateCookieName)
-	appEncoded := readCookieValue(r, oauthAppCookieName)
-	clearCookie(w, r, oauthStateCookieName)
-	clearCookie(w, r, oauthAppCookieName)
-
-	appRedirect := ""
-	if decoded, err := base64.RawURLEncoding.DecodeString(appEncoded); err == nil {
-		appRedirect = string(decoded)
-	}
-	if _, ok := validMobileAppRedirect(appRedirect); !ok {
-		http.Error(w, "mobile app redirect not configured", http.StatusInternalServerError)
+	statePayload, ok := s.parseMobileOAuthState(r.URL.Query().Get("state"))
+	if !ok {
+		http.Error(w, "invalid oauth state", http.StatusBadRequest)
 		return
 	}
-
-	if expectedState == "" || r.URL.Query().Get("state") != expectedState {
-		http.Redirect(w, r, appendQueryValue(appRedirect, "error", "invalid_oauth_state"), http.StatusFound)
-		return
-	}
+	appRedirect := statePayload.AppRedirect
 	if errParam := r.URL.Query().Get("error"); errParam != "" {
 		http.Redirect(w, r, appendQueryValue(appRedirect, "error", "strava_authorization_failed"), http.StatusFound)
 		return

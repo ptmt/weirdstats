@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -366,10 +367,23 @@ func formatValues(valueType ValueType, unit string, values []any) string {
 }
 
 func formatNumber(value float64, unit string) string {
+	if unit == "sec/km" {
+		return formatPaceSecondsPerKM(value)
+	}
 	if unit == "" {
 		return trimFloat(value)
 	}
 	return fmt.Sprintf("%s %s", trimFloat(value), unit)
+}
+
+func formatPaceSecondsPerKM(value float64) string {
+	totalSeconds := int(math.Round(value))
+	if totalSeconds < 0 {
+		totalSeconds = 0
+	}
+	minutes := totalSeconds / 60
+	seconds := totalSeconds % 60
+	return fmt.Sprintf("%d:%02d /km", minutes, seconds)
 }
 
 func trimFloat(value float64) string {

@@ -108,6 +108,28 @@ func TestEvaluateRule_WithRoadCrossingCount(t *testing.T) {
 	}
 }
 
+func TestEvaluateRule_WithPaceMetric(t *testing.T) {
+	reg := DefaultRegistry()
+	parsed, err := ParseRuleJSON(`{"match":"all","conditions":[{"metric":"activity_type","op":"in","values":["Ride","Run"]},{"metric":"pace_sec_per_km","op":"gte","values":[360]}],"action":{"type":"hide"}}`)
+	if err != nil {
+		t.Fatalf("parse rule: %v", err)
+	}
+	ctx := Context{
+		Activity: ActivitySource{ID: 88, Type: "Run", DistanceM: 5000, MovingTimeS: 1900},
+		Stats:    StatsSource{},
+	}
+	matched, hide, err := Evaluate(parsed, reg, ctx, 13)
+	if err != nil {
+		t.Fatalf("evaluate rule: %v", err)
+	}
+	if !matched {
+		t.Fatalf("expected match")
+	}
+	if !hide {
+		t.Fatalf("expected hide action to apply")
+	}
+}
+
 func TestDescribeRuleOverride(t *testing.T) {
 	reg := DefaultRegistry()
 	parsed, err := ParseRuleJSON(`{"match":"all","conditions":[{"metric":"activity_type","op":"eq","values":["Workout"]}],"action":{"type":"hide","override":{"one_in":10}}}`)
@@ -117,5 +139,17 @@ func TestDescribeRuleOverride(t *testing.T) {
 	description := Describe(parsed, reg)
 	if !strings.Contains(description, "override: unmute 1 in 10") {
 		t.Fatalf("expected override text in description, got %q", description)
+	}
+}
+
+func TestDescribeRulePaceMetric(t *testing.T) {
+	reg := DefaultRegistry()
+	parsed, err := ParseRuleJSON(`{"match":"all","conditions":[{"metric":"pace_sec_per_km","op":"gte","values":[360]}],"action":{"type":"hide"}}`)
+	if err != nil {
+		t.Fatalf("parse rule: %v", err)
+	}
+	description := Describe(parsed, reg)
+	if !strings.Contains(description, "Pace >= 6:00 /km") {
+		t.Fatalf("expected pace text in description, got %q", description)
 	}
 }
