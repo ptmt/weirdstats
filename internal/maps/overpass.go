@@ -15,6 +15,7 @@ import (
 
 const DefaultOverpassURL = "https://overpass-api.de/api/interpreter"
 const defaultCacheTTL = 24 * time.Hour
+const defaultUserAgent = "weirdstats/1.0 (+https://github.com/ptmt/weirdstats)"
 
 type OverpassClient struct {
 	BaseURL      string
@@ -25,6 +26,7 @@ type OverpassClient struct {
 	MaxAttempts  int
 	BackoffBase  time.Duration
 	MirrorURLs   []string
+	UserAgent    string
 
 	mu    sync.Mutex
 	cache map[string]cacheEntry
@@ -255,6 +257,7 @@ func (c *OverpassClient) runQueryOnce(ctx context.Context, base string, query st
 		return nil, 0, err
 	}
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", c.effectiveUserAgent())
 
 	resp, err := c.httpClient().Do(req)
 	if err != nil {
@@ -280,6 +283,13 @@ func (c *OverpassClient) httpClient() *http.Client {
 		return c.HTTPClient
 	}
 	return &http.Client{Timeout: c.effectiveTimeout()}
+}
+
+func (c *OverpassClient) effectiveUserAgent() string {
+	if userAgent := strings.TrimSpace(c.UserAgent); userAgent != "" {
+		return userAgent
+	}
+	return defaultUserAgent
 }
 
 func (c *OverpassClient) effectiveTimeout() time.Duration {

@@ -16,6 +16,9 @@ func TestOverpassClient_RequestsAndParses(t *testing.T) {
 		if r.URL.Query().Get("data") == "" {
 			t.Fatalf("expected data query param")
 		}
+		if got := r.Header.Get("User-Agent"); got != defaultUserAgent {
+			t.Fatalf("expected default user agent %q, got %q", defaultUserAgent, got)
+		}
 		atomic.AddInt32(&requestCount, 1)
 		resp := overpassResponse{
 			Elements: []overpassElement{
@@ -58,6 +61,28 @@ func TestOverpassClient_RequestsAndParses(t *testing.T) {
 
 	if got := atomic.LoadInt32(&requestCount); got != 2 {
 		t.Fatalf("expected 2 requests (no cache), got %d", got)
+	}
+}
+
+func TestOverpassClient_CustomUserAgent(t *testing.T) {
+	const customUserAgent = "test-client/1.0"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("User-Agent"); got != customUserAgent {
+			t.Fatalf("expected custom user agent %q, got %q", customUserAgent, got)
+		}
+		_ = json.NewEncoder(w).Encode(overpassResponse{})
+	}))
+	defer server.Close()
+
+	client := &OverpassClient{
+		BaseURL:      server.URL,
+		HTTPClient:   server.Client(),
+		DisableCache: true,
+		UserAgent:    customUserAgent,
+	}
+
+	if _, err := client.NearbyFeatures(40.0, -73.0); err != nil {
+		t.Fatalf("NearbyFeatures error: %v", err)
 	}
 }
 

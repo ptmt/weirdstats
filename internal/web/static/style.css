@@ -1285,12 +1285,14 @@ a {
 .activity-dropdown .dropdown-link svg {
   width: 16px;
   height: 16px;
+  flex: 0 0 16px;
   color: var(--ink-muted);
 }
 
 .activity-dropdown .icon-reapply {
   width: 18px;
   height: 18px;
+  flex-basis: 18px;
 }
 
 /* Settings page */
