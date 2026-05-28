@@ -2,17 +2,14 @@ import Foundation
 import Security
 
 final class KeychainTokenStore {
-    private let service = "com.ptmt.weirdstats.prototype"
+    private let service = "com.ptmt.weirdstats"
+    private let legacyService = "com.ptmt.weirdstats.prototype"
     private let account = "mobile-access-token"
 
     func save(token: String) throws {
         let data = Data(token.utf8)
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
-        SecItemDelete(query as CFDictionary)
+        deleteToken(service: service)
+        deleteToken(service: legacyService)
         let attributes: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -26,6 +23,15 @@ final class KeychainTokenStore {
     }
 
     func readToken() -> String? {
+        readToken(service: service) ?? readToken(service: legacyService)
+    }
+
+    func clear() {
+        deleteToken(service: service)
+        deleteToken(service: legacyService)
+    }
+
+    private func readToken(service: String) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -41,7 +47,7 @@ final class KeychainTokenStore {
         return String(data: data, encoding: .utf8)
     }
 
-    func clear() {
+    private func deleteToken(service: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

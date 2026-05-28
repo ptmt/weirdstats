@@ -1,22 +1,37 @@
-name: WeirdStatsPrototype
+name: WeirdStats
 options:
   bundleIdPrefix: com.ptmt
 configs:
   Debug: debug
   Release: release
 targets:
-  WeirdStatsPrototype:
+  WeirdStats:
     type: application
     platform: iOS
     deploymentTarget: "17.0"
     sources:
-      - path: WeirdStatsPrototype
+      - path: WeirdStats
     info:
-      path: WeirdStatsPrototype/Info.plist
+      path: WeirdStats/Info.plist
+      properties:
+        CFBundleURLTypes:
+          - CFBundleURLName: com.ptmt.weirdstats.auth
+            CFBundleURLSchemes:
+              - weirdstats
+        LSApplicationQueriesSchemes:
+          - strava
+        LSRequiresIPhoneOS: true
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.ptmt.weirdstats.prototype
-        PRODUCT_NAME: WeirdStatsPrototype
+        PRODUCT_BUNDLE_IDENTIFIER: com.ptmt.weirdstats
+        PRODUCT_NAME: WeirdStats
         SWIFT_VERSION: 5.10
         CURRENT_PROJECT_VERSION: 1
         MARKETING_VERSION: 0.1.0

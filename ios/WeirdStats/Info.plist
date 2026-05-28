@@ -16,19 +16,19 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
-	<key>CFBundleVersion</key>
-	<string>1</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.ptmt.weirdstats.prototype.auth</string>
+			<string>com.ptmt.weirdstats.auth</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>weirdstats</string>
 			</array>
 		</dict>
 	</array>
+	<key>CFBundleVersion</key>
+	<string>1</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>strava</string>

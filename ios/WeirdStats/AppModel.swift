@@ -14,11 +14,17 @@ final class AppModel: ObservableObject {
     private let authBroker = AuthSessionBroker()
     private let tokenStore = KeychainTokenStore()
     private let defaults = UserDefaults.standard
-    private let serverURLKey = "weirdstats.prototype.server-url"
+    private let serverURLKey = "weirdstats.server-url"
+    private let legacyServerURLKey = "weirdstats.prototype.server-url"
     private var didBootstrap = false
 
     init() {
-        serverURLText = defaults.string(forKey: serverURLKey) ?? "https://weirdstats.com"
+        let storedServerURL = defaults.string(forKey: serverURLKey)
+        let legacyServerURL = defaults.string(forKey: legacyServerURLKey)
+        if storedServerURL == nil, let legacyServerURL {
+            defaults.set(legacyServerURL, forKey: serverURLKey)
+        }
+        serverURLText = storedServerURL ?? legacyServerURL ?? "https://weirdstats.com"
     }
 
     var isSignedIn: Bool {
