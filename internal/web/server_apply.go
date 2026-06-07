@@ -162,7 +162,9 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 				} else {
 					points := buildPointsFromStreams(latest.StartDate, streams)
 					if heartRateFactEnabled {
-						heartRateFact = detectHeartRateChangeFact(points)
+						if detected := detectHeartRateChangeFact(points); detected.Duration > 0 || heartRateFact.Duration <= 0 {
+							heartRateFact = detected
+						}
 					}
 					if needsRideFacts && isRideType(latest.Type) && routeFactEnabled {
 						routeFact, err = detectRouteHighlightFact(ctx, points, s.overpass)
@@ -191,9 +193,6 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 				speedFacts = nil
 				coffeeFact = coffeeStopFact{}
 				routeFact = routeHighlightFact{}
-			}
-			if heartRateFactEnabled && latest.AverageHeartRate <= 0 {
-				heartRateFact = heartRateChangeFact{}
 			}
 		}
 	} else if s.ingestor != nil {
