@@ -102,7 +102,7 @@ func detectSpeedMilestoneFacts(activityType string, points []gps.Point) []speedM
 	return facts
 }
 
-func filterSpeedMilestoneFactsBySettings(facts []speedMilestoneFact, settings map[string]bool) []speedMilestoneFact {
+func filterSpeedMilestoneFactsBySettings(facts []speedMilestoneFact, settings weirdStatsFactSettings) []speedMilestoneFact {
 	if len(facts) == 0 {
 		return nil
 	}

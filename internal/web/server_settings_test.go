@@ -29,11 +29,11 @@ func TestSettings_ShowsFactPreferences(t *testing.T) {
 		t.Fatalf("upsert token: %v", err)
 	}
 	if err := store.ReplaceUserFactPreferences(ctx, 202, []storage.UserFactPreference{
-		{FactID: weirdStatsFactStopSummary, Enabled: true},
-		{FactID: weirdStatsFactTrafficLightStops, Enabled: true},
-		{FactID: weirdStatsFactLongestSegment, Enabled: true},
-		{FactID: weirdStatsFactCoffeeStop, Enabled: false},
-		{FactID: weirdStatsFactRouteHighlights, Enabled: true},
+		{FactID: weirdStatsFactStopSummary, Enabled: true, PostToStrava: true},
+		{FactID: weirdStatsFactTrafficLightStops, Enabled: true, PostToStrava: true},
+		{FactID: weirdStatsFactLongestSegment, Enabled: true, PostToStrava: true},
+		{FactID: weirdStatsFactCoffeeStop, Enabled: false, PostToStrava: false},
+		{FactID: weirdStatsFactRouteHighlights, Enabled: true, PostToStrava: false},
 	}); err != nil {
 		t.Fatalf("replace fact prefs: %v", err)
 	}
@@ -71,6 +71,8 @@ func TestSettings_ShowsFactPreferences(t *testing.T) {
 		"0 to 40 km/h",
 		"40 to 0 km/h",
 		"30 to 0 km/h",
+		"Auto-post every run",
+		"Remarkable:",
 	} {
 		if !strings.Contains(body, text) {
 			t.Fatalf("expected %q in settings page", text)
@@ -82,8 +84,14 @@ func TestSettings_ShowsFactPreferences(t *testing.T) {
 	if !strings.Contains(body, `name="fact_route_highlights" checked`) {
 		t.Fatalf("expected route highlights toggle to be enabled")
 	}
+	if strings.Contains(body, `name="fact_post_route_highlights" checked`) {
+		t.Fatalf("expected route highlights auto-post toggle to be disabled")
+	}
 	if !strings.Contains(body, `name="fact_road_crossings" checked`) {
 		t.Fatalf("expected road crossings toggle to default to enabled")
+	}
+	if !strings.Contains(body, `name="fact_post_road_crossings" checked`) {
+		t.Fatalf("expected road crossings auto-post toggle to default to enabled")
 	}
 }
 
@@ -113,6 +121,7 @@ func TestSettings_UpdateFacts(t *testing.T) {
 	body := strings.NewReader(strings.Join([]string{
 		"action=update-facts",
 		"fact_stop_summary=on",
+		"fact_post_stop_summary=on",
 		"fact_route_highlights=on",
 	}, "&"))
 	req := httptest.NewRequest(http.MethodPost, "/activities/settings", body)
@@ -139,22 +148,28 @@ func TestSettings_UpdateFacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load fact settings: %v", err)
 	}
-	if !settings[weirdStatsFactStopSummary] {
+	if !settings[weirdStatsFactStopSummary].Enabled {
 		t.Fatalf("expected stop summary enabled")
 	}
-	if settings[weirdStatsFactTrafficLightStops] {
+	if !settings[weirdStatsFactStopSummary].AutoPostEveryRun {
+		t.Fatalf("expected stop summary auto-post enabled")
+	}
+	if settings[weirdStatsFactTrafficLightStops].Enabled {
 		t.Fatalf("expected traffic-light stops disabled")
 	}
-	if settings[weirdStatsFactLongestSegment] {
+	if settings[weirdStatsFactLongestSegment].Enabled {
 		t.Fatalf("expected longest segment disabled")
 	}
-	if settings[weirdStatsFactCoffeeStop] {
+	if settings[weirdStatsFactCoffeeStop].Enabled {
 		t.Fatalf("expected coffee stop disabled")
 	}
-	if !settings[weirdStatsFactRouteHighlights] {
+	if !settings[weirdStatsFactRouteHighlights].Enabled {
 		t.Fatalf("expected route highlights enabled")
 	}
-	if settings[weirdStatsFactRoadCrossings] {
+	if settings[weirdStatsFactRouteHighlights].AutoPostEveryRun {
+		t.Fatalf("expected route highlights auto-post disabled")
+	}
+	if settings[weirdStatsFactRoadCrossings].Enabled {
 		t.Fatalf("expected road crossings disabled")
 	}
 }

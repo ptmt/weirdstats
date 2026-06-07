@@ -13,7 +13,7 @@
       <div class="section-head">
         <div>
           <h3>Weirdstats facts</h3>
-          <p class="muted">Choose which extracted facts Weirdstats can write into activity descriptions for this account.</p>
+          <p class="muted">Enabled facts can appear in Strava descriptions. Auto-post every run writes them whenever detected; turn it off to post only when that fact is remarkable.</p>
         </div>
         <span class="pill">Per user</span>
       </div>
@@ -28,11 +28,16 @@
                   {{if .RideOnly}}<span class="pill muted">Ride only</span>{{end}}
                 </div>
                 <span class="muted">{{.Description}}</span>
+                <span class="muted fact-remarkable">Remarkable: {{.RemarkableDescription}}</span>
               </div>
-              <div class="rule-actions">
+              <div class="rule-actions fact-actions">
                 <label class="toggle">
                   <input type="checkbox" name="fact_{{.ID}}" {{if .Enabled}}checked{{end}} />
                   Enabled
+                </label>
+                <label class="toggle">
+                  <input type="checkbox" name="fact_post_{{.ID}}" {{if .AutoPostEveryRun}}checked{{end}} />
+                  Auto-post every run
                 </label>
               </div>
             </div>

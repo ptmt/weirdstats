@@ -1097,7 +1097,10 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request, user
 	case "update-facts":
 		settings := defaultWeirdStatsFactSettings()
 		for _, def := range weirdStatsFactDefinitions {
-			settings[def.ID] = r.FormValue("fact_"+def.ID) == "on"
+			settings[def.ID] = weirdStatsFactSetting{
+				Enabled:          r.FormValue("fact_"+def.ID) == "on",
+				AutoPostEveryRun: r.FormValue("fact_post_"+def.ID) == "on",
+			}
 		}
 		if err := s.store.ReplaceUserFactPreferences(r.Context(), userID, buildUserFactPreferences(settings)); err != nil {
 			http.Redirect(w, r, "/activities/settings?msg=fact+update+failed", http.StatusFound)

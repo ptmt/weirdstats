@@ -209,3 +209,84 @@ func TestBuildPrioritizedWeirdStatsLineBoostsAllTimeAndYearBestSpeedFacts(t *tes
 		t.Fatalf("unexpected prioritized speed line\nwant: %q\n got: %q", want, line)
 	}
 }
+
+func TestBuildStravaWeirdStatsLineHonorsAutoPostSettings(t *testing.T) {
+	snapshot := stats.StopStats{
+		StopCount:        3,
+		StopTotalSeconds: 95,
+	}
+	rideFact := rideSegmentFact{
+		DistanceMeters: 20000,
+		AvgPower:       200,
+		AvgSpeedMPS:    30.0 / 3.6,
+	}
+	settings := defaultWeirdStatsFactSettings()
+	settings[weirdStatsFactLongestSegment] = weirdStatsFactSetting{Enabled: true, AutoPostEveryRun: false}
+	settings[weirdStatsFactStopSummary] = weirdStatsFactSetting{Enabled: true, AutoPostEveryRun: true}
+	histories := map[string]storage.UserFactMetricHistory{
+		weirdStatsFactLongestSegment + ":" + factMetricDistanceMeters: {
+			FactID:           weirdStatsFactLongestSegment,
+			MetricID:         factMetricDistanceMeters,
+			AllTimeSeenCount: 4,
+			AllTimeBestValue: 60000,
+			YearSeenCount:    2,
+			YearBestValue:    50000,
+		},
+		weirdStatsFactStopSummary + ":" + factMetricStopCount: {
+			FactID:           weirdStatsFactStopSummary,
+			MetricID:         factMetricStopCount,
+			AllTimeSeenCount: 4,
+			AllTimeBestValue: 8,
+			YearSeenCount:    2,
+			YearBestValue:    7,
+		},
+		weirdStatsFactStopSummary + ":" + factMetricStopTotal: {
+			FactID:           weirdStatsFactStopSummary,
+			MetricID:         factMetricStopTotal,
+			AllTimeSeenCount: 4,
+			AllTimeBestValue: 600,
+			YearSeenCount:    2,
+			YearBestValue:    500,
+		},
+	}
+
+	line := buildStravaWeirdStatsLine(snapshot, rideFact, nil, coffeeStopFact{}, routeHighlightFact{}, roadCrossingFact{}, settings, histories)
+	if strings.Contains(line, "Longest segment") {
+		t.Fatalf("expected non-remarkable longest segment to be suppressed, got %q", line)
+	}
+	if !strings.Contains(line, "3 stops") {
+		t.Fatalf("expected auto-posted stop summary to remain, got %q", line)
+	}
+}
+
+func TestBuildStravaWeirdStatsLinePostsRemarkableFactsWhenAutoPostIsDisabled(t *testing.T) {
+	rideFact := rideSegmentFact{
+		DistanceMeters: 70000,
+		AvgPower:       220,
+		AvgSpeedMPS:    32.0 / 3.6,
+	}
+	coffeeFact := coffeeStopFact{Name: "New Bean"}
+	settings := defaultWeirdStatsFactSettings()
+	settings[weirdStatsFactLongestSegment] = weirdStatsFactSetting{Enabled: true, AutoPostEveryRun: false}
+	settings[weirdStatsFactCoffeeStop] = weirdStatsFactSetting{Enabled: true, AutoPostEveryRun: false}
+	histories := map[string]storage.UserFactMetricHistory{
+		weirdStatsFactLongestSegment + ":" + factMetricDistanceMeters: {
+			FactID:           weirdStatsFactLongestSegment,
+			MetricID:         factMetricDistanceMeters,
+			AllTimeSeenCount: 4,
+			AllTimeBestValue: 60000,
+			YearSeenCount:    2,
+			YearBestValue:    50000,
+		},
+	}
+
+	line := buildStravaWeirdStatsLine(stats.StopStats{}, rideFact, nil, coffeeFact, routeHighlightFact{}, roadCrossingFact{}, settings, histories)
+	for _, want := range []string{
+		"Longest segment: 70km - 220w - 32kmh",
+		"Detected Coffee Stop: New Bean",
+	} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("expected %q in remarkable-only line, got %q", want, line)
+		}
+	}
+}

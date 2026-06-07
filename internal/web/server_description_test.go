@@ -178,10 +178,10 @@ func TestFilterWeirdStatsSnapshot(t *testing.T) {
 		RoadCrossingCount:     4,
 	}
 
-	got := filterWeirdStatsSnapshot(snapshot, map[string]bool{
-		weirdStatsFactStopSummary:       false,
-		weirdStatsFactTrafficLightStops: true,
-		weirdStatsFactRoadCrossings:     false,
+	got := filterWeirdStatsSnapshot(snapshot, weirdStatsFactSettings{
+		weirdStatsFactStopSummary:       {Enabled: false},
+		weirdStatsFactTrafficLightStops: {Enabled: true},
+		weirdStatsFactRoadCrossings:     {Enabled: false},
 	})
 	if got.StopCount != 0 || got.StopTotalSeconds != 0 {
 		t.Fatalf("expected stop summary to be cleared, got %+v", got)

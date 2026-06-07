@@ -1353,6 +1353,17 @@ a {
   margin-left: auto;
 }
 
+.fact-actions {
+  justify-content: flex-end;
+  max-width: 360px;
+  flex-wrap: wrap;
+}
+
+.fact-remarkable {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .rule-action {
   display: flex;
   align-items: center;

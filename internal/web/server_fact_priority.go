@@ -34,10 +34,29 @@ func buildPrioritizedWeirdStatsLine(
 ) string {
 	candidates := buildWeirdStatsFactCandidates(statsSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact)
 	candidates = prioritizeStravaFactCandidates(candidates, histories, stravaPostedFactLimit)
+	return joinWeirdStatsFactCandidates(candidates)
+}
+
+func buildStravaWeirdStatsLine(
+	statsSnapshot stats.StopStats,
+	rideFact rideSegmentFact,
+	speedFacts []speedMilestoneFact,
+	coffeeFact coffeeStopFact,
+	routeFact routeHighlightFact,
+	roadFact roadCrossingFact,
+	settings weirdStatsFactSettings,
+	histories map[string]storage.UserFactMetricHistory,
+) string {
+	candidates := buildWeirdStatsFactCandidates(statsSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact)
+	candidates = filterStravaFactCandidatesByPostSettings(candidates, settings, histories)
+	candidates = prioritizeStravaFactCandidates(candidates, histories, stravaPostedFactLimit)
+	return joinWeirdStatsFactCandidates(candidates)
+}
+
+func joinWeirdStatsFactCandidates(candidates []weirdStatsFactCandidate) string {
 	if len(candidates) == 0 {
 		return ""
 	}
-
 	parts := make([]string, 0, len(candidates))
 	for _, candidate := range candidates {
 		parts = append(parts, candidate.Part)
@@ -179,6 +198,24 @@ func collectWeirdStatsCandidateMetrics(candidates []weirdStatsFactCandidate) []s
 	return metrics
 }
 
+func filterStravaFactCandidatesByPostSettings(
+	candidates []weirdStatsFactCandidate,
+	settings weirdStatsFactSettings,
+	histories map[string]storage.UserFactMetricHistory,
+) []weirdStatsFactCandidate {
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	filtered := make([]weirdStatsFactCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if weirdStatsFactAutoPostEveryRun(settings, candidate.ID) || isWeirdStatsFactCandidateRemarkable(candidate, histories) {
+			filtered = append(filtered, candidate)
+		}
+	}
+	return filtered
+}
+
 func scoreWeirdStatsFactCandidate(candidate weirdStatsFactCandidate, histories map[string]storage.UserFactMetricHistory) int {
 	score := candidate.BasePriority
 	if histories == nil || len(candidate.Metrics) == 0 {
@@ -191,6 +228,51 @@ func scoreWeirdStatsFactCandidate(candidate weirdStatsFactCandidate, histories m
 	default:
 		return score + scoreNumericNovelty(candidate.Metrics, histories)
 	}
+}
+
+func isWeirdStatsFactCandidateRemarkable(candidate weirdStatsFactCandidate, histories map[string]storage.UserFactMetricHistory) bool {
+	if histories == nil || len(candidate.Metrics) == 0 {
+		return false
+	}
+
+	switch candidate.ID {
+	case weirdStatsFactCoffeeStop, weirdStatsFactRouteHighlights:
+		return hasNewPOIMetric(candidate.Metrics, histories)
+	default:
+		return hasFirstOrBestNumericMetric(candidate.Metrics, histories)
+	}
+}
+
+func hasNewPOIMetric(metrics []storage.ActivityFactMetric, histories map[string]storage.UserFactMetricHistory) bool {
+	for _, metric := range metrics {
+		if !strings.HasPrefix(metric.MetricID, factMetricPOIPrefix) {
+			continue
+		}
+		history, ok := histories[metric.FactID+":"+metric.MetricID]
+		if !ok || history.AllTimeSeenCount == 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func hasFirstOrBestNumericMetric(metrics []storage.ActivityFactMetric, histories map[string]storage.UserFactMetricHistory) bool {
+	for _, metric := range metrics {
+		if !factMetricSupportsRecordBadge(metric) {
+			continue
+		}
+		history, ok := histories[metric.FactID+":"+metric.MetricID]
+		if !ok || history.AllTimeSeenCount == 0 {
+			return true
+		}
+		if metric.MetricValue > history.AllTimeBestValue+factMetricBadgeTolerance {
+			return true
+		}
+		if history.YearSeenCount > 0 && metric.MetricValue > history.YearBestValue+factMetricBadgeTolerance {
+			return true
+		}
+	}
+	return false
 }
 
 func scorePOINovelty(metrics []storage.ActivityFactMetric, histories map[string]storage.UserFactMetricHistory) int {

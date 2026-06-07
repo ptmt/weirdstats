@@ -189,15 +189,15 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 	filteredSnapshot := filterWeirdStatsSnapshot(statsSnapshot, factSettings)
 	descriptionLine := ""
 	if shouldPostWeirdStatsDescription(descriptionActivityType, descriptionDistance) {
-		descriptionLine = buildWeirdStatsLine(filteredSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact)
-		if metrics := collectWeirdStatsCandidateMetrics(buildWeirdStatsFactCandidates(filteredSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact)); len(metrics) > 0 {
-			histories, err := s.store.ListUserFactMetricHistories(ctx, activity.UserID, activity.ID, activity.StartTime.UTC().Year(), metrics)
+		var histories map[string]storage.UserFactMetricHistory
+		candidates := buildWeirdStatsFactCandidates(filteredSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact)
+		if metrics := collectWeirdStatsCandidateMetrics(candidates); len(metrics) > 0 {
+			histories, err = s.store.ListUserFactMetricHistories(ctx, activity.UserID, activity.ID, activity.StartTime.UTC().Year(), metrics)
 			if err != nil {
 				log.Printf("activity fact history load failed for activity %d: %v", activity.ID, err)
-			} else {
-				descriptionLine = buildPrioritizedWeirdStatsLine(filteredSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact, histories)
 			}
 		}
+		descriptionLine = buildStravaWeirdStatsLine(filteredSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact, factSettings, histories)
 	}
 	newDesc, descChanged := applyWeirdStatsDescriptionLine(baseDescription, descriptionLine)
 	if descChanged {
