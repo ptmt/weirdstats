@@ -1497,6 +1497,17 @@ a {
   gap: 6px;
 }
 
+.rule-builder label.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.rule-builder label.toggle input[type="checkbox"] {
+  flex: 0 0 auto;
+}
+
 .rule-builder label .muted {
   font-size: 12px;
   font-weight: 600;
