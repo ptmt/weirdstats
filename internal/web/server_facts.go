@@ -83,6 +83,10 @@ func buildPointsFromStreams(start time.Time, streams strava.StreamSet) []gps.Poi
 			point.Grade = streams.GradeSmooth[idx]
 			point.HasGrade = true
 		}
+		if idx < len(streams.Heartrate) {
+			point.HeartRate = streams.Heartrate[idx]
+			point.HasHeartRate = true
+		}
 		points = append(points, point)
 	}
 	return points
@@ -759,6 +763,19 @@ func buildActivityMapFacts(
 	routeFact routeHighlightFact,
 	roadFact roadCrossingFact,
 ) []ActivityMapFactView {
+	return buildActivityMapFactsWithHeartRate(stopViews, points, rideFact, speedFacts, heartRateChangeFact{}, coffeeFact, routeFact, roadFact)
+}
+
+func buildActivityMapFactsWithHeartRate(
+	stopViews []StopView,
+	points []gps.Point,
+	rideFact rideSegmentFact,
+	speedFacts []speedMilestoneFact,
+	heartRateFact heartRateChangeFact,
+	coffeeFact coffeeStopFact,
+	routeFact routeHighlightFact,
+	roadFact roadCrossingFact,
+) []ActivityMapFactView {
 	facts := make([]ActivityMapFactView, 0, 10)
 
 	if summary := trimFactPrefix(buildRideSegmentPart(rideFact), "Longest segment: "); summary != "" {
@@ -792,6 +809,21 @@ func buildActivityMapFacts(
 				Path: speedMilestonePathPoints(points, speedFact),
 			})
 		}
+	}
+
+	if summary := heartRateChangeSummary(heartRateFact); summary != "" {
+		facts = append(facts, ActivityMapFactView{
+			ID:      weirdStatsFactHeartRateChange,
+			Kind:    "segment",
+			Title:   heartRateChangeTitle(heartRateFact),
+			Summary: summary,
+			Color:   heartRateFact.Color,
+			Points: []ActivityFactPoint{
+				{Lat: heartRateFact.StartLat, Lon: heartRateFact.StartLon, Label: "Start HR"},
+				{Lat: heartRateFact.EndLat, Lon: heartRateFact.EndLon, Label: "End HR"},
+			},
+			Path: heartRateChangePathPoints(points, heartRateFact),
+		})
 	}
 
 	if summary := trimFactPrefix(buildCoffeeStopPart(coffeeFact), "Detected Coffee Stop: "); summary != "" && coffeeFact.HasLocation {

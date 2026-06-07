@@ -8,7 +8,7 @@ import (
 	"weirdstats/internal/gps"
 )
 
-func TestActivityPointsRoundTrip_WithPowerAndGrade(t *testing.T) {
+func TestActivityPointsRoundTrip_WithOptionalStreams(t *testing.T) {
 	ctx := context.Background()
 	store, err := Open(":memory:")
 	if err != nil {
@@ -27,7 +27,7 @@ func TestActivityPointsRoundTrip_WithPowerAndGrade(t *testing.T) {
 		Name:      "Point Round Trip",
 		StartTime: start,
 	}, []gps.Point{
-		{Lat: 52.52, Lon: 13.405, Time: start, Speed: 5, Power: 210, HasPower: true, Grade: -6.5, HasGrade: true},
+		{Lat: 52.52, Lon: 13.405, Time: start, Speed: 5, Power: 210, HasPower: true, Grade: -6.5, HasGrade: true, HeartRate: 132, HasHeartRate: true},
 		{Lat: 52.53, Lon: 13.406, Time: start.Add(30 * time.Second), Speed: 8},
 	})
 	if err != nil {
@@ -47,7 +47,10 @@ func TestActivityPointsRoundTrip_WithPowerAndGrade(t *testing.T) {
 	if !points[0].HasGrade || points[0].Grade != -6.5 {
 		t.Fatalf("expected first point grade to round-trip, got %+v", points[0])
 	}
-	if points[1].HasPower || points[1].HasGrade {
+	if !points[0].HasHeartRate || points[0].HeartRate != 132 {
+		t.Fatalf("expected first point heartrate to round-trip, got %+v", points[0])
+	}
+	if points[1].HasPower || points[1].HasGrade || points[1].HasHeartRate {
 		t.Fatalf("expected second point to have no optional streams, got %+v", points[1])
 	}
 }

@@ -21,7 +21,8 @@ func TestClientGetsActivityAndStreams(t *testing.T) {
   "time":{"data":[0,60]},
   "velocity_smooth":{"data":[1.2,2.3]},
   "watts":{"data":[210.0,220.0]},
-  "grade_smooth":{"data":[-4.0,-3.5]}
+  "grade_smooth":{"data":[-4.0,-3.5]},
+  "heartrate":{"data":[130,136]}
 }`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -51,5 +52,8 @@ func TestClientGetsActivityAndStreams(t *testing.T) {
 	}
 	if len(streams.GradeSmooth) != 2 || streams.GradeSmooth[0] != -4 || streams.GradeSmooth[1] != -3.5 {
 		t.Fatalf("unexpected grade stream: %#v", streams.GradeSmooth)
+	}
+	if len(streams.Heartrate) != 2 || streams.Heartrate[0] != 130 || streams.Heartrate[1] != 136 {
+		t.Fatalf("unexpected heartrate stream: %#v", streams.Heartrate)
 	}
 }

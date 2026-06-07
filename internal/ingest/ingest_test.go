@@ -13,6 +13,7 @@ func TestBuildPoints(t *testing.T) {
 		LatLng:         [][2]float64{{1, 2}, {3, 4}},
 		TimeOffsetsSec: []int{0, 60},
 		VelocitySmooth: []float64{1.1, 2.2},
+		Heartrate:      []float64{130, 136},
 	}
 
 	points, err := buildPoints(start, streams)
@@ -27,5 +28,8 @@ func TestBuildPoints(t *testing.T) {
 	}
 	if points[1].Speed != 2.2 {
 		t.Fatalf("unexpected speed: %v", points[1].Speed)
+	}
+	if !points[1].HasHeartRate || points[1].HeartRate != 136 {
+		t.Fatalf("unexpected heartrate: %+v", points[1])
 	}
 }

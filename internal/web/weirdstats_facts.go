@@ -18,6 +18,7 @@ const (
 	weirdStatsFactAcceleration040   = "acceleration_0_40"
 	weirdStatsFactDeceleration400   = "deceleration_40_0"
 	weirdStatsFactDeceleration300   = "deceleration_30_0"
+	weirdStatsFactHeartRateChange   = "heart_rate_change"
 )
 
 type SettingsFact struct {
@@ -139,6 +140,14 @@ var weirdStatsFactDefinitions = []weirdStatsFactDefinition{
 		DefaultEnabled:          true,
 		DefaultAutoPostEveryRun: true,
 		RideOnly:                true,
+	},
+	{
+		ID:                      weirdStatsFactHeartRateChange,
+		Label:                   "Heart-rate change",
+		Description:             "Detect the steepest sustained heart-rate rise or drop.",
+		RemarkableDescription:   "Posts only after prior history exists and this change rate improves meaningfully.",
+		DefaultEnabled:          true,
+		DefaultAutoPostEveryRun: false,
 	},
 }
 

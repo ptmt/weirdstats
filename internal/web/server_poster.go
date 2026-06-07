@@ -564,11 +564,12 @@ func (s *Server) posterFacts(ctx context.Context, activityID int64, points []gps
 	}
 
 	stopViews := buildStopViews(storedStops)
-	return buildActivityMapFacts(
+	return buildActivityMapFactsWithHeartRate(
 		stopViews,
 		points,
 		rideSegmentFact{},
 		nil,
+		detectHeartRateChangeFact(points),
 		coffeeStopFact{},
 		routeHighlightFact{},
 		buildRoadCrossingFact(storedStops),

@@ -81,7 +81,9 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 	coffeeFactEnabled := weirdStatsFactEnabled(factSettings, weirdStatsFactCoffeeStop)
 	routeFactEnabled := weirdStatsFactEnabled(factSettings, weirdStatsFactRouteHighlights)
 	roadCrossingFactEnabled := weirdStatsFactEnabled(factSettings, weirdStatsFactRoadCrossings)
+	heartRateFactEnabled := weirdStatsFactEnabled(factSettings, weirdStatsFactHeartRateChange)
 	needsRideFacts := rideFactEnabled || speedFactEnabled || coffeeFactEnabled || routeFactEnabled
+	needsPointFacts := needsRideFacts || heartRateFactEnabled
 
 	baseDescription := activity.Description
 	baseHideFromHome := activity.HideFromHome
@@ -89,6 +91,7 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 	descriptionDistance := activity.Distance
 	rideFact := rideSegmentFact{}
 	speedFacts := []speedMilestoneFact{}
+	heartRateFact := heartRateChangeFact{}
 	coffeeFact := coffeeStopFact{}
 	routeFact := routeHighlightFact{}
 	roadFact := roadCrossingFact{}
@@ -108,25 +111,28 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 			roadFact = buildRoadCrossingFact(stops)
 		}
 	}
-	if needsRideFacts && isRideType(activity.Type) {
+	if needsPointFacts {
 		points, err := s.store.LoadActivityPoints(ctx, activityID)
 		if err != nil {
-			log.Printf("local activity points load failed (skipping ride fact): %v", err)
+			log.Printf("local activity points load failed (skipping route-linked facts): %v", err)
 		} else {
-			if routeFactEnabled {
+			if heartRateFactEnabled {
+				heartRateFact = detectHeartRateChangeFact(points)
+			}
+			if needsRideFacts && isRideType(activity.Type) && routeFactEnabled {
 				routeFact, err = detectRouteHighlightFact(ctx, points, s.overpass)
 				if err != nil {
 					log.Printf("local route highlight detection failed (skipping route highlights): %v", err)
 					routeFact = routeHighlightFact{}
 				}
 			}
-			if rideFactEnabled {
+			if needsRideFacts && isRideType(activity.Type) && rideFactEnabled {
 				rideFact = longestRideSegmentFact(activity.Type, points, s.stopOpts)
 			}
-			if speedFactEnabled {
+			if needsRideFacts && isRideType(activity.Type) && speedFactEnabled {
 				speedFacts = filterSpeedMilestoneFactsBySettings(detectSpeedMilestoneFacts(activity.Type, points), factSettings)
 			}
-			if coffeeFactEnabled {
+			if needsRideFacts && isRideType(activity.Type) && coffeeFactEnabled {
 				detectedCoffeeFact, err := detectCoffeeStopFact(ctx, activity.Type, points, s.overpass)
 				if err != nil {
 					log.Printf("local coffee stop detection failed (skipping coffee fact): %v", err)
@@ -147,25 +153,30 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 			baseHideFromHome = latest.HideFromHome
 			descriptionActivityType = latest.Type
 			descriptionDistance = latest.Distance
-			if needsRideFacts && isRideType(latest.Type) {
+			needsLatestStreams := (needsRideFacts && isRideType(latest.Type)) ||
+				(heartRateFactEnabled && latest.AverageHeartRate > 0)
+			if needsLatestStreams {
 				streams, err := client.GetStreams(ctx, activityID)
 				if err != nil {
-					log.Printf("strava streams fetch failed (using cached ride fact): %v", err)
+					log.Printf("strava streams fetch failed (using cached route-linked facts): %v", err)
 				} else {
 					points := buildPointsFromStreams(latest.StartDate, streams)
-					if routeFactEnabled {
+					if heartRateFactEnabled {
+						heartRateFact = detectHeartRateChangeFact(points)
+					}
+					if needsRideFacts && isRideType(latest.Type) && routeFactEnabled {
 						routeFact, err = detectRouteHighlightFact(ctx, points, s.overpass)
 						if err != nil {
 							log.Printf("strava route highlight detection failed (using cached route highlights): %v", err)
 						}
 					}
-					if rideFactEnabled {
+					if needsRideFacts && isRideType(latest.Type) && rideFactEnabled {
 						rideFact = longestRideSegmentFact(latest.Type, points, s.stopOpts)
 					}
-					if speedFactEnabled {
+					if needsRideFacts && isRideType(latest.Type) && speedFactEnabled {
 						speedFacts = filterSpeedMilestoneFactsBySettings(detectSpeedMilestoneFacts(latest.Type, points), factSettings)
 					}
-					if coffeeFactEnabled {
+					if needsRideFacts && isRideType(latest.Type) && coffeeFactEnabled {
 						detectedCoffeeFact, err := detectCoffeeStopFact(ctx, latest.Type, points, s.overpass)
 						if err != nil {
 							log.Printf("strava coffee stop detection failed (using cached coffee fact): %v", err)
@@ -174,11 +185,15 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 						}
 					}
 				}
-			} else {
+			}
+			if needsRideFacts && !isRideType(latest.Type) {
 				rideFact = rideSegmentFact{}
 				speedFacts = nil
 				coffeeFact = coffeeStopFact{}
 				routeFact = routeHighlightFact{}
+			}
+			if heartRateFactEnabled && latest.AverageHeartRate <= 0 {
+				heartRateFact = heartRateChangeFact{}
 			}
 		}
 	} else if s.ingestor != nil {
@@ -190,14 +205,14 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 	descriptionLine := ""
 	if shouldPostWeirdStatsDescription(descriptionActivityType, descriptionDistance) {
 		var histories map[string]storage.UserFactMetricHistory
-		candidates := buildWeirdStatsFactCandidates(filteredSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact)
+		candidates := buildWeirdStatsFactCandidatesWithHeartRate(filteredSnapshot, rideFact, speedFacts, heartRateFact, coffeeFact, routeFact, roadFact)
 		if metrics := collectWeirdStatsCandidateMetrics(candidates); len(metrics) > 0 {
 			histories, err = s.store.ListUserFactMetricHistories(ctx, activity.UserID, activity.ID, activity.StartTime.UTC().Year(), metrics)
 			if err != nil {
 				log.Printf("activity fact history load failed for activity %d: %v", activity.ID, err)
 			}
 		}
-		descriptionLine = buildStravaWeirdStatsLine(filteredSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact, factSettings, histories)
+		descriptionLine = buildStravaWeirdStatsLineWithHeartRate(filteredSnapshot, rideFact, speedFacts, heartRateFact, coffeeFact, routeFact, roadFact, factSettings, histories)
 	}
 	newDesc, descChanged := applyWeirdStatsDescriptionLine(baseDescription, descriptionLine)
 	if descChanged {
@@ -218,7 +233,7 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 		if err != nil {
 			log.Printf("activity stops load failed (skipping detected facts cache): %v", err)
 		} else {
-			s.updateActivityDetectedFactsCache(ctx, activity, statsSnapshot, cachePoints, cacheStops, rideFact, speedFacts, coffeeFact, routeFact, roadFact)
+			s.updateActivityDetectedFactsCache(ctx, activity, statsSnapshot, cachePoints, cacheStops, rideFact, speedFacts, heartRateFact, coffeeFact, routeFact, roadFact)
 		}
 	}
 
@@ -313,12 +328,16 @@ func (s *Server) updateActivityDetectedFactsCache(
 	storedStops []storage.ActivityStop,
 	rideFact rideSegmentFact,
 	speedFacts []speedMilestoneFact,
+	heartRateFact heartRateChangeFact,
 	coffeeFact coffeeStopFact,
 	routeFact routeHighlightFact,
 	roadFact roadCrossingFact,
 ) {
 	if roadFact.Count == 0 && len(storedStops) > 0 {
 		roadFact = buildRoadCrossingFact(storedStops)
+	}
+	if len(points) > 1 && heartRateFact.Duration <= 0 {
+		heartRateFact = detectHeartRateChangeFact(points)
 	}
 	if isRideType(activity.Type) && len(points) > 1 {
 		if rideFact.DistanceMeters <= 0 {
@@ -348,11 +367,11 @@ func (s *Server) updateActivityDetectedFactsCache(
 	}
 
 	stopViews := buildStopViews(storedStops)
-	if err := s.store.ReplaceActivityFactMetrics(ctx, activity, buildActivityFactMetrics(statsSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact)); err != nil {
+	if err := s.store.ReplaceActivityFactMetrics(ctx, activity, buildActivityFactMetricsWithHeartRate(statsSnapshot, rideFact, speedFacts, heartRateFact, coffeeFact, routeFact, roadFact)); err != nil {
 		log.Printf("activity fact metrics store failed for activity %d: %v", activity.ID, err)
 	}
 
-	detectedFacts := buildActivityMapFacts(stopViews, points, rideFact, speedFacts, coffeeFact, routeFact, roadFact)
+	detectedFacts := buildActivityMapFactsWithHeartRate(stopViews, points, rideFact, speedFacts, heartRateFact, coffeeFact, routeFact, roadFact)
 	payload, err := json.Marshal(detectedFacts)
 	if err != nil {
 		log.Printf("detected facts cache marshal failed for activity %d: %v", activity.ID, err)
@@ -456,7 +475,11 @@ const weirdStatsPrefix = "Weirdstats:"
 const weirdstatsTag = "#weirdstats"
 
 func applyWeirdStatsDescription(existing string, statsSnapshot stats.StopStats, rideFact rideSegmentFact, speedFacts []speedMilestoneFact, coffeeFact coffeeStopFact, routeFact routeHighlightFact, roadFact roadCrossingFact) (string, bool) {
-	line := buildWeirdStatsLine(statsSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact)
+	return applyWeirdStatsDescriptionWithHeartRate(existing, statsSnapshot, rideFact, speedFacts, heartRateChangeFact{}, coffeeFact, routeFact, roadFact)
+}
+
+func applyWeirdStatsDescriptionWithHeartRate(existing string, statsSnapshot stats.StopStats, rideFact rideSegmentFact, speedFacts []speedMilestoneFact, heartRateFact heartRateChangeFact, coffeeFact coffeeStopFact, routeFact routeHighlightFact, roadFact roadCrossingFact) (string, bool) {
+	line := buildWeirdStatsLineWithHeartRate(statsSnapshot, rideFact, speedFacts, heartRateFact, coffeeFact, routeFact, roadFact)
 	return applyWeirdStatsDescriptionLine(existing, line)
 }
 
@@ -491,7 +514,11 @@ func applyWeirdStatsDescriptionLine(existing, line string) (string, bool) {
 }
 
 func buildWeirdStatsLine(statsSnapshot stats.StopStats, rideFact rideSegmentFact, speedFacts []speedMilestoneFact, coffeeFact coffeeStopFact, routeFact routeHighlightFact, roadFact roadCrossingFact) string {
-	return buildPrioritizedWeirdStatsLine(statsSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact, nil)
+	return buildWeirdStatsLineWithHeartRate(statsSnapshot, rideFact, speedFacts, heartRateChangeFact{}, coffeeFact, routeFact, roadFact)
+}
+
+func buildWeirdStatsLineWithHeartRate(statsSnapshot stats.StopStats, rideFact rideSegmentFact, speedFacts []speedMilestoneFact, heartRateFact heartRateChangeFact, coffeeFact coffeeStopFact, routeFact routeHighlightFact, roadFact roadCrossingFact) string {
+	return buildPrioritizedWeirdStatsLineWithHeartRate(statsSnapshot, rideFact, speedFacts, heartRateFact, coffeeFact, routeFact, roadFact, nil)
 }
 
 func shouldPostWeirdStatsDescription(activityType string, distanceMeters float64) bool {

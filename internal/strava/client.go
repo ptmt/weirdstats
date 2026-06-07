@@ -205,6 +205,7 @@ type StreamSet struct {
 	VelocitySmooth []float64
 	Watts          []float64
 	GradeSmooth    []float64
+	Heartrate      []float64
 }
 
 type UpdateActivityRequest struct {
@@ -360,7 +361,7 @@ func (c *Client) UpdateActivity(ctx context.Context, id int64, update UpdateActi
 
 func (c *Client) GetStreams(ctx context.Context, id int64) (StreamSet, error) {
 	params := url.Values{}
-	params.Set("keys", "latlng,time,velocity_smooth,watts,grade_smooth")
+	params.Set("keys", "latlng,time,velocity_smooth,watts,grade_smooth,heartrate")
 	params.Set("key_by_type", "true")
 
 	var payload map[string]struct {
@@ -413,6 +414,14 @@ func (c *Client) GetStreams(ctx context.Context, id int64) (StreamSet, error) {
 			return StreamSet{}, fmt.Errorf("parse grade_smooth: %w", err)
 		}
 		streams.GradeSmooth = append(streams.GradeSmooth, v)
+	}
+
+	for _, entry := range payload["heartrate"].Data {
+		var v float64
+		if err := json.Unmarshal(entry, &v); err != nil {
+			return StreamSet{}, fmt.Errorf("parse heartrate: %w", err)
+		}
+		streams.Heartrate = append(streams.Heartrate, v)
 	}
 
 	return streams, nil

@@ -3,14 +3,16 @@ package gps
 import "time"
 
 type Point struct {
-	Lat      float64
-	Lon      float64
-	Time     time.Time
-	Speed    float64
-	Power    float64
-	HasPower bool
-	Grade    float64
-	HasGrade bool
+	Lat          float64
+	Lon          float64
+	Time         time.Time
+	Speed        float64
+	Power        float64
+	HasPower     bool
+	Grade        float64
+	HasGrade     bool
+	HeartRate    float64
+	HasHeartRate bool
 }
 
 type Stop struct {

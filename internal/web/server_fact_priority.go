@@ -10,6 +10,12 @@ import (
 
 const stravaPostedFactLimit = 4
 
+const (
+	heartRateRemarkableMinPriorSeen        = 3
+	heartRateRemarkableMinImprovementRate  = 10.0
+	heartRateRemarkableMinImprovementRatio = 0.10
+)
+
 type weirdStatsFactCandidate struct {
 	ID           string
 	Part         string
@@ -32,7 +38,20 @@ func buildPrioritizedWeirdStatsLine(
 	roadFact roadCrossingFact,
 	histories map[string]storage.UserFactMetricHistory,
 ) string {
-	candidates := buildWeirdStatsFactCandidates(statsSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact)
+	return buildPrioritizedWeirdStatsLineWithHeartRate(statsSnapshot, rideFact, speedFacts, heartRateChangeFact{}, coffeeFact, routeFact, roadFact, histories)
+}
+
+func buildPrioritizedWeirdStatsLineWithHeartRate(
+	statsSnapshot stats.StopStats,
+	rideFact rideSegmentFact,
+	speedFacts []speedMilestoneFact,
+	heartRateFact heartRateChangeFact,
+	coffeeFact coffeeStopFact,
+	routeFact routeHighlightFact,
+	roadFact roadCrossingFact,
+	histories map[string]storage.UserFactMetricHistory,
+) string {
+	candidates := buildWeirdStatsFactCandidatesWithHeartRate(statsSnapshot, rideFact, speedFacts, heartRateFact, coffeeFact, routeFact, roadFact)
 	candidates = prioritizeStravaFactCandidates(candidates, histories, stravaPostedFactLimit)
 	return joinWeirdStatsFactCandidates(candidates)
 }
@@ -47,7 +66,21 @@ func buildStravaWeirdStatsLine(
 	settings weirdStatsFactSettings,
 	histories map[string]storage.UserFactMetricHistory,
 ) string {
-	candidates := buildWeirdStatsFactCandidates(statsSnapshot, rideFact, speedFacts, coffeeFact, routeFact, roadFact)
+	return buildStravaWeirdStatsLineWithHeartRate(statsSnapshot, rideFact, speedFacts, heartRateChangeFact{}, coffeeFact, routeFact, roadFact, settings, histories)
+}
+
+func buildStravaWeirdStatsLineWithHeartRate(
+	statsSnapshot stats.StopStats,
+	rideFact rideSegmentFact,
+	speedFacts []speedMilestoneFact,
+	heartRateFact heartRateChangeFact,
+	coffeeFact coffeeStopFact,
+	routeFact routeHighlightFact,
+	roadFact roadCrossingFact,
+	settings weirdStatsFactSettings,
+	histories map[string]storage.UserFactMetricHistory,
+) string {
+	candidates := buildWeirdStatsFactCandidatesWithHeartRate(statsSnapshot, rideFact, speedFacts, heartRateFact, coffeeFact, routeFact, roadFact)
 	candidates = filterStravaFactCandidatesByPostSettings(candidates, settings, histories)
 	candidates = prioritizeStravaFactCandidates(candidates, histories, stravaPostedFactLimit)
 	return joinWeirdStatsFactCandidates(candidates)
@@ -68,6 +101,18 @@ func buildWeirdStatsFactCandidates(
 	statsSnapshot stats.StopStats,
 	rideFact rideSegmentFact,
 	speedFacts []speedMilestoneFact,
+	coffeeFact coffeeStopFact,
+	routeFact routeHighlightFact,
+	roadFact roadCrossingFact,
+) []weirdStatsFactCandidate {
+	return buildWeirdStatsFactCandidatesWithHeartRate(statsSnapshot, rideFact, speedFacts, heartRateChangeFact{}, coffeeFact, routeFact, roadFact)
+}
+
+func buildWeirdStatsFactCandidatesWithHeartRate(
+	statsSnapshot stats.StopStats,
+	rideFact rideSegmentFact,
+	speedFacts []speedMilestoneFact,
+	heartRateFact heartRateChangeFact,
 	coffeeFact coffeeStopFact,
 	routeFact routeHighlightFact,
 	roadFact roadCrossingFact,
@@ -96,12 +141,22 @@ func buildWeirdStatsFactCandidates(
 		}
 	}
 
+	if part := buildHeartRateChangePart(heartRateFact); part != "" {
+		candidates = append(candidates, weirdStatsFactCandidate{
+			ID:           weirdStatsFactHeartRateChange,
+			Part:         part,
+			BasePriority: 440,
+			DefaultOrder: 5,
+			Metrics:      heartRateChangeFactMetrics(heartRateFact),
+		})
+	}
+
 	if part := buildCoffeeStopPart(coffeeFact); part != "" {
 		candidates = append(candidates, weirdStatsFactCandidate{
 			ID:           weirdStatsFactCoffeeStop,
 			Part:         part,
 			BasePriority: 540,
-			DefaultOrder: 5,
+			DefaultOrder: 6,
 			Metrics:      coffeeStopFactMetrics(coffeeFact),
 		})
 	}
@@ -111,7 +166,7 @@ func buildWeirdStatsFactCandidates(
 			ID:           weirdStatsFactRouteHighlights,
 			Part:         part,
 			BasePriority: 520,
-			DefaultOrder: 6,
+			DefaultOrder: 7,
 			Metrics:      routeHighlightFactMetrics(routeFact),
 		})
 	}
@@ -125,7 +180,7 @@ func buildWeirdStatsFactCandidates(
 			ID:           weirdStatsFactRoadCrossings,
 			Part:         part,
 			BasePriority: 400,
-			DefaultOrder: 7,
+			DefaultOrder: 8,
 			Metrics:      roadCrossingFactMetrics(statsSnapshot, roadFact),
 		})
 	}
@@ -135,7 +190,7 @@ func buildWeirdStatsFactCandidates(
 			ID:           weirdStatsFactStopSummary,
 			Part:         part,
 			BasePriority: 350,
-			DefaultOrder: 8,
+			DefaultOrder: 9,
 			Metrics:      stopSummaryFactMetrics(statsSnapshot),
 		})
 	}
@@ -145,7 +200,7 @@ func buildWeirdStatsFactCandidates(
 			ID:           weirdStatsFactTrafficLightStops,
 			Part:         part,
 			BasePriority: 330,
-			DefaultOrder: 9,
+			DefaultOrder: 10,
 			Metrics:      trafficLightStopFactMetrics(statsSnapshot),
 		})
 	}
@@ -238,9 +293,42 @@ func isWeirdStatsFactCandidateRemarkable(candidate weirdStatsFactCandidate, hist
 	switch candidate.ID {
 	case weirdStatsFactCoffeeStop, weirdStatsFactRouteHighlights:
 		return hasNewPOIMetric(candidate.Metrics, histories)
+	case weirdStatsFactHeartRateChange:
+		return hasMeaningfulHeartRateChangeRecord(candidate.Metrics, histories)
 	default:
 		return hasFirstOrBestNumericMetric(candidate.Metrics, histories)
 	}
+}
+
+func hasMeaningfulHeartRateChangeRecord(metrics []storage.ActivityFactMetric, histories map[string]storage.UserFactMetricHistory) bool {
+	for _, metric := range metrics {
+		if metric.FactID != weirdStatsFactHeartRateChange {
+			continue
+		}
+		history, ok := histories[metric.FactID+":"+metric.MetricID]
+		if !ok {
+			continue
+		}
+		if history.AllTimeSeenCount >= heartRateRemarkableMinPriorSeen &&
+			heartRateChangeBeatsRecord(metric.MetricValue, history.AllTimeBestValue) {
+			return true
+		}
+		if history.YearSeenCount >= heartRateRemarkableMinPriorSeen &&
+			heartRateChangeBeatsRecord(metric.MetricValue, history.YearBestValue) {
+			return true
+		}
+	}
+	return false
+}
+
+func heartRateChangeBeatsRecord(value, baseline float64) bool {
+	if value <= 0 || baseline <= 0 {
+		return false
+	}
+	if value < baseline+heartRateRemarkableMinImprovementRate {
+		return false
+	}
+	return improvementRatio(value, baseline) >= heartRateRemarkableMinImprovementRatio
 }
 
 func hasNewPOIMetric(metrics []storage.ActivityFactMetric, histories map[string]storage.UserFactMetricHistory) bool {

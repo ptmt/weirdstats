@@ -14,6 +14,8 @@ const (
 	factMetricStopTotal      = "stop_total_seconds"
 	factMetricCount          = "count"
 	factMetricInverseSeconds = "inverse_seconds"
+	factMetricHRRiseRate     = "hr_rise_bpm_per_minute"
+	factMetricHRDropRate     = "hr_drop_bpm_per_minute"
 	factMetricPOIPrefix      = "poi:"
 )
 
@@ -25,9 +27,22 @@ func buildActivityFactMetrics(
 	routeFact routeHighlightFact,
 	roadFact roadCrossingFact,
 ) []storage.ActivityFactMetric {
+	return buildActivityFactMetricsWithHeartRate(statsSnapshot, rideFact, speedFacts, heartRateChangeFact{}, coffeeFact, routeFact, roadFact)
+}
+
+func buildActivityFactMetricsWithHeartRate(
+	statsSnapshot stats.StopStats,
+	rideFact rideSegmentFact,
+	speedFacts []speedMilestoneFact,
+	heartRateFact heartRateChangeFact,
+	coffeeFact coffeeStopFact,
+	routeFact routeHighlightFact,
+	roadFact roadCrossingFact,
+) []storage.ActivityFactMetric {
 	metrics := make([]storage.ActivityFactMetric, 0, 12)
 	metrics = append(metrics, rideSegmentFactMetrics(rideFact)...)
 	metrics = append(metrics, speedMilestoneFactMetrics(speedFacts)...)
+	metrics = append(metrics, heartRateChangeFactMetrics(heartRateFact)...)
 	metrics = append(metrics, coffeeStopFactMetrics(coffeeFact)...)
 	metrics = append(metrics, routeHighlightFactMetrics(routeFact)...)
 	metrics = append(metrics, roadCrossingFactMetrics(statsSnapshot, roadFact)...)
@@ -70,6 +85,23 @@ func speedMilestoneFactMetrics(facts []speedMilestoneFact) []storage.ActivityFac
 		})
 	}
 	return metrics
+}
+
+func heartRateChangeFactMetrics(fact heartRateChangeFact) []storage.ActivityFactMetric {
+	if fact.Duration <= 0 || fact.RateBPMPerMinute <= 0 {
+		return nil
+	}
+
+	metricID := factMetricHRRiseRate
+	if fact.Direction == heartRateChangeDirectionDrop {
+		metricID = factMetricHRDropRate
+	}
+	return []storage.ActivityFactMetric{{
+		FactID:      weirdStatsFactHeartRateChange,
+		MetricID:    metricID,
+		MetricValue: fact.RateBPMPerMinute,
+		Summary:     heartRateChangeSummary(fact),
+	}}
 }
 
 func coffeeStopFactMetrics(fact coffeeStopFact) []storage.ActivityFactMetric {

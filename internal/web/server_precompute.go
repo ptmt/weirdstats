@@ -23,6 +23,7 @@ func (s *Server) PrecomputeActivityFacts(ctx context.Context, activity storage.A
 		stops,
 		rideSegmentFact{},
 		nil,
+		heartRateChangeFact{},
 		coffeeStopFact{},
 		routeHighlightFact{},
 		roadCrossingFact{},
