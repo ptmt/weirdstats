@@ -73,7 +73,7 @@ func main() {
 		CacheTTL:   time.Duration(cfg.OverpassCacheHours) * time.Hour,
 	}
 
-	stopOpts := gps.StopOptions{SpeedThreshold: 0.5, MinDuration: time.Minute, GlitchTolerance: 10 * time.Second}
+	stopOpts := gps.StopOptions{SpeedThreshold: 0.5, MinDuration: 3 * time.Second, GlitchTolerance: 10 * time.Second}
 	var mapAPI maps.API = overpassClient
 	statsProcessor := &processor.StopStatsProcessor{
 		Store:    store,
