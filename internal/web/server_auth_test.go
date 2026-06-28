@@ -105,6 +105,87 @@ func TestActivities_ShowsOnlyCurrentUserActivities(t *testing.T) {
 	}
 }
 
+func TestActivities_FiltersFeedByDay(t *testing.T) {
+	ctx := context.Background()
+	store, err := storage.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+
+	if err := store.InitSchema(ctx); err != nil {
+		t.Fatalf("init schema: %v", err)
+	}
+	if err := store.UpsertStravaToken(ctx, storage.StravaToken{
+		UserID:      303,
+		AccessToken: "token",
+		AthleteID:   303,
+		AthleteName: "Cara Example",
+	}); err != nil {
+		t.Fatalf("upsert token: %v", err)
+	}
+
+	oldLocal := time.Local
+	time.Local = time.UTC
+	defer func() {
+		time.Local = oldLocal
+	}()
+
+	day := time.Date(2026, time.March, 16, 0, 0, 0, 0, time.UTC)
+	for _, activity := range []storage.Activity{
+		{UserID: 303, Type: "Ride", Name: "Morning Ride", StartTime: day.Add(8 * time.Hour), MovingTime: 1800},
+		{UserID: 303, Type: "Ride", Name: "Evening Ride", StartTime: day.Add(18 * time.Hour), MovingTime: 2400},
+		{UserID: 303, Type: "Ride", Name: "Next Day Ride", StartTime: day.AddDate(0, 0, 1).Add(8 * time.Hour), MovingTime: 1200},
+		{UserID: 404, Type: "Ride", Name: "Other User Ride", StartTime: day.Add(10 * time.Hour), MovingTime: 1500},
+	} {
+		if _, err := store.InsertActivity(ctx, activity, []gps.Point{{Lat: 52.52, Lon: 13.405, Time: activity.StartTime, Speed: 6}}); err != nil {
+			t.Fatalf("insert activity %q: %v", activity.Name, err)
+		}
+	}
+
+	server, err := NewServer(store, nil, nil, nil, gps.StopOptions{}, StravaConfig{})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/activities/?day=2026-03-16", nil)
+	sessionRec := httptest.NewRecorder()
+	if err := server.setSession(sessionRec, req, 303); err != nil {
+		t.Fatalf("set session: %v", err)
+	}
+	for _, cookie := range sessionRec.Result().Cookies() {
+		req.AddCookie(cookie)
+	}
+	rec := httptest.NewRecorder()
+
+	server.Activities(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		"Morning Ride",
+		"Evening Ride",
+		"Mon, Mar 16, 2026",
+		"href=\"/activities/?day=2026-03-16\"",
+		"aria-current=\"date\"",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected %q in response", want)
+		}
+	}
+	for _, unwanted := range []string{
+		"Next Day Ride",
+		"Other User Ride",
+		"No activities yet",
+	} {
+		if strings.Contains(body, unwanted) {
+			t.Fatalf("did not expect %q in response", unwanted)
+		}
+	}
+}
+
 func TestActivities_ShowsStravaDescriptionAndDetectedFactCount(t *testing.T) {
 	ctx := context.Background()
 	store, err := storage.Open(":memory:")

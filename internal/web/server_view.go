@@ -395,6 +395,10 @@ func (s *Server) buildContributionData(ctx context.Context, userID int64, now ti
 }
 
 func (s *Server) buildContributionDataForYear(ctx context.Context, userID int64, year int, now time.Time) ContributionData {
+	return s.buildContributionDataForYearWithSelection(ctx, userID, year, now, "")
+}
+
+func (s *Server) buildContributionDataForYearWithSelection(ctx context.Context, userID int64, year int, now time.Time, selectedDay string) ContributionData {
 	loc := time.Local
 	start := time.Date(year, time.January, 1, 0, 0, 0, 0, loc)
 	end := time.Date(year, time.December, 31, 0, 0, 0, 0, loc)
@@ -479,14 +483,20 @@ func (s *Server) buildContributionDataForYear(ctx context.Context, userID int64,
 			if inRange {
 				effortLabel = formatEffort(effort)
 			}
+			dayURL := ""
+			if inRange {
+				dayURL = "/activities/?day=" + dateKey
+			}
 			days = append(days, ContributionDay{
 				Date:        dateKey,
 				Label:       day.Format("Jan 2, 2006"),
 				Tooltip:     contributionTooltip(day, inRange, inYear, effortLabel, year),
+				URL:         dayURL,
 				Effort:      effort,
 				EffortLabel: effortLabel,
 				Level:       level,
 				InRange:     inRange,
+				IsSelected:  selectedDay != "" && selectedDay == dateKey,
 			})
 		}
 	}

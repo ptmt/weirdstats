@@ -32,13 +32,27 @@
             </div>
             <div class="contrib-grid">
               {{range .Days}}
-                <span class="contrib-day level-{{.Level}}{{if not .InRange}} is-outside{{end}}" title="{{.Tooltip}}" aria-label="{{.Tooltip}}"></span>
+                {{if .URL}}
+                  <a class="contrib-day level-{{.Level}}{{if not .InRange}} is-outside{{end}}{{if .IsSelected}} is-selected{{end}}" href="{{.URL}}" title="{{.Tooltip}}" aria-label="{{.Tooltip}}"{{if .IsSelected}} aria-current="date"{{end}}></a>
+                {{else}}
+                  <span class="contrib-day level-{{.Level}}{{if not .InRange}} is-outside{{end}}{{if .IsSelected}} is-selected{{end}}" title="{{.Tooltip}}" aria-label="{{.Tooltip}}"></span>
+                {{end}}
               {{end}}
             </div>
           </div>
         </div>
       </section>
     {{end}}
+  {{end}}
+
+  {{if .DayFilterActive}}
+    <section class="activity-filter-bar">
+      <div>
+        <span class="activity-filter-label">Showing</span>
+        <strong>{{.SelectedDayLabel}}</strong>
+      </div>
+      <a class="btn secondary small" href="/activities/">All activities</a>
+    </section>
   {{end}}
 
   {{if .Activities}}
@@ -182,12 +196,18 @@
     </section>
   {{else}}
     <section class="card">
-      <h2 class="section-title">No activities yet</h2>
-      {{if .Strava.Connected}}
-        <p class="muted">Your activities will appear here automatically as Strava syncs them; if you just connected, give it a few minutes.</p>
+      {{if .DayFilterActive}}
+        <h2 class="section-title">No activities on {{.SelectedDayLabel}}</h2>
+        <p class="muted">No activities started on this day.</p>
+        <a class="btn secondary" href="/activities/">All activities</a>
       {{else}}
-        <p class="muted">Connect Strava to start pulling your activities and generating stop stats.</p>
-        <a class="btn" href="/connect/strava">Connect Strava</a>
+        <h2 class="section-title">No activities yet</h2>
+        {{if .Strava.Connected}}
+          <p class="muted">Your activities will appear here automatically as Strava syncs them; if you just connected, give it a few minutes.</p>
+        {{else}}
+          <p class="muted">Connect Strava to start pulling your activities and generating stop stats.</p>
+          <a class="btn" href="/connect/strava">Connect Strava</a>
+        {{end}}
       {{end}}
     </section>
   {{end}}

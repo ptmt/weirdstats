@@ -1907,13 +1907,24 @@ INSERT INTO activity_stops (
 }
 
 func (s *Store) ListActivitiesWithStats(ctx context.Context, userID int64, limit int) ([]ActivityWithStats, error) {
+	return s.listActivitiesWithStats(ctx, userID, limit, time.Time{}, time.Time{})
+}
+
+func (s *Store) ListActivitiesWithStatsInRange(ctx context.Context, userID int64, start, end time.Time, limit int) ([]ActivityWithStats, error) {
+	if start.IsZero() || end.IsZero() || !end.After(start) {
+		return nil, errors.New("valid activity range required")
+	}
+	return s.listActivitiesWithStats(ctx, userID, limit, start, end)
+}
+
+func (s *Store) listActivitiesWithStats(ctx context.Context, userID int64, limit int, start, end time.Time) ([]ActivityWithStats, error) {
 	if userID == 0 {
 		userID = 1
 	}
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	query := `
 SELECT a.id,
 	a.user_id,
 	a.type,
@@ -1936,12 +1947,29 @@ SELECT a.id,
 FROM activities a
 LEFT JOIN activity_stats s ON s.activity_id = a.id
 WHERE a.user_id = ?
+`
+	args := []any{userID}
+	if !start.IsZero() || !end.IsZero() {
+		query += `
+	AND a.start_time >= ?
+	AND a.start_time < ?
+`
+		args = append(args, start.Unix(), end.Unix())
+	}
+	query += `
 ORDER BY a.start_time DESC
 LIMIT ?
-`, userID, limit)
+`
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
+	return scanActivityWithStatsRows(rows)
+}
+
+func scanActivityWithStatsRows(rows *sql.Rows) ([]ActivityWithStats, error) {
 	defer rows.Close()
 
 	var activities []ActivityWithStats

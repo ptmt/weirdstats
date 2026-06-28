@@ -17,6 +17,8 @@ import (
 	"weirdstats/internal/storage"
 )
 
+const activityDayLayout = "2006-01-02"
+
 func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/activities" {
 		http.Redirect(w, r, "/activities/", http.StatusFound)
@@ -34,8 +36,24 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 	trace.AddField("user_id", userID)
 	defer trace.Log()
 
+	selectedDayDate, selectedDay, err := parseActivityDayFilter(r)
+	if err != nil {
+		trace.AddField("error", "invalid_day_filter")
+		http.Error(w, "invalid day filter", http.StatusBadRequest)
+		return
+	}
+	dayFilterActive := selectedDay != ""
+	if dayFilterActive {
+		trace.AddField("day_filter", selectedDay)
+	}
+
 	stepStart := time.Now()
-	activities, err := s.store.ListActivitiesWithStats(r.Context(), userID, 100)
+	var activities []storage.ActivityWithStats
+	if dayFilterActive {
+		activities, err = s.store.ListActivitiesWithStatsInRange(r.Context(), userID, selectedDayDate, selectedDayDate.AddDate(0, 0, 1), 100)
+	} else {
+		activities, err = s.store.ListActivitiesWithStats(r.Context(), userID, 100)
+	}
 	trace.AddStep("list_activities", stepStart)
 	if err != nil {
 		trace.AddField("error", "list_activities")
@@ -133,11 +151,15 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 	var contribs []ContributionData
 	stepStart = time.Now()
 	for _, year := range orderedYears {
-		contribs = append(contribs, s.buildContributionDataForYear(r.Context(), userID, year, now))
+		contribs = append(contribs, s.buildContributionDataForYearWithSelection(r.Context(), userID, year, now, selectedDay))
 	}
 	trace.AddStep("build_contributions", stepStart)
 	trace.AddField("contribution_years", len(contribs))
 
+	selectedDayLabel := ""
+	if dayFilterActive {
+		selectedDayLabel = selectedDayDate.Format("Mon, Jan 2, 2006")
+	}
 	data := ProfilePageData{
 		PageData: PageData{
 			Title:      "Activities",
@@ -147,8 +169,11 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 			Strava:     s.getStravaInfo(r.Context(), userID),
 			UserCount:  s.userCount(r.Context()),
 		},
-		Activities:    views,
-		Contributions: contribs,
+		Activities:       views,
+		Contributions:    contribs,
+		DayFilterActive:  dayFilterActive,
+		SelectedDay:      selectedDay,
+		SelectedDayLabel: selectedDayLabel,
 	}
 	stepStart = time.Now()
 	if err := s.templates["profile"].ExecuteTemplate(w, "base", data); err != nil {
@@ -158,6 +183,18 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	trace.AddStep("render_template", stepStart)
+}
+
+func parseActivityDayFilter(r *http.Request) (time.Time, string, error) {
+	dayParam := strings.TrimSpace(r.URL.Query().Get("day"))
+	if dayParam == "" {
+		return time.Time{}, "", nil
+	}
+	day, err := time.ParseInLocation(activityDayLayout, dayParam, time.Local)
+	if err != nil {
+		return time.Time{}, "", fmt.Errorf("parse activity day filter %q: %w", dayParam, err)
+	}
+	return day, day.Format(activityDayLayout), nil
 }
 
 func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {

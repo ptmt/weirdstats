@@ -177,8 +177,11 @@ type LandingPageData struct {
 
 type ProfilePageData struct {
 	PageData
-	Activities    []ActivityView
-	Contributions []ContributionData
+	Activities       []ActivityView
+	Contributions    []ContributionData
+	DayFilterActive  bool
+	SelectedDay      string
+	SelectedDayLabel string
 }
 
 type SettingsRule struct {
@@ -207,10 +210,12 @@ type ContributionDay struct {
 	Date        string
 	Label       string
 	Tooltip     string
+	URL         string
 	Effort      float64
 	EffortLabel string
 	Level       int
 	InRange     bool
+	IsSelected  bool
 }
 
 type ContributionMonth struct {
