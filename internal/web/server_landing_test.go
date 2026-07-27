@@ -42,7 +42,6 @@ func TestLanding_ShowsOptionalFactList(t *testing.T) {
 		"Optional stats for your Strava activities",
 		"Turn any of them off in settings.",
 		"Stop summary",
-		"Traffic-light stops",
 		"Longest segment",
 		"Coffee stop",
 		"Route highlights",
@@ -55,5 +54,8 @@ func TestLanding_ShowsOptionalFactList(t *testing.T) {
 		if !strings.Contains(body, text) {
 			t.Fatalf("expected %q in landing page", text)
 		}
+	}
+	if strings.Contains(body, "Traffic-light stops") {
+		t.Fatalf("did not expect separate traffic-light stops fact")
 	}
 }

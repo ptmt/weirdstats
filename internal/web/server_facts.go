@@ -872,20 +872,6 @@ func buildActivityMapFactsWithHeartRate(
 		})
 	}
 
-	lightStops := filterStopViews(stopViews, func(stop StopView) bool {
-		return stop.HasTrafficLight
-	})
-	if len(lightStops) > 0 {
-		facts = append(facts, ActivityMapFactView{
-			ID:      weirdStatsFactTrafficLightStops,
-			Kind:    "collection",
-			Title:   "Traffic-light stops",
-			Summary: trafficLightStopsFactSummary(len(lightStops)),
-			Color:   "#ef4444",
-			Points:  stopFactPoints(lightStops),
-		})
-	}
-
 	return facts
 }
 
@@ -958,16 +944,6 @@ func routeHighlightFactPoints(locations []routeHighlightLocation) []ActivityFact
 		})
 	}
 	return points
-}
-
-func filterStopViews(stops []StopView, keep func(StopView) bool) []StopView {
-	filtered := make([]StopView, 0, len(stops))
-	for _, stop := range stops {
-		if keep(stop) {
-			filtered = append(filtered, stop)
-		}
-	}
-	return filtered
 }
 
 func isRideType(activityType string) bool {

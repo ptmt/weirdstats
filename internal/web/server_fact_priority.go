@@ -195,16 +195,6 @@ func buildWeirdStatsFactCandidatesWithHeartRate(
 		})
 	}
 
-	if part := buildTrafficLightStopsPart(statsSnapshot.TrafficLightStopCount); part != "" {
-		candidates = append(candidates, weirdStatsFactCandidate{
-			ID:           weirdStatsFactTrafficLightStops,
-			Part:         part,
-			BasePriority: 330,
-			DefaultOrder: 10,
-			Metrics:      trafficLightStopFactMetrics(statsSnapshot),
-		})
-	}
-
 	return candidates
 }
 
@@ -471,12 +461,8 @@ func buildStopSummaryPart(statsSnapshot stats.StopStats) string {
 	if statsSnapshot.StopTotalSeconds > 0 {
 		part += " (" + formatDuration(statsSnapshot.StopTotalSeconds) + " total)"
 	}
-	return part
-}
-
-func buildTrafficLightStopsPart(count int) string {
-	if count <= 0 {
-		return ""
+	if statsSnapshot.TrafficLightStopCount > 0 {
+		part += " · " + formatCountLabel(statsSnapshot.TrafficLightStopCount, "at lights", "at lights")
 	}
-	return formatCountLabel(count, "at lights", "at lights")
+	return part
 }

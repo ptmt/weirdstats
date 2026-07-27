@@ -57,16 +57,8 @@ var weirdStatsFactDefinitions = []weirdStatsFactDefinition{
 	{
 		ID:                      weirdStatsFactStopSummary,
 		Label:                   "Stop summary",
-		Description:             "Detect stop count and total stopped time.",
-		RemarkableDescription:   "Posts when stop count or total stopped time is the first value seen, a new all-time best, or a new yearly best.",
-		DefaultEnabled:          true,
-		DefaultAutoPostEveryRun: true,
-	},
-	{
-		ID:                      weirdStatsFactTrafficLightStops,
-		Label:                   "Traffic-light stops",
-		Description:             "Detect how many stops happened near traffic lights.",
-		RemarkableDescription:   remarkableFirstOrBest,
+		Description:             "Detect stop count, total stopped time, and stops near traffic lights.",
+		RemarkableDescription:   "Posts when stop count, total stopped time, or traffic-light stop count is the first value seen, a new all-time best, or a new yearly best.",
 		DefaultEnabled:          true,
 		DefaultAutoPostEveryRun: true,
 	},
@@ -243,8 +235,6 @@ func filterWeirdStatsSnapshot(snapshot stats.StopStats, settings weirdStatsFactS
 	if !weirdStatsFactEnabled(settings, weirdStatsFactStopSummary) {
 		snapshot.StopCount = 0
 		snapshot.StopTotalSeconds = 0
-	}
-	if !weirdStatsFactEnabled(settings, weirdStatsFactTrafficLightStops) {
 		snapshot.TrafficLightStopCount = 0
 	}
 	if !weirdStatsFactEnabled(settings, weirdStatsFactRoadCrossings) {

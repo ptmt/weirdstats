@@ -414,8 +414,8 @@ func TestBuildActivityMapFacts(t *testing.T) {
 		{Lat: 52.5202, Lon: 13.4050, Time: start.Add(2 * time.Minute), Speed: 9},
 	}
 	stopViews := []StopView{
-		{Lat: 52.5201, Lon: 13.4045, Duration: "45s"},
-		{Lat: 52.5202, Lon: 13.4050, Duration: "30s", HasTrafficLight: true},
+		{Lat: 52.5201, Lon: 13.4045, Duration: "45s", DurationSeconds: 45},
+		{Lat: 52.5202, Lon: 13.4050, Duration: "30s", DurationSeconds: 30, HasTrafficLight: true},
 	}
 	rideFact := rideSegmentFact{
 		DistanceMeters: 1200,
@@ -444,8 +444,8 @@ func TestBuildActivityMapFacts(t *testing.T) {
 	}
 
 	got := buildActivityMapFacts(stopViews, points, rideFact, nil, coffeeFact, routeFact, roadFact)
-	if len(got) != 6 {
-		t.Fatalf("expected 6 map facts, got %+v", got)
+	if len(got) != 5 {
+		t.Fatalf("expected 5 map facts, got %+v", got)
 	}
 	if got[0].ID != weirdStatsFactLongestSegment || len(got[0].Path) != 3 {
 		t.Fatalf("expected longest segment fact with route path, got %+v", got[0])
@@ -456,7 +456,7 @@ func TestBuildActivityMapFacts(t *testing.T) {
 	if got[4].ID != weirdStatsFactStopSummary || len(got[4].Points) != 2 {
 		t.Fatalf("expected stop summary to include both stop points, got %+v", got[4])
 	}
-	if got[5].ID != weirdStatsFactTrafficLightStops || len(got[5].Points) != 1 {
-		t.Fatalf("expected traffic-light fact to include matching stop points, got %+v", got[5])
+	if got[4].Summary != "2 stops · 1m 15s total · 1 at lights" {
+		t.Fatalf("expected stop summary to include light-stop count, got %+v", got[4])
 	}
 }

@@ -74,9 +74,9 @@ func TestBuildPrioritizedWeirdStatsLineUsesHistoryToSortFacts(t *testing.T) {
 			YearSeenCount:    5,
 			YearBestValue:    900,
 		},
-		weirdStatsFactTrafficLightStops + ":" + factMetricCount: {
-			FactID:           weirdStatsFactTrafficLightStops,
-			MetricID:         factMetricCount,
+		weirdStatsFactStopSummary + ":" + factMetricLightStopCount: {
+			FactID:           weirdStatsFactStopSummary,
+			MetricID:         factMetricLightStopCount,
 			AllTimeSeenCount: 5,
 			AllTimeBestValue: 5,
 			YearSeenCount:    5,
@@ -130,7 +130,7 @@ func TestBuildActivityFactMetricsIncludesPOIHistoryKeys(t *testing.T) {
 		weirdStatsFactRoadCrossings + ":" + factMetricCount,
 		weirdStatsFactStopSummary + ":" + factMetricStopCount,
 		weirdStatsFactStopSummary + ":" + factMetricStopTotal,
-		weirdStatsFactTrafficLightStops + ":" + factMetricCount,
+		weirdStatsFactStopSummary + ":" + factMetricLightStopCount,
 	} {
 		if !seen[want] {
 			t.Fatalf("missing metric %q in %+v", want, metrics)

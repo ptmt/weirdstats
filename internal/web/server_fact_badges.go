@@ -79,7 +79,7 @@ func factMetricSupportsRecordBadge(metric storage.ActivityFactMetric) bool {
 		return false
 	}
 	switch metric.MetricID {
-	case factMetricDistanceMeters, factMetricStopCount, factMetricStopTotal, factMetricCount, factMetricInverseSeconds:
+	case factMetricDistanceMeters, factMetricStopCount, factMetricStopTotal, factMetricLightStopCount, factMetricCount, factMetricInverseSeconds:
 		return true
 	default:
 		return false

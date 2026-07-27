@@ -30,7 +30,6 @@ func TestSettings_ShowsFactPreferences(t *testing.T) {
 	}
 	if err := store.ReplaceUserFactPreferences(ctx, 202, []storage.UserFactPreference{
 		{FactID: weirdStatsFactStopSummary, Enabled: true, PostToStrava: true},
-		{FactID: weirdStatsFactTrafficLightStops, Enabled: true, PostToStrava: true},
 		{FactID: weirdStatsFactLongestSegment, Enabled: true, PostToStrava: true},
 		{FactID: weirdStatsFactCoffeeStop, Enabled: false, PostToStrava: false},
 		{FactID: weirdStatsFactRouteHighlights, Enabled: true, PostToStrava: false},
@@ -62,7 +61,6 @@ func TestSettings_ShowsFactPreferences(t *testing.T) {
 	for _, text := range []string{
 		"Weirdstats facts",
 		"Stop summary",
-		"Traffic-light stops",
 		"Longest segment",
 		"Coffee stop",
 		"Route highlights",
@@ -77,6 +75,9 @@ func TestSettings_ShowsFactPreferences(t *testing.T) {
 		if !strings.Contains(body, text) {
 			t.Fatalf("expected %q in settings page", text)
 		}
+	}
+	if strings.Contains(body, "Traffic-light stops") {
+		t.Fatalf("did not expect separate traffic-light stops setting")
 	}
 	if strings.Contains(body, `name="fact_coffee_stop" checked`) {
 		t.Fatalf("expected coffee stop toggle to be disabled")
@@ -154,8 +155,8 @@ func TestSettings_UpdateFacts(t *testing.T) {
 	if !settings[weirdStatsFactStopSummary].AutoPostEveryRun {
 		t.Fatalf("expected stop summary auto-post enabled")
 	}
-	if settings[weirdStatsFactTrafficLightStops].Enabled {
-		t.Fatalf("expected traffic-light stops disabled")
+	if _, ok := settings[weirdStatsFactTrafficLightStops]; ok {
+		t.Fatalf("did not expect separate traffic-light stops setting")
 	}
 	if settings[weirdStatsFactLongestSegment].Enabled {
 		t.Fatalf("expected longest segment disabled")

@@ -158,10 +158,13 @@ func TestApply_CachesDetectedFactsForDetailPage(t *testing.T) {
 	for _, fact := range detectedFacts {
 		seen[fact.ID] = true
 	}
-	for _, want := range []string{"longest_segment", "stop_summary", "traffic_light_stops"} {
+	for _, want := range []string{"longest_segment", "stop_summary"} {
 		if !seen[want] {
 			t.Fatalf("expected cached detected fact %q, got %+v", want, detectedFacts)
 		}
+	}
+	if seen["traffic_light_stops"] {
+		t.Fatalf("did not expect separate traffic-light cached fact, got %+v", detectedFacts)
 	}
 
 	records, err := store.ListUserYearFactRecords(ctx, 1, 2026)
@@ -176,7 +179,7 @@ func TestApply_CachesDetectedFactsForDetailPage(t *testing.T) {
 		"longest_segment:distance_meters",
 		"stop_summary:stop_count",
 		"stop_summary:stop_total_seconds",
-		"traffic_light_stops:count",
+		"stop_summary:traffic_light_stop_count",
 	} {
 		if !recordSeen[want] {
 			t.Fatalf("expected yearly fact record %q, got %+v", want, records)

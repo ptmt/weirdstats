@@ -1,7 +1,6 @@
 package web
 
 import (
-	"fmt"
 	"strings"
 
 	"weirdstats/internal/stats"
@@ -12,6 +11,7 @@ const (
 	factMetricDistanceMeters = "distance_meters"
 	factMetricStopCount      = "stop_count"
 	factMetricStopTotal      = "stop_total_seconds"
+	factMetricLightStopCount = "traffic_light_stop_count"
 	factMetricCount          = "count"
 	factMetricInverseSeconds = "inverse_seconds"
 	factMetricHRRiseRate     = "hr_rise_bpm_per_minute"
@@ -47,7 +47,6 @@ func buildActivityFactMetricsWithHeartRate(
 	metrics = append(metrics, routeHighlightFactMetrics(routeFact)...)
 	metrics = append(metrics, roadCrossingFactMetrics(statsSnapshot, roadFact)...)
 	metrics = append(metrics, stopSummaryFactMetrics(statsSnapshot)...)
-	metrics = append(metrics, trafficLightStopFactMetrics(statsSnapshot)...)
 	return metrics
 }
 
@@ -161,8 +160,8 @@ func stopSummaryFactMetrics(statsSnapshot stats.StopStats) []storage.ActivityFac
 		return nil
 	}
 
-	summary := stopSummaryFactSummaryFromSnapshot(statsSnapshot.StopCount, statsSnapshot.StopTotalSeconds)
-	return []storage.ActivityFactMetric{
+	summary := stopSummaryFactSummaryFromSnapshot(statsSnapshot.StopCount, statsSnapshot.StopTotalSeconds, statsSnapshot.TrafficLightStopCount)
+	metrics := []storage.ActivityFactMetric{
 		{
 			FactID:      weirdStatsFactStopSummary,
 			MetricID:    factMetricStopCount,
@@ -176,34 +175,30 @@ func stopSummaryFactMetrics(statsSnapshot stats.StopStats) []storage.ActivityFac
 			Summary:     summary,
 		},
 	}
-}
-
-func trafficLightStopFactMetrics(statsSnapshot stats.StopStats) []storage.ActivityFactMetric {
-	if statsSnapshot.TrafficLightStopCount <= 0 {
-		return nil
+	if statsSnapshot.TrafficLightStopCount > 0 {
+		metrics = append(metrics, storage.ActivityFactMetric{
+			FactID:      weirdStatsFactStopSummary,
+			MetricID:    factMetricLightStopCount,
+			MetricValue: float64(statsSnapshot.TrafficLightStopCount),
+			Summary:     summary,
+		})
 	}
-	return []storage.ActivityFactMetric{{
-		FactID:      weirdStatsFactTrafficLightStops,
-		MetricID:    factMetricCount,
-		MetricValue: float64(statsSnapshot.TrafficLightStopCount),
-		Summary:     trafficLightStopsFactSummary(statsSnapshot.TrafficLightStopCount),
-	}}
+	return metrics
 }
 
 func stopSummaryFactSummary(stopViews []StopView) string {
-	return stopSummaryFactSummaryFromSnapshot(len(stopViews), totalStopSeconds(stopViews))
+	return stopSummaryFactSummaryFromSnapshot(len(stopViews), totalStopSeconds(stopViews), trafficLightStopViewCount(stopViews))
 }
 
-func stopSummaryFactSummaryFromSnapshot(stopCount, stopTotalSeconds int) string {
+func stopSummaryFactSummaryFromSnapshot(stopCount, stopTotalSeconds, lightStopCount int) string {
 	summary := formatCountLabel(stopCount, "stop", "stops")
 	if stopTotalSeconds > 0 {
 		summary += " · " + formatDuration(stopTotalSeconds) + " total"
 	}
+	if lightStopCount > 0 {
+		summary += " · " + formatCountLabel(lightStopCount, "at lights", "at lights")
+	}
 	return summary
-}
-
-func trafficLightStopsFactSummary(count int) string {
-	return fmt.Sprintf("%d detected near traffic signals", count)
 }
 
 func factMetricNameID(name string) string {

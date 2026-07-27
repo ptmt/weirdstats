@@ -268,6 +268,16 @@ func totalStopSeconds(stops []StopView) int {
 	return total
 }
 
+func trafficLightStopViewCount(stops []StopView) int {
+	count := 0
+	for _, stop := range stops {
+		if stop.HasTrafficLight {
+			count++
+		}
+	}
+	return count
+}
+
 func buildStopViews(storedStops []storage.ActivityStop) []StopView {
 	stopViews := make([]StopView, 0, len(storedStops))
 	for _, stop := range storedStops {

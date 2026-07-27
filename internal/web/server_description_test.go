@@ -179,15 +179,14 @@ func TestFilterWeirdStatsSnapshot(t *testing.T) {
 	}
 
 	got := filterWeirdStatsSnapshot(snapshot, weirdStatsFactSettings{
-		weirdStatsFactStopSummary:       {Enabled: false},
-		weirdStatsFactTrafficLightStops: {Enabled: true},
-		weirdStatsFactRoadCrossings:     {Enabled: false},
+		weirdStatsFactStopSummary:   {Enabled: false},
+		weirdStatsFactRoadCrossings: {Enabled: false},
 	})
 	if got.StopCount != 0 || got.StopTotalSeconds != 0 {
 		t.Fatalf("expected stop summary to be cleared, got %+v", got)
 	}
-	if got.TrafficLightStopCount != 2 {
-		t.Fatalf("expected traffic-light stops to remain, got %+v", got)
+	if got.TrafficLightStopCount != 0 {
+		t.Fatalf("expected traffic-light stops to be cleared with stop summary, got %+v", got)
 	}
 	if got.RoadCrossingCount != 0 {
 		t.Fatalf("expected road crossings to be cleared, got %+v", got)
@@ -258,9 +257,14 @@ func TestBuildWeirdStatsLine(t *testing.T) {
 			want:  "1 stop (12s total)",
 		},
 		{
-			name:  "lights only",
+			name:  "stops include lights",
+			stats: stats.StopStats{StopCount: 2, StopTotalSeconds: 42, TrafficLightStopCount: 1},
+			want:  "2 stops (42s total) · 1 at lights",
+		},
+		{
+			name:  "lights without stop summary are ignored",
 			stats: stats.StopStats{TrafficLightStopCount: 1},
-			want:  "1 at lights",
+			want:  "",
 		},
 		{
 			name: "empty stats",
