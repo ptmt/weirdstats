@@ -103,7 +103,7 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 		}
 		enrichActivityView(&view, activity.Activity)
 		routePoints := routePointsByActivity[activity.ID]
-		if len(routePoints) > 0 {
+		if len(routePoints) > 1 {
 			previewPoints := make([]routePreviewPoint, 0, len(routePoints))
 			for _, p := range routePoints {
 				previewPoints = append(previewPoints, routePreviewPoint{

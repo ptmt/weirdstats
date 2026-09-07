@@ -73,23 +73,19 @@
                       </svg>
                     </span>
                   {{end}}
+                  <span class="activity-meta">{{.StartTime}}</span>
                 </div>
-              <a href="/activity/{{.ID}}" class="activity-name">{{.Name}}</a>
-              <div class="activity-meta">
-                <span>{{.StartTime}}</span>
-                <span class="sep">·</span>
-                <span>{{.Duration}}</span>
-              </div>
+              <h3 class="activity-title"><a href="/activity/{{.ID}}" class="activity-name">{{.Name}}</a></h3>
             </div>
             <div class="activity-menu">
-              <button type="button" class="activity-menu-btn" onclick="this.parentElement.classList.toggle('open')" title="Actions">
-                <svg viewBox="0 0 24 24" fill="currentColor">
+              <button type="button" class="activity-menu-btn" aria-label="Actions for {{.Name}}" aria-expanded="false" aria-controls="activity-actions-{{.ID}}" title="Actions">
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <circle cx="12" cy="5" r="2"/>
                   <circle cx="12" cy="12" r="2"/>
                   <circle cx="12" cy="19" r="2"/>
                 </svg>
               </button>
-              <div class="activity-dropdown">
+              <div class="activity-dropdown" id="activity-actions-{{.ID}}">
                 <a href="/activity/{{.ID}}/download" class="dropdown-link">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -147,49 +143,59 @@
               </div>
             </div>
           </div>
-          {{if .StravaDescription}}<div class="muted activity-description">{{.StravaDescription}}</div>{{end}}
-          {{if .PhotoURL}}
-          <div class="activity-photo">
-            <img src="{{.PhotoURL}}" alt="Activity photo" loading="lazy">
+          <dl class="activity-metrics">
+            {{if .DistanceUnit}}
+            <div class="metric">
+              <dt class="metric-label">Distance</dt>
+              <dd class="metric-value">
+                <span class="metric-number">{{.DistanceValue}}</span>
+                {{if .DistanceUnit}}<span class="metric-unit">{{.DistanceUnit}}</span>{{end}}
+              </dd>
+            </div>
+            {{end}}
+            <div class="metric">
+              <dt class="metric-label">Moving time</dt>
+              <dd class="metric-value"><span class="metric-number">{{.Duration}}</span></dd>
+            </div>
+            {{if .PaceUnit}}
+            <div class="metric">
+              <dt class="metric-label">{{.PaceLabel}}</dt>
+              <dd class="metric-value">
+                <span class="metric-number">{{.PaceValue}}</span>
+                {{if .PaceUnit}}<span class="metric-unit">{{.PaceUnit}}</span>{{end}}
+              </dd>
+            </div>
+            {{end}}
+          </dl>
+          {{if or .HasRoutePreview .PhotoURL}}
+          <div class="activity-media{{if .HasRoutePreview}} has-route{{end}}">
+            {{if .HasRoutePreview}}
+            <div class="activity-mini-map" data-route-points='{{.RoutePreviewJSON}}' role="img" aria-label="Route preview for {{.Name}}"></div>
+            {{end}}
+            {{if .PhotoURL}}
+            <a href="/activity/{{.ID}}" class="activity-photo" aria-label="View {{.Name}}">
+              <img src="{{.PhotoURL}}" alt="Activity photo" loading="lazy">
+            </a>
+            {{end}}
           </div>
           {{end}}
-          <div class="activity-card-split{{if not .HasRoutePreview}} activity-card-split--single{{end}}">
-            <div class="activity-card-map-col">
-              {{if .HasRoutePreview}}
-              <div class="activity-mini-map" data-route-points='{{.RoutePreviewJSON}}' aria-hidden="true"></div>
-              {{end}}
-            </div>
-            <div class="activity-card-stats-col">
+          {{if .StravaDescription}}<p class="muted activity-description">{{.StravaDescription}}</p>{{end}}
+          <div class="activity-card-footer">
+            <a href="/activity/{{.ID}}" class="activity-details-link">
+              {{if .DetectedFactCount}}{{.DetectedFactCount}} detected fact{{if ne .DetectedFactCount 1}}s{{end}}{{else}}View activity{{end}}
+              <span aria-hidden="true">→</span>
+            </a>
+            {{if or .HasPower .StopCount .LightStops .RoadCrossings}}
+            <details class="activity-extra">
+              <summary>More stats <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
               <div class="activity-substats">
-                {{if .DetectedFactCount}}<span class="stat-tag secondary">{{.DetectedFactCount}} detected fact{{if ne .DetectedFactCount 1}}s{{end}}</span>{{end}}
-                {{if .StopCount}}<span class="stat-tag secondary">{{.StopCount}} stops ({{.StopTotal}})</span>{{end}}
-                {{if .LightStops}}<span class="stat-tag secondary">{{.LightStops}} at lights</span>{{end}}
-                {{if .RoadCrossings}}<span class="stat-tag secondary">{{.RoadCrossings}} crossings</span>{{end}}
+                {{if .HasPower}}<span>Avg power <strong>{{.PowerValue}} {{.PowerUnit}}</strong></span>{{end}}
+                {{if .StopCount}}<span>{{.StopCount}} stop{{if ne .StopCount 1}}s{{end}} ({{.StopTotal}})</span>{{end}}
+                {{if .LightStops}}<span>{{.LightStops}} at lights</span>{{end}}
+                {{if .RoadCrossings}}<span>{{.RoadCrossings}} crossing{{if ne .RoadCrossings 1}}s{{end}}</span>{{end}}
               </div>
-              <div class="activity-metrics">
-                <div class="metric">
-                  <div class="metric-label">Distance</div>
-                  <div class="metric-value">
-                    <span class="metric-number">{{.DistanceValue}}</span>
-                    {{if .DistanceUnit}}<span class="metric-unit">{{.DistanceUnit}}</span>{{end}}
-                  </div>
-                </div>
-                <div class="metric">
-                  <div class="metric-label">{{.PaceLabel}}</div>
-                  <div class="metric-value">
-                    <span class="metric-number">{{.PaceValue}}</span>
-                    {{if .PaceUnit}}<span class="metric-unit">{{.PaceUnit}}</span>{{end}}
-                  </div>
-                </div>
-                <div class="metric{{if not .HasPower}} is-muted{{end}}">
-                  <div class="metric-label">Avg power</div>
-                  <div class="metric-value">
-                    <span class="metric-number">{{.PowerValue}}</span>
-                    {{if .PowerUnit}}<span class="metric-unit">{{.PowerUnit}}</span>{{end}}
-                  </div>
-                </div>
-              </div>
-            </div>
+            </details>
+            {{end}}
           </div>
         </article>
       {{end}}
@@ -217,8 +223,8 @@
   <script>
     (function() {
       const pointsToMap = document.querySelectorAll('.activity-mini-map[data-route-points]');
-      const tileUrl = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png';
-      const tileAttribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; CARTO';
+      const tileUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+      const tileAttribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
       pointsToMap.forEach((el) => {
         let points = [];
@@ -230,7 +236,8 @@
         if (!Array.isArray(points) || points.length < 2) return;
 
         const map = L.map(el, {
-          attributionControl: false,
+          attributionControl: true,
+          fadeAnimation: false,
           zoomControl: false,
           dragging: false,
           scrollWheelZoom: false,
@@ -241,9 +248,10 @@
           tap: false
         });
 
+        map.attributionControl.setPrefix(false);
         L.tileLayer(tileUrl, {
           attribution: tileAttribution,
-          subdomains: 'abcd'
+          maxZoom: 19
         }).addTo(map);
 
         const coords = points
@@ -263,7 +271,7 @@
           opacity: 0.95
         }).addTo(map);
         if (coords.length > 0) {
-          map.fitBounds(polyline.getBounds(), { padding: [8, 8], maxZoom: 14 });
+          map.fitBounds(polyline.getBounds(), { padding: [16, 16], maxZoom: 14, animate: false });
         }
 
         L.circleMarker(coords[0], {
@@ -278,14 +286,41 @@
           fillColor: 'rgba(236, 72, 153, 0.95)',
           fillOpacity: 1
         }).addTo(map);
+
+        new ResizeObserver(() => {
+          map.invalidateSize({ pan: false });
+          map.fitBounds(polyline.getBounds(), { padding: [16, 16], maxZoom: 14, animate: false });
+        }).observe(el);
       });
     })();
 
+    function closeActivityMenu(menu) {
+      menu.classList.remove('open');
+      menu.querySelector('.activity-menu-btn').setAttribute('aria-expanded', 'false');
+    }
+
+    document.querySelectorAll('.activity-menu-btn').forEach(function(button) {
+      button.addEventListener('click', function() {
+        const menu = button.closest('.activity-menu');
+        const isOpen = menu.classList.toggle('open');
+        button.setAttribute('aria-expanded', String(isOpen));
+        document.querySelectorAll('.activity-menu.open').forEach(function(other) {
+          if (other !== menu) closeActivityMenu(other);
+        });
+      });
+    });
+
     document.addEventListener('click', function(e) {
       document.querySelectorAll('.activity-menu.open').forEach(function(menu) {
-        if (!menu.contains(e.target)) {
-          menu.classList.remove('open');
-        }
+        if (!menu.contains(e.target)) closeActivityMenu(menu);
+      });
+    });
+
+    document.addEventListener('keydown', function(e) {
+      if (e.key !== 'Escape') return;
+      document.querySelectorAll('.activity-menu.open').forEach(function(menu) {
+        closeActivityMenu(menu);
+        menu.querySelector('.activity-menu-btn').focus();
       });
     });
   </script>
