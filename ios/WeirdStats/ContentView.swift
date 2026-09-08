@@ -59,7 +59,7 @@ struct ContentView: View {
             Section {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(model.athleteName)
+                        Text(model.athleteName.isEmpty ? "Your Strava account" : model.athleteName)
                             .font(.headline)
                         Text(model.serverURLText)
                             .font(.caption)
@@ -72,6 +72,28 @@ struct ContentView: View {
                 }
             }
 
+            if let sync = model.syncStatus {
+                Section("Activity import") {
+                    Text(sync.message)
+                    Text("\(sync.completed) processed · \(sync.pending) waiting")
+                        .foregroundStyle(.secondary)
+                    if let nextRun = sync.nextRunAt {
+                        Text("Next attempt: \(Date(timeIntervalSince1970: TimeInterval(nextRun)).formatted())")
+                            .font(.caption)
+                    }
+                    ForEach(sync.errors) { error in
+                        Text("\(error.message) Reference #\(error.jobID)")
+                            .font(.caption)
+                    }
+                    if sync.blocked > 0 {
+                        Button("Reconnect Strava") { Task { await model.signIn() } }
+                    }
+                    if sync.failed > 0 {
+                        Button("Retry failed activities") { Task { await model.retryActivities() } }
+                    }
+                }
+            }
+
             Section("Recent Activities") {
                 if model.activities.isEmpty && !model.isLoading {
                     Text("No activities yet.")
@@ -79,6 +101,10 @@ struct ContentView: View {
                 }
                 ForEach(model.activities) { activity in
                     ActivityRow(activity: activity)
+                }
+                if model.nextCursor != nil {
+                    Button("Load older activities") { Task { await model.loadMore() } }
+                        .disabled(model.isLoading)
                 }
             }
         }
@@ -128,6 +154,9 @@ private struct ActivityRow: View {
                     .font(.system(.subheadline, design: .rounded).weight(.semibold))
             }
 
+            if let status = activity.gpsStatus {
+                Text(status).font(.caption).foregroundStyle(.secondary)
+            }
             HStack(spacing: 12) {
                 statCapsule(activity.duration)
                 statCapsule("\(activity.stopCount) stops")

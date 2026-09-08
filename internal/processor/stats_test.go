@@ -259,6 +259,16 @@ func TestStopStatsProcessor_PrecomputesDetectedFacts(t *testing.T) {
 		t.Fatalf("process: %v", err)
 	}
 
+	if err := store.SaveProcessingPreferences(context.Background(), 1, storage.ProcessingPreferences{ExternalMaps: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertStravaToken(context.Background(), storage.StravaToken{UserID: 1, AccessToken: "fake"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := webServer.Enrich(context.Background(), activityID); err != nil {
+		t.Fatal(err)
+	}
+
 	rawFacts, _, err := store.GetActivityDetectedFacts(context.Background(), activityID)
 	if err != nil {
 		t.Fatalf("get detected facts: %v", err)

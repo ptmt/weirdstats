@@ -56,11 +56,20 @@ func (s *Server) Apply(ctx context.Context, activityID int64) error {
 }
 
 func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error {
+	var guardErr error
+	ctx, guardErr = s.store.GuardActivityContext(ctx, activityID)
+	if guardErr != nil {
+		return guardErr
+	}
 	activity, err := s.store.GetActivity(ctx, activityID)
 	if err != nil {
 		return err
 	}
 
+	s, err = s.forUser(ctx, activity.UserID)
+	if err != nil {
+		return err
+	}
 	hide, statsSnapshot, err := s.evaluateHideRules(ctx, activity)
 	if err != nil {
 		return err
@@ -122,7 +131,7 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 			if needsRideFacts && isRideType(activity.Type) && routeFactEnabled {
 				routeFact, err = detectRouteHighlightFact(ctx, points, s.overpass)
 				if err != nil {
-					log.Printf("local route highlight detection failed (skipping route highlights): %v", err)
+					log.Printf("route highlight detection failed: activity=%d", activityID)
 					routeFact = routeHighlightFact{}
 				}
 			}
@@ -135,7 +144,7 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 			if needsRideFacts && isRideType(activity.Type) && coffeeFactEnabled {
 				detectedCoffeeFact, err := detectCoffeeStopFact(ctx, activity.Type, points, s.overpass)
 				if err != nil {
-					log.Printf("local coffee stop detection failed (skipping coffee fact): %v", err)
+					log.Printf("coffee stop detection failed: activity=%d", activityID)
 				} else if detectedCoffeeFact.Name != "" {
 					coffeeFact = detectedCoffeeFact
 				}
@@ -147,47 +156,13 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 	if clientErr == nil {
 		latest, err := client.GetActivity(ctx, activityID)
 		if err != nil {
-			log.Printf("strava activity fetch failed (using cached description): %v", err)
+			return err
 		} else {
 			baseDescription = latest.Description
 			baseHideFromHome = latest.HideFromHome
 			descriptionActivityType = latest.Type
 			descriptionDistance = latest.Distance
-			needsLatestStreams := (needsRideFacts && isRideType(latest.Type)) ||
-				(heartRateFactEnabled && latest.AverageHeartRate > 0)
-			if needsLatestStreams {
-				streams, err := client.GetStreams(ctx, activityID)
-				if err != nil {
-					log.Printf("strava streams fetch failed (using cached route-linked facts): %v", err)
-				} else {
-					points := buildPointsFromStreams(latest.StartDate, streams)
-					if heartRateFactEnabled {
-						if detected := detectHeartRateChangeFact(points); detected.Duration > 0 || heartRateFact.Duration <= 0 {
-							heartRateFact = detected
-						}
-					}
-					if needsRideFacts && isRideType(latest.Type) && routeFactEnabled {
-						routeFact, err = detectRouteHighlightFact(ctx, points, s.overpass)
-						if err != nil {
-							log.Printf("strava route highlight detection failed (using cached route highlights): %v", err)
-						}
-					}
-					if needsRideFacts && isRideType(latest.Type) && rideFactEnabled {
-						rideFact = longestRideSegmentFact(latest.Type, points, s.stopOpts)
-					}
-					if needsRideFacts && isRideType(latest.Type) && speedFactEnabled {
-						speedFacts = filterSpeedMilestoneFactsBySettings(detectSpeedMilestoneFacts(latest.Type, points), factSettings)
-					}
-					if needsRideFacts && isRideType(latest.Type) && coffeeFactEnabled {
-						detectedCoffeeFact, err := detectCoffeeStopFact(ctx, latest.Type, points, s.overpass)
-						if err != nil {
-							log.Printf("strava coffee stop detection failed (using cached coffee fact): %v", err)
-						} else if detectedCoffeeFact.Name != "" {
-							coffeeFact = detectedCoffeeFact
-						}
-					}
-				}
-			}
+
 			if needsRideFacts && !isRideType(latest.Type) {
 				rideFact = rideSegmentFact{}
 				speedFacts = nil
@@ -243,6 +218,18 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 		return fmt.Errorf("strava client not configured: %w", clientErr)
 	}
 
+	if err := s.store.CheckActivityContext(ctx); err != nil {
+		return err
+	}
+	if storage.IsAutomaticPublish(ctx) {
+		prefs, err := s.store.ProcessingPreferences(ctx, activity.UserID)
+		if err != nil {
+			return err
+		}
+		if !prefs.AutoPublish {
+			return storage.ErrProcessingDisabled
+		}
+	}
 	if _, err := client.UpdateActivity(ctx, activityID, strava.UpdateActivityRequest{
 		Description:  descPtr,
 		HideFromHome: hidePtr,
@@ -341,7 +328,10 @@ func (s *Server) updateActivityDetectedFactsCache(
 	coffeeFact coffeeStopFact,
 	routeFact routeHighlightFact,
 	roadFact roadCrossingFact,
-) {
+) error {
+	if err := s.store.CheckActivityContext(ctx); err != nil {
+		return err
+	}
 	if roadFact.Count == 0 && len(storedStops) > 0 {
 		roadFact = buildRoadCrossingFact(storedStops)
 	}
@@ -359,7 +349,7 @@ func (s *Server) updateActivityDetectedFactsCache(
 			if coffeeFact.Name == "" {
 				fact, err := detectCoffeeStopFact(ctx, activity.Type, points, s.overpass)
 				if err != nil {
-					log.Printf("detected facts cache coffee stop failed for activity %d: %v", activity.ID, err)
+					return err
 				} else {
 					coffeeFact = fact
 				}
@@ -367,7 +357,7 @@ func (s *Server) updateActivityDetectedFactsCache(
 			if len(routeFact.Names) == 0 {
 				fact, err := detectRouteHighlightFact(ctx, points, s.overpass)
 				if err != nil {
-					log.Printf("detected facts cache route highlights failed for activity %d: %v", activity.ID, err)
+					return err
 				} else {
 					routeFact = fact
 				}
@@ -377,18 +367,18 @@ func (s *Server) updateActivityDetectedFactsCache(
 
 	stopViews := buildStopViews(storedStops)
 	if err := s.store.ReplaceActivityFactMetrics(ctx, activity, buildActivityFactMetricsWithHeartRate(statsSnapshot, rideFact, speedFacts, heartRateFact, coffeeFact, routeFact, roadFact)); err != nil {
-		log.Printf("activity fact metrics store failed for activity %d: %v", activity.ID, err)
+		return err
 	}
 
 	detectedFacts := buildActivityMapFactsWithHeartRate(stopViews, points, rideFact, speedFacts, heartRateFact, coffeeFact, routeFact, roadFact)
 	payload, err := json.Marshal(detectedFacts)
 	if err != nil {
-		log.Printf("detected facts cache marshal failed for activity %d: %v", activity.ID, err)
-		return
+		return err
 	}
 	if err := s.store.UpsertActivityDetectedFacts(ctx, activity.ID, string(payload), time.Time{}); err != nil {
-		log.Printf("detected facts cache store failed for activity %d: %v", activity.ID, err)
+		return err
 	}
+	return nil
 }
 
 func (s *Server) evaluateHideRules(ctx context.Context, activity storage.Activity) (bool, stats.StopStats, error) {

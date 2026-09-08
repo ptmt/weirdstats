@@ -29,14 +29,5 @@ func RateLimitBackoff(err error) (time.Duration, bool) {
 	if !ok {
 		return 0, false
 	}
-	if info.RetryAfter > 0 {
-		return info.RetryAfter, true
-	}
-	if !info.RetryAt.IsZero() {
-		wait := time.Until(info.RetryAt)
-		if wait > 0 {
-			return wait, true
-		}
-	}
-	return 0, false
+	return time.Until(info.resetAt(time.Now(), true)), true
 }

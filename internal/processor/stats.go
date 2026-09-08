@@ -23,6 +23,13 @@ type ActivityFactPrecomputer interface {
 }
 
 func (p *StopStatsProcessor) Process(ctx context.Context, activityID int64) error {
+	if storage.HasJobContext(ctx) {
+		var err error
+		ctx, err = p.Store.GuardActivityContext(ctx, activityID)
+		if err != nil {
+			return err
+		}
+	}
 	activity, err := p.Store.GetActivity(ctx, activityID)
 	if err != nil {
 		return err
@@ -47,13 +54,27 @@ func (p *StopStatsProcessor) Process(ctx context.Context, activityID int64) erro
 	}
 	var stopRows []storage.ActivityStop
 	for i, stop := range stops {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		hasLight := false
 		hasCrossing := false
 		crossingRoad := ""
 
 		stats.StopTotalSeconds += int(stop.Duration.Seconds())
 		if p.MapAPI != nil {
-			features, err := p.MapAPI.NearbyFeatures(stop.Lat, stop.Lon)
+			if err := p.Store.CheckActivityContext(ctx); err != nil {
+				return err
+			}
+			var features []maps.Feature
+			var err error
+			if api, ok := p.MapAPI.(interface {
+				NearbyFeaturesContext(context.Context, float64, float64) ([]maps.Feature, error)
+			}); ok {
+				features, err = api.NearbyFeaturesContext(ctx, stop.Lat, stop.Lon)
+			} else {
+				features, err = p.MapAPI.NearbyFeatures(stop.Lat, stop.Lon)
+			}
 			if err != nil {
 				return err
 			}

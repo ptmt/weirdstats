@@ -5,6 +5,13 @@ struct MobileSession: Decodable {
     let tokenType: String
     let expiresAt: Int64
     let athlete: MobileAthlete
+
+    private enum CodingKeys: String, CodingKey {
+        case accessToken = "access_token"
+        case tokenType = "token_type"
+        case expiresAt = "expires_at"
+        case athlete
+    }
 }
 
 struct MobileAthlete: Decodable {
@@ -28,6 +35,39 @@ struct MobileMe: Decodable {
 
 struct MobileActivities: Decodable {
     let activities: [MobileActivity]
+    let sync: MobileSyncStatus?
+    let nextCursor: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case activities, sync
+        case nextCursor = "next_cursor"
+    }
+}
+
+struct MobileSyncStatus: Decodable {
+    let message: String
+    let pending: Int
+    let completed: Int
+    let failed: Int
+    let blocked: Int
+    let nextRunAt: Int64?
+    let errors: [MobileSyncError]
+
+    private enum CodingKeys: String, CodingKey {
+        case message, pending, completed, failed, blocked, errors
+        case nextRunAt = "next_run_at"
+    }
+}
+
+struct MobileSyncError: Decodable, Identifiable {
+    let jobID: Int64
+    let message: String
+    var id: Int64 { jobID }
+
+    private enum CodingKeys: String, CodingKey {
+        case jobID = "job_id"
+        case message
+    }
 }
 
 struct MobileActivity: Decodable, Identifiable {
@@ -42,6 +82,7 @@ struct MobileActivity: Decodable, Identifiable {
     let lightStops: Int
     let roadCrossings: Int
     let detectedFactCount: Int
+    let gpsStatus: String?
     let photoURL: String?
 
     private enum CodingKeys: String, CodingKey {
@@ -57,6 +98,7 @@ struct MobileActivity: Decodable, Identifiable {
         case roadCrossings = "road_crossings"
         case detectedFactCount = "detected_fact_count"
         case photoURL = "photo_url"
+        case gpsStatus = "gps_status"
     }
 }
 
@@ -84,15 +126,25 @@ final class APIClient {
         return try await perform(request, as: MobileMe.self)
     }
 
-    func fetchActivities(baseURL: URL, accessToken: String, limit: Int) async throws -> MobileActivities {
+    func fetchActivities(baseURL: URL, accessToken: String, limit: Int, before: String? = nil) async throws -> MobileActivities {
         var components = URLComponents(url: baseURL.appending(path: "/api/mobile/activities"), resolvingAgainstBaseURL: false)
         components?.queryItems = [URLQueryItem(name: "limit", value: String(limit))]
+        if let before {
+            components?.queryItems?.append(URLQueryItem(name: "before", value: before))
+        }
         guard let url = components?.url else {
             throw APIError.invalidURL
         }
         var request = URLRequest(url: url)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         return try await perform(request, as: MobileActivities.self)
+    }
+
+    func retryActivities(baseURL: URL, accessToken: String) async throws -> MobileSyncStatus {
+        var request = URLRequest(url: baseURL.appending(path: "/api/sync"))
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        return try await perform(request, as: MobileSyncStatus.self)
     }
 
     private func perform<T: Decodable>(_ request: URLRequest, as type: T.Type) async throws -> T {

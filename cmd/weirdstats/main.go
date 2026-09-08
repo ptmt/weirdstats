@@ -86,7 +86,7 @@ func main() {
 		Registry: rules.DefaultRegistry(),
 		Clients:  stravaFactory,
 	}
-	pipeline := &processor.PipelineProcessor{Ingest: ingestor, Stats: statsProcessor, Rules: rulesProcessor}
+	pipeline := &processor.PipelineProcessor{SeparateStages: true, Ingest: ingestor, Stats: statsProcessor, Rules: rulesProcessor}
 	queueWorker := &worker.Worker{Store: store, Processor: pipeline}
 	jobRunner := &jobs.Runner{
 		Store:        store,
@@ -113,6 +113,7 @@ func main() {
 	statsProcessor.Facts = webServer
 	pipeline.Applier = webServer
 	jobRunner.Applier = webServer
+	jobRunner.Enricher = &processor.EnrichmentProcessor{Stats: statsProcessor, Facts: webServer}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", webServer.Landing)
@@ -126,6 +127,7 @@ func main() {
 	mux.HandleFunc("/api/rules/metadata", webServer.RulesMetadata)
 	mux.HandleFunc("/api/mobile/session/exchange", webServer.MobileSessionExchange)
 	mux.HandleFunc("/api/mobile/me", webServer.MobileMe)
+	mux.HandleFunc("/api/sync", webServer.SyncStatus)
 	mux.HandleFunc("/api/mobile/activities", webServer.MobileActivities)
 	mux.HandleFunc("/activity/", webServer.Activity)
 	mux.HandleFunc("/admin", webServer.Admin)

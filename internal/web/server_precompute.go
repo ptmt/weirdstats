@@ -15,7 +15,16 @@ func (s *Server) PrecomputeActivityFacts(ctx context.Context, activity storage.A
 		return nil
 	}
 
-	s.updateActivityDetectedFactsCache(
+	local := *s
+	local.overpass = nil
+	hide, _, err := local.evaluateHideRules(ctx, activity)
+	if err != nil {
+		return err
+	}
+	if err := s.store.UpdateActivityHiddenByRule(ctx, activity.ID, hide); err != nil {
+		return err
+	}
+	return local.updateActivityDetectedFactsCache(
 		ctx,
 		activity,
 		statsSnapshot,
@@ -28,5 +37,4 @@ func (s *Server) PrecomputeActivityFacts(ctx context.Context, activity storage.A
 		routeHighlightFact{},
 		roadCrossingFact{},
 	)
-	return nil
 }

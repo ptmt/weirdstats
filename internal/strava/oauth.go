@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"weirdstats/internal/storage"
@@ -24,6 +25,7 @@ type RefreshTokenSource struct {
 	ClientSecret string
 	BaseURL      string
 	HTTPClient   *http.Client
+	RefreshMu    *sync.Mutex
 }
 
 type Athlete struct {
@@ -33,6 +35,7 @@ type Athlete struct {
 }
 
 type TokenResponse struct {
+	Scope        string  `json:"scope"`
 	AccessToken  string  `json:"access_token"`
 	RefreshToken string  `json:"refresh_token"`
 	ExpiresAt    int64   `json:"expires_at"`
@@ -78,7 +81,7 @@ func ExchangeAuthorizationCode(ctx context.Context, baseURL, clientID, clientSec
 
 	client := httpClient
 	if client == nil {
-		client = http.DefaultClient
+		client = defaultHTTPClient
 	}
 
 	resp, err := client.Do(req)
@@ -108,6 +111,10 @@ func ExchangeAuthorizationCode(ctx context.Context, baseURL, clientID, clientSec
 }
 
 func (s *RefreshTokenSource) GetAccessToken(ctx context.Context) (string, error) {
+	if s.RefreshMu != nil {
+		s.RefreshMu.Lock()
+		defer s.RefreshMu.Unlock()
+	}
 	if s.Store == nil {
 		return "", fmt.Errorf("token store not configured")
 	}
@@ -134,11 +141,12 @@ func (s *RefreshTokenSource) GetAccessToken(ctx context.Context) (string, error)
 		updated.RefreshToken = token.RefreshToken
 	}
 
-	if err := s.Store.UpsertStravaToken(ctx, storage.StravaToken{
+	if err := s.Store.RefreshStravaToken(ctx, storage.StravaToken{
 		UserID:       token.UserID,
 		AccessToken:  updated.AccessToken,
 		RefreshToken: updated.RefreshToken,
 		ExpiresAt:    time.Unix(updated.ExpiresAt, 0),
+		ConnectionID: token.ConnectionID,
 	}); err != nil {
 		return "", err
 	}
@@ -176,7 +184,7 @@ func (s *RefreshTokenSource) refresh(ctx context.Context, refreshToken string) (
 
 	client := s.HTTPClient
 	if client == nil {
-		client = http.DefaultClient
+		client = defaultHTTPClient
 	}
 
 	resp, err := client.Do(req)
@@ -187,7 +195,7 @@ func (s *RefreshTokenSource) refresh(ctx context.Context, refreshToken string) (
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return refreshResponse{}, fmt.Errorf("strava refresh error %d: %s", resp.StatusCode, string(body))
+		return refreshResponse{}, newAPIError(resp, req, body)
 	}
 
 	var payload refreshResponse

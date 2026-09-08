@@ -1,5 +1,7 @@
 Activity import investigation — 2026-09-08
 
+This records the pre-change behavior at `e837d2b`. See [implementation and remaining checks](activity-sync-implementation.md) for the subsequent fixes and their validation.
+
 The strongest explanation for the limited-access failure is an OAuth scope gap. The strongest explanation for failures with all activities is a combination of quota handling and external map dependencies. These are confirmed code paths, not a confirmed diagnosis of the reported production incident: no production job/error was available. The local database contains only 32 activities and January 2026 queue history.
 
 There is no public-only import setting in the inspected web or mobile implementation. This report interprets that choice as declining private-activity permission on Strava's authorization screen. Confirm the screen and exact error before attributing the incident to that flow.

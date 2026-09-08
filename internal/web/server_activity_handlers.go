@@ -48,11 +48,22 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stepStart := time.Now()
-	var activities []storage.ActivityWithStats
+	cursor, err := parseActivityCursor(r.URL.Query().Get("before"))
+	if err != nil {
+		http.Error(w, "invalid activity cursor", 400)
+		return
+	}
+	start, end := time.Time{}, time.Time{}
 	if dayFilterActive {
-		activities, err = s.store.ListActivitiesWithStatsInRange(r.Context(), userID, selectedDayDate, selectedDayDate.AddDate(0, 0, 1), 100)
-	} else {
-		activities, err = s.store.ListActivitiesWithStats(r.Context(), userID, 100)
+		start, end = selectedDayDate, selectedDayDate.AddDate(0, 0, 1)
+	}
+	activities, err := s.store.ListActivitiesPage(r.Context(), userID, 101, start, end, cursor)
+	nextPageURL := ""
+	if len(activities) > 100 {
+		activities = activities[:100]
+		query := r.URL.Query()
+		query.Set("before", nextActivityCursor(activities[99].Activity))
+		nextPageURL = "/activities/?" + query.Encode()
 	}
 	trace.AddStep("list_activities", stepStart)
 	if err != nil {
@@ -94,6 +105,7 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 			Distance:          formatDistance(activity.Distance),
 			Duration:          formatDuration(activity.MovingTime),
 			HasStats:          activity.HasStats,
+			GPSStatus:         activity.GPSStatus,
 			StopCount:         activity.StopCount,
 			StopTotal:         formatDuration(activity.StopTotalSeconds),
 			LightStops:        activity.TrafficLightStopCount,
@@ -160,7 +172,14 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 	if dayFilterActive {
 		selectedDayLabel = selectedDayDate.Format("Mon, Jan 2, 2006")
 	}
+	syncView, err := s.syncView(r.Context(), userID)
+	if err != nil {
+		http.Error(w, "failed to load import status", 500)
+		return
+	}
 	data := ProfilePageData{
+		Sync:        syncView,
+		NextPageURL: nextPageURL,
 		PageData: PageData{
 			Title:      "Activities",
 			Page:       "activities",

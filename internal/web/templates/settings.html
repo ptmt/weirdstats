@@ -10,6 +10,19 @@
 
   <section class="settings-stack">
     <article class="card settings-section">
+      <h3>Privacy and automatic updates</h3>
+      <p>Strava activity access includes Everyone and Followers activities. Access to Only You activities is optional when connecting.</p>
+      <form method="post" action="/activities/settings">
+        <input type="hidden" name="action" value="update-processing" />
+        <p><label><input type="checkbox" name="external_maps" {{if .Processing.ExternalMaps}}checked{{end}} /> Use external map services for traffic lights, cafes, and landmarks</label></p>
+        <p class="muted">This sends locations from your activities to OpenStreetMap Overpass services, including locations from private activities you allow us to read. Basic activity analysis works without it. This preference applies when an activity is next processed.</p>
+        <p><label><input type="checkbox" name="auto_publish" {{if .Processing.AutoPublish}}checked{{end}} /> Automatically update new activities on Strava</label></p>
+        <p class="muted">Updates can include location-derived facts and follow your rules and fact settings below. Historical imports do not publish updates automatically.</p>
+        <button class="btn secondary" type="submit">Save preferences</button>
+      </form>
+      <p class="muted">Disconnecting stops background work and removes our saved Strava credentials. Use Delete account to remove imported routes and statistics too.</p>
+    </article>
+    <article class="card settings-section">
       <div class="section-head">
         <div>
           <h3>Weirdstats facts</h3>

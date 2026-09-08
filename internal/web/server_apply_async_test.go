@@ -141,6 +141,9 @@ func TestApply_CachesDetectedFactsForDetailPage(t *testing.T) {
 		t.Fatalf("new server: %v", err)
 	}
 
+	if err := store.UpsertStravaToken(ctx, storage.StravaToken{UserID: 1, AccessToken: "fake"}); err != nil {
+		t.Fatal(err)
+	}
 	if err := server.Apply(ctx, activityID); err != nil {
 		t.Fatalf("apply: %v", err)
 	}

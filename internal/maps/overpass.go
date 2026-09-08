@@ -18,22 +18,27 @@ const defaultCacheTTL = 24 * time.Hour
 const defaultUserAgent = "weirdstats/1.0 (+https://github.com/ptmt/weirdstats)"
 
 type OverpassClient struct {
-	BaseURL      string
-	HTTPClient   *http.Client
-	Timeout      time.Duration
-	CacheTTL     time.Duration
-	DisableCache bool
-	MaxAttempts  int
-	BackoffBase  time.Duration
-	MirrorURLs   []string
-	UserAgent    string
+	BaseURL         string
+	HTTPClient      *http.Client
+	Timeout         time.Duration
+	CacheTTL        time.Duration
+	DisableCache    bool
+	MaxAttempts     int
+	BackoffBase     time.Duration
+	MirrorURLs      []string
+	UserAgent       string
+	MaxCacheEntries int
 
 	mu    sync.Mutex
 	cache map[string]cacheEntry
 }
 
 func (c *OverpassClient) NearbyFeatures(lat, lon float64) ([]Feature, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), c.effectiveTimeout())
+	return c.NearbyFeaturesContext(context.Background(), lat, lon)
+}
+
+func (c *OverpassClient) NearbyFeaturesContext(ctx context.Context, lat, lon float64) ([]Feature, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.effectiveTimeout())
 	defer cancel()
 
 	query := fmt.Sprintf(`[out:json][timeout:25];
@@ -244,6 +249,11 @@ func (c *OverpassClient) runQueryWithRetry(ctx context.Context, query string) ([
 }
 
 func (c *OverpassClient) runQueryOnce(ctx context.Context, base string, query string) ([]overpassElement, int, error) {
+	if check, ok := ctx.Value(accessCheckKey{}).(func(context.Context) error); ok {
+		if err := check(ctx); err != nil {
+			return nil, http.StatusForbidden, err
+		}
+	}
 	endpoint, err := url.Parse(base)
 	if err != nil {
 		return nil, 0, fmt.Errorf("parse overpass url: %w", err)
@@ -317,6 +327,7 @@ func (c *OverpassClient) getCached(key string) ([]overpassElement, bool) {
 	}
 	entry, ok := c.cache[key]
 	if !ok || time.Now().After(entry.expiresAt) {
+		delete(c.cache, key)
 		return nil, false
 	}
 	return entry.elements, true
@@ -327,6 +338,23 @@ func (c *OverpassClient) setCached(key string, elements []overpassElement, ttl t
 	defer c.mu.Unlock()
 	if c.cache == nil {
 		c.cache = make(map[string]cacheEntry)
+	}
+	limit := c.MaxCacheEntries
+	if limit <= 0 {
+		limit = 2048
+	}
+	if len(c.cache) >= limit {
+		for key, entry := range c.cache {
+			if time.Now().After(entry.expiresAt) {
+				delete(c.cache, key)
+			}
+		}
+		for len(c.cache) >= limit {
+			for key := range c.cache {
+				delete(c.cache, key)
+				break
+			}
+		}
 	}
 	c.cache[key] = cacheEntry{
 		elements:  elements,
@@ -537,4 +565,11 @@ func isRetryable(status int, err error) bool {
 		return true
 	}
 	return false
+}
+
+// WithAccessCheck revalidates consent and activity access before each external request.
+type accessCheckKey struct{}
+
+func WithAccessCheck(ctx context.Context, check func(context.Context) error) context.Context {
+	return context.WithValue(ctx, accessCheckKey{}, check)
 }

@@ -13,19 +13,23 @@ import (
 )
 
 type Client struct {
-	BaseURL     string
-	AccessToken string
-	TokenSource TokenSource
-	HTTPClient  *http.Client
+	BaseURL      string
+	AccessToken  string
+	TokenSource  TokenSource
+	HTTPClient   *http.Client
+	Scopes       string
+	ConnectionID string
+	CheckAccess  func(context.Context) error
 }
 
 type APIError struct {
-	StatusCode int
-	Body       string
-	Method     string
-	Path       string
-	RequestID  string
-	RateLimit  RateLimitInfo
+	StatusCode  int
+	Body        string
+	Method      string
+	Path        string
+	RequestID   string
+	RateLimit   RateLimitInfo
+	QuotaBucket string
 }
 
 func (e *APIError) Error() string {
@@ -60,17 +64,21 @@ func (e *APIError) Error() string {
 }
 
 type RateLimitInfo struct {
-	LimitShort    int
-	LimitLong     int
-	UsageShort    int
-	UsageLong     int
-	RetryAfter    time.Duration
-	RetryAt       time.Time
-	RetryAfterRaw string
+	LimitShort     int
+	LimitLong      int
+	UsageShort     int
+	UsageLong      int
+	ReadLimitShort int
+	ReadLimitLong  int
+	ReadUsageShort int
+	ReadUsageLong  int
+	RetryAfter     time.Duration
+	RetryAt        time.Time
+	RetryAfterRaw  string
 }
 
 func (r RateLimitInfo) HasData() bool {
-	return r.LimitShort >= 0 || r.LimitLong >= 0 || r.UsageShort >= 0 || r.UsageLong >= 0 ||
+	return r.ReadLimitShort > 0 || r.ReadLimitLong > 0 || r.LimitShort >= 0 || r.LimitLong >= 0 || r.UsageShort >= 0 || r.UsageLong >= 0 ||
 		r.RetryAfter > 0 || !r.RetryAt.IsZero() || r.RetryAfterRaw != ""
 }
 
@@ -109,16 +117,23 @@ func formatUsageLimit(usage, limit int) string {
 
 func parseRateLimitInfo(headers http.Header) RateLimitInfo {
 	info := RateLimitInfo{
-		LimitShort: -1,
-		LimitLong:  -1,
-		UsageShort: -1,
-		UsageLong:  -1,
+		LimitShort:     -1,
+		LimitLong:      -1,
+		UsageShort:     -1,
+		UsageLong:      -1,
+		ReadLimitShort: -1, ReadLimitLong: -1, ReadUsageShort: -1, ReadUsageLong: -1,
 	}
 	if limitHeader := headers.Get("X-RateLimit-Limit"); limitHeader != "" {
 		info.LimitShort, info.LimitLong = parseRateLimitPair(limitHeader)
 	}
 	if usageHeader := headers.Get("X-RateLimit-Usage"); usageHeader != "" {
 		info.UsageShort, info.UsageLong = parseRateLimitPair(usageHeader)
+	}
+	if value := headers.Get("X-ReadRateLimit-Limit"); value != "" {
+		info.ReadLimitShort, info.ReadLimitLong = parseRateLimitPair(value)
+	}
+	if value := headers.Get("X-ReadRateLimit-Usage"); value != "" {
+		info.ReadUsageShort, info.ReadUsageLong = parseRateLimitPair(value)
 	}
 	if retryAfter := strings.TrimSpace(headers.Get("Retry-After")); retryAfter != "" {
 		info.RetryAfterRaw = retryAfter
@@ -190,6 +205,8 @@ type Activity struct {
 	Private          bool
 	HideFromHome     bool
 	PhotoURL         string
+	Manual           bool
+	Trainer          bool
 }
 
 type ActivitySummary struct {
@@ -227,6 +244,8 @@ func (c *Client) GetActivity(ctx context.Context, id int64) (Activity, error) {
 		Visibility       string   `json:"visibility"`
 		Private          bool     `json:"private"`
 		HideFromHome     bool     `json:"hide_from_home"`
+		Manual           bool     `json:"manual"`
+		Trainer          bool     `json:"trainer"`
 		Photos           *struct {
 			Primary *struct {
 				URLs map[string]string `json:"urls"`
@@ -278,10 +297,20 @@ func (c *Client) GetActivity(ctx context.Context, id int64) (Activity, error) {
 		Private:          payload.Private,
 		HideFromHome:     payload.HideFromHome,
 		PhotoURL:         photoURL,
+		Manual:           payload.Manual,
+		Trainer:          payload.Trainer,
 	}, nil
 }
 
 func (c *Client) UpdateActivity(ctx context.Context, id int64, update UpdateActivityRequest) (Activity, error) {
+	if c.CheckAccess != nil {
+		if err := c.CheckAccess(ctx); err != nil {
+			return Activity{}, err
+		}
+	}
+	if c.Scopes != "" && !HasScope(c.Scopes, "activity:write") {
+		return Activity{}, &PermissionError{Scope: "activity:write"}
+	}
 	if id == 0 {
 		return Activity{}, fmt.Errorf("activity id required")
 	}
@@ -325,7 +354,7 @@ func (c *Client) UpdateActivity(ctx context.Context, id int64, update UpdateActi
 
 	client := c.HTTPClient
 	if client == nil {
-		client = http.DefaultClient
+		client = defaultHTTPClient
 	}
 
 	resp, err := client.Do(req)
@@ -471,6 +500,11 @@ func (c *Client) ListActivities(ctx context.Context, after, before time.Time, pa
 }
 
 func (c *Client) getJSON(ctx context.Context, path string, params url.Values, target interface{}) error {
+	if c.CheckAccess != nil {
+		if err := c.CheckAccess(ctx); err != nil {
+			return err
+		}
+	}
 	base := c.BaseURL
 	if base == "" {
 		base = "https://www.strava.com/api/v3"
@@ -507,7 +541,7 @@ func (c *Client) getJSON(ctx context.Context, path string, params url.Values, ta
 
 	client := c.HTTPClient
 	if client == nil {
-		client = http.DefaultClient
+		client = defaultHTTPClient
 	}
 
 	resp, err := client.Do(req)

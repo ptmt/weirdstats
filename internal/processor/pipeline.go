@@ -7,10 +7,11 @@ import (
 )
 
 type PipelineProcessor struct {
-	Ingest  *ingest.Ingestor
-	Stats   *StopStatsProcessor
-	Rules   *RulesProcessor
-	Applier ActivityApplier
+	SeparateStages bool
+	Ingest         *ingest.Ingestor
+	Stats          *StopStatsProcessor
+	Rules          *RulesProcessor
+	Applier        ActivityApplier
 }
 
 type ActivityApplier interface {
@@ -24,9 +25,19 @@ func (p *PipelineProcessor) Process(ctx context.Context, activityID int64) error
 		}
 	}
 	if p.Stats != nil {
-		if err := p.Stats.Process(ctx, activityID); err != nil {
+		statsProcessor := p.Stats
+		if p.SeparateStages {
+			copy := *p.Stats
+			copy.MapAPI = nil
+			copy.Overpass = nil
+			statsProcessor = &copy
+		}
+		if err := statsProcessor.Process(ctx, activityID); err != nil {
 			return err
 		}
+	}
+	if p.SeparateStages {
+		return nil
 	}
 	if p.Applier != nil {
 		return p.Applier.Apply(ctx, activityID)

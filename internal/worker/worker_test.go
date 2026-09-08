@@ -32,7 +32,13 @@ func TestWorkerProcessesQueue(t *testing.T) {
 	if err := store.InitSchema(ctx); err != nil {
 		t.Fatalf("init schema: %v", err)
 	}
+	if err := store.UpsertStravaToken(ctx, storage.StravaToken{UserID: 1, AccessToken: "fake"}); err != nil {
+		t.Fatalf("save token: %v", err)
+	}
 
+	if err := store.SaveProcessingPreferences(ctx, 1, storage.ProcessingPreferences{ExternalMaps: true}); err != nil {
+		t.Fatal(err)
+	}
 	base := time.Date(2024, 1, 1, 8, 0, 0, 0, time.UTC)
 	points := []gps.Point{
 		{Lat: 0, Lon: 0, Time: base, Speed: 5},

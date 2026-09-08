@@ -60,6 +60,7 @@ type Server struct {
 }
 
 type ActivityView struct {
+	GPSStatus         string
 	ID                int64
 	Name              string
 	Type              string
@@ -176,6 +177,8 @@ type LandingPageData struct {
 }
 
 type ProfilePageData struct {
+	Sync        SyncView
+	NextPageURL string
 	PageData
 	Activities       []ActivityView
 	Contributions    []ContributionData
@@ -193,6 +196,7 @@ type SettingsRule struct {
 }
 
 type SettingsPageData struct {
+	Processing storage.ProcessingPreferences
 	PageData
 	Facts         []SettingsFact
 	Rules         []SettingsRule
@@ -773,7 +777,13 @@ func (s *Server) Settings(w http.ResponseWriter, r *http.Request) {
 		metaJSON = []byte(`{\"metrics\":[],\"operators\":{}}`)
 	}
 
+	processing, err := s.store.ProcessingPreferences(r.Context(), userID)
+	if err != nil {
+		http.Error(w, "failed to load processing preferences", 500)
+		return
+	}
 	data := SettingsPageData{
+		Processing: processing,
 		PageData: PageData{
 			Title:      "Settings",
 			Page:       "settings",
@@ -809,7 +819,8 @@ func (s *Server) Admin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	queueCount, _ := s.store.CountQueue(r.Context())
+	status, _ := s.store.UserSyncStatus(r.Context(), userID)
+	queueCount := status.Pending
 	jobsView := s.buildJobViews(r.Context(), userID)
 	activityJobsView := s.buildActivityJobViews(r.Context(), userID)
 
@@ -875,7 +886,7 @@ func (s *Server) handleAdminPost(w http.ResponseWriter, r *http.Request, userID 
 			http.Redirect(w, r, "/admin/?msg=sync+not+configured", http.StatusFound)
 			return
 		}
-		if err := s.enqueueSyncJobWindow(r.Context(), userID, time.Unix(0, 0), 365); err != nil {
+		if err := s.enqueueSyncJobWindow(r.Context(), userID, time.Unix(0, 0), 36500); err != nil {
 			http.Redirect(w, r, "/admin/?msg=sync+enqueue+failed", http.StatusFound)
 			return
 		}
@@ -955,7 +966,7 @@ func (s *Server) ConnectStrava(w http.ResponseWriter, r *http.Request) {
 	} else {
 		params.Set("approval_prompt", "auto")
 	}
-	params.Set("scope", "read,activity:read_all,activity:write")
+	params.Set("scope", strava.RequestedScopes)
 
 	http.Redirect(w, r, endpoint+"?"+params.Encode(), http.StatusFound)
 }
@@ -982,7 +993,7 @@ func (s *Server) StravaCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	code := r.URL.Query().Get("code")
-	userID, err := s.connectStravaUser(r.Context(), code)
+	userID, err := s.connectStravaUser(r.Context(), code, r.URL.Query().Get("scope"))
 	if err != nil {
 		http.Redirect(w, r, appendMessage("/", err.Error()), http.StatusFound)
 		return
@@ -994,7 +1005,7 @@ func (s *Server) StravaCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, next, http.StatusFound)
 }
 
-func (s *Server) connectStravaUser(ctx context.Context, code string) (int64, error) {
+func (s *Server) connectStravaUser(ctx context.Context, code, scopes string) (int64, error) {
 	token, err := strava.ExchangeAuthorizationCode(
 		ctx,
 		s.strava.AuthBaseURL,
@@ -1004,14 +1015,25 @@ func (s *Server) connectStravaUser(ctx context.Context, code string) (int64, err
 		nil,
 	)
 	if err != nil {
-		log.Printf("strava oauth exchange failed: %v", err)
+		log.Printf("strava oauth exchange failed")
 		return 0, fmt.Errorf("strava authorization failed")
+	}
+	if scopes == "" {
+		scopes = token.Scope
+	}
+	scopes = strava.NormalizeScopes(scopes)
+	if !strava.CanReadActivities(scopes) {
+		return 0, fmt.Errorf("Reconnect Strava and allow access to activities; private activity access is optional")
+	}
+	connectionID, err := randomToken(24)
+	if err != nil {
+		return 0, err
 	}
 	userID := token.Athlete.ID
 	if userID == 0 {
 		return 0, fmt.Errorf("strava token save failed")
 	}
-	_, err = s.store.GetStravaToken(ctx, userID)
+	previousToken, err := s.store.GetStravaToken(ctx, userID)
 	firstConnect := false
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
@@ -1025,7 +1047,7 @@ func (s *Server) connectStravaUser(ctx context.Context, code string) (int64, err
 	}
 	if userID != 1 {
 		legacy, err := s.store.GetStravaToken(ctx, 1)
-		if err == nil && (legacy.AthleteID == 0 || legacy.AthleteID == userID) {
+		if err == nil && (legacy.AthleteID == userID) {
 			if err := s.store.ReassignUserData(ctx, 1, userID); err != nil {
 				log.Printf("legacy user migration failed: %v", err)
 				return 0, fmt.Errorf("strava token save failed")
@@ -1034,36 +1056,42 @@ func (s *Server) connectStravaUser(ctx context.Context, code string) (int64, err
 	}
 	log.Printf("Saving token: expires_at=%d (%v), athlete=%d %s",
 		token.ExpiresAt, time.Unix(token.ExpiresAt, 0), token.Athlete.ID, athleteName)
-	if err := s.store.UpsertStravaToken(ctx, storage.StravaToken{
+	hasImported, err := s.store.HasImportedActivities(ctx, userID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to check existing activity access")
+	}
+	purge := hasImported && !strava.HasScope(scopes, "activity:read_all") && (firstConnect || previousToken.Scopes == "" || strava.HasScope(previousToken.Scopes, "activity:read_all"))
+	var initial *storage.Job
+	if s.ingestor != nil && (purge || (firstConnect && s.strava.InitialSyncDays > 0)) {
+		after := time.Now().AddDate(0, 0, -s.strava.InitialSyncDays)
+		if purge {
+			after = time.Unix(0, 0)
+		}
+		payload, _ := json.Marshal(jobs.SyncSincePayload{UserID: userID, AfterUnix: after.Unix(), PerPage: 100, WindowDays: 36500})
+		initial = &storage.Job{Type: jobs.JobTypeSyncActivitiesSince, UserID: userID, Payload: string(payload), MaxAttempts: 10}
+	}
+	if err := s.store.CompleteStravaConnection(ctx, storage.StravaToken{
 		UserID:       userID,
 		AccessToken:  token.AccessToken,
 		RefreshToken: token.RefreshToken,
 		ExpiresAt:    time.Unix(token.ExpiresAt, 0),
 		AthleteID:    token.Athlete.ID,
 		AthleteName:  athleteName,
-	}); err != nil {
-		log.Printf("strava token save failed: %v", err)
-		return 0, fmt.Errorf("strava token save failed")
+		Scopes:       scopes,
+		ConnectionID: connectionID,
+	}, purge, initial); err != nil {
+		log.Printf("strava connection save failed for user %d", userID)
+		return 0, fmt.Errorf("Strava connection could not be saved; please reconnect")
 	}
 	if userID != 1 {
-		if legacy, err := s.store.GetStravaToken(ctx, 1); err == nil && (legacy.AthleteID == 0 || legacy.AthleteID == userID) {
+		if legacy, err := s.store.GetStravaToken(ctx, 1); err == nil && (legacy.AthleteID == userID) {
 			_ = s.store.DeleteStravaToken(ctx, 1)
 		}
 	}
-	if firstConnect {
-		if s.ingestor == nil {
-			log.Printf("strava connected; ingestor not configured, skipping initial sync")
-		} else if s.strava.InitialSyncDays <= 0 {
-			log.Printf("strava connected; initial sync disabled")
-		} else {
-			days := s.strava.InitialSyncDays
-			log.Printf("strava connected; starting initial sync (%d days)", days)
-			after := time.Now().AddDate(0, 0, -days)
-			if err := s.enqueueSyncJob(ctx, userID, after); err != nil {
-				log.Printf("initial sync enqueue failed: %v", err)
-			}
-		}
+	if err := s.store.RetryUserJobs(ctx, userID, true); err != nil {
+		return 0, fmt.Errorf("failed to resume activity import")
 	}
+
 	return userID, nil
 }
 
@@ -1099,6 +1127,13 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request, user
 	}
 	action := strings.TrimSpace(r.FormValue("action"))
 	switch action {
+	case "update-processing":
+		prefs := storage.ProcessingPreferences{ExternalMaps: r.FormValue("external_maps") == "on", AutoPublish: r.FormValue("auto_publish") == "on"}
+		if err := s.store.SaveProcessingPreferences(r.Context(), userID, prefs); err != nil {
+			http.Error(w, "failed to save processing preferences", 500)
+			return
+		}
+		http.Redirect(w, r, "/activities/settings?msg=processing+preferences+saved", http.StatusFound)
 	case "update-facts":
 		settings := defaultWeirdStatsFactSettings()
 		for _, def := range weirdStatsFactDefinitions {
@@ -1203,7 +1238,7 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request, user
 }
 
 func (s *Server) enqueueSyncJob(ctx context.Context, userID int64, after time.Time) error {
-	return s.enqueueSyncJobWindow(ctx, userID, after, 1)
+	return s.enqueueSyncJobWindow(ctx, userID, after, 36500)
 }
 
 func (s *Server) enqueueSyncJobWindow(ctx context.Context, userID int64, after time.Time, windowDays int) error {
@@ -1232,7 +1267,7 @@ func (s *Server) enqueueSyncJobWindow(ctx context.Context, userID int64, after t
 		Type:        jobs.JobTypeSyncActivitiesSince,
 		Payload:     string(payloadJSON),
 		Cursor:      string(cursorJSON),
-		MaxAttempts: 1000,
+		MaxAttempts: 10,
 		NextRunAt:   time.Now(),
 	})
 	return err
@@ -1255,14 +1290,14 @@ func (s *Server) enqueueLatestJob(ctx context.Context, userID int64) error {
 		Type:        jobs.JobTypeSyncLatest,
 		Payload:     string(payloadJSON),
 		Cursor:      string(cursorJSON),
-		MaxAttempts: 1000,
+		MaxAttempts: 10,
 		NextRunAt:   time.Now(),
 	})
 	return err
 }
 
 func (s *Server) buildJobViews(ctx context.Context, userID int64) []JobView {
-	jobsList, err := s.store.ListJobsExcludingType(ctx, jobs.JobTypeProcessActivity, 20)
+	jobsList, err := s.store.ListUserJobs(ctx, userID, false, 20)
 	if err != nil {
 		log.Printf("jobs load failed: %v", err)
 		return nil
@@ -1271,7 +1306,7 @@ func (s *Server) buildJobViews(ctx context.Context, userID int64) []JobView {
 }
 
 func (s *Server) buildActivityJobViews(ctx context.Context, userID int64) []JobView {
-	jobsList, err := s.store.ListJobsByType(ctx, jobs.JobTypeProcessActivity, 20)
+	jobsList, err := s.store.ListUserJobs(ctx, userID, true, 20)
 	if err != nil {
 		log.Printf("activity jobs load failed: %v", err)
 		return nil
@@ -1285,6 +1320,10 @@ func (s *Server) buildJobViewsFromList(ctx context.Context, jobsList []storage.J
 		if !s.jobBelongsToUser(ctx, job, userID) {
 			continue
 		}
+		safeError := job.LastError
+		if safeError != "" && job.ErrorCode == "" {
+			safeError = "Processing could not finish. Retry or contact support with the job number."
+		}
 		view := JobView{
 			ID:            job.ID,
 			TypeLabel:     jobTypeLabel(job),
@@ -1294,7 +1333,7 @@ func (s *Server) buildJobViewsFromList(ctx context.Context, jobsList []storage.J
 			MaxAttempts:   job.MaxAttempts,
 			NextRunAt:     formatTimestamp(job.NextRunAt),
 			UpdatedAt:     formatTimestamp(job.UpdatedAt),
-			LastError:     job.LastError,
+			LastError:     safeError,
 			CursorSummary: jobCursorSummary(job),
 		}
 		views = append(views, view)
@@ -1303,6 +1342,9 @@ func (s *Server) buildJobViewsFromList(ctx context.Context, jobsList []storage.J
 }
 
 func (s *Server) jobBelongsToUser(ctx context.Context, job storage.Job, userID int64) bool {
+	if job.UserID != 0 {
+		return job.UserID == userID
+	}
 	switch job.Type {
 	case jobs.JobTypeSyncLatest:
 		var payload jobs.SyncLatestPayload
