@@ -317,3 +317,54 @@ INSERT INTO strava_tokens VALUES(11,'fake','refresh',2000000000,1);`)
 		t.Fatalf("changed existing grant: %+v %v", token, err)
 	}
 }
+
+func TestSyncStatusAndRetryIgnoreResolvedAndDuplicateFailures(t *testing.T) {
+	ctx := context.Background()
+	s := syncTestStore(t)
+	create := func(activityID int64, status string) int64 {
+		t.Helper()
+		id, err := s.CreateJob(ctx, Job{Type: "process_activity", UserID: 11, ActivityID: activityID, Status: status, LastError: "old failure"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	create(42, "failed")
+	create(42, "completed")
+	create(43, "failed")
+	latest := create(43, "failed")
+	create(44, "failed")
+	create(44, "queued")
+	if _, err := s.UpsertActivity(ctx, Activity{ID: 42, UserID: 11, Name: "Ride", Type: "Ride", StartTime: time.Now()}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertActivityStats(ctx, 42, stats.StopStats{}); err != nil {
+		t.Fatal(err)
+	}
+	status, err := s.UserSyncStatus(ctx, 11)
+	if err != nil || status.Failed != 1 || status.Pending != 1 || status.Completed != 1 {
+		t.Fatalf("history counted as current work: %+v %v", status, err)
+	}
+	groups, err := s.UserJobErrorGroups(ctx, 11)
+	if err != nil || len(groups) != 1 || groups[0].Count != 1 || groups[0].JobID != latest {
+		t.Fatalf("wrong current errors: %+v %v", groups, err)
+	}
+	if err = s.RetryUserJobs(ctx, 11, false); err != nil {
+		t.Fatal(err)
+	}
+	status, err = s.UserSyncStatus(ctx, 11)
+	if err != nil || status.Pending != 2 || status.Failed != 0 {
+		t.Fatalf("retry resurrected historical work: %+v %v", status, err)
+	}
+	var retained int
+	if err = s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM jobs WHERE status='failed'").Scan(&retained); err != nil || retained != 3 {
+		t.Fatalf("failure evidence was deleted: %d %v", retained, err)
+	}
+	if err = s.DeleteJobs(ctx); err != nil {
+		t.Fatal(err)
+	}
+	status, err = s.UserSyncStatus(ctx, 11)
+	if err != nil || status.Completed != 1 {
+		t.Fatalf("processed count depends on retained job history: %+v %v", status, err)
+	}
+}

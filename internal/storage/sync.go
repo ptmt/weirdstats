@@ -97,7 +97,40 @@ FROM jobs WHERE user_id=? AND type `+op+` 'process_activity' ORDER BY updated_at
 
 func (s *Store) UserJobErrors(ctx context.Context, userID int64, limit int) ([]Job, error) {
 	return s.listJobs(ctx, `SELECT id,type,status,payload,cursor,attempts,max_attempts,last_error,next_run_at,created_at,updated_at,user_id,activity_id,parent_id,error_code
-FROM jobs WHERE user_id=? AND status IN ('failed','blocked','retry') ORDER BY updated_at DESC,id DESC LIMIT ?`, userID, limit)
+FROM jobs WHERE user_id=? AND status IN ('failed','blocked','retry') AND (status='retry' OR `+currentJobPredicate+`) ORDER BY updated_at DESC,id DESC LIMIT ?`, userID, limit)
+}
+
+// History remains available for diagnostics, but only the latest request for
+// an activity/stage (or an identical discovery request) describes current work.
+const currentJobPredicate = `NOT EXISTS (
+ SELECT 1 FROM jobs newer WHERE newer.user_id=jobs.user_id
+ AND newer.activity_id=jobs.activity_id AND newer.type=jobs.type AND newer.id>jobs.id
+ AND (jobs.activity_id!=0 OR newer.payload=jobs.payload)
+)`
+
+type JobErrorGroup struct {
+	Type, ErrorCode, Status string
+	Count                   int
+	JobID                   int64
+}
+
+func (s *Store) UserJobErrorGroups(ctx context.Context, userID int64) ([]JobErrorGroup, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT type,error_code,status,COUNT(*),MAX(id)
+FROM jobs WHERE user_id=? AND status IN ('failed','blocked','retry') AND (status='retry' OR `+currentJobPredicate+`)
+GROUP BY type,error_code,status ORDER BY MAX(updated_at) DESC,MAX(id) DESC`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var groups []JobErrorGroup
+	for rows.Next() {
+		var group JobErrorGroup
+		if err := rows.Scan(&group.Type, &group.ErrorCode, &group.Status, &group.Count, &group.JobID); err != nil {
+			return nil, err
+		}
+		groups = append(groups, group)
+	}
+	return groups, rows.Err()
 }
 
 type SyncStatus struct {
@@ -116,13 +149,13 @@ func (s *Store) UserSyncStatus(ctx context.Context, userID int64) (SyncStatus, e
 	var status SyncStatus
 	err := s.db.QueryRowContext(ctx, `SELECT
 COALESCE(SUM(type='process_activity' AND status IN ('queued','running','retry','waiting')),0),
-COUNT(DISTINCT CASE WHEN type='process_activity' AND status='completed' THEN activity_id END),
-COALESCE(SUM(status='failed'),0), COALESCE(SUM(status='blocked'),0), COALESCE(SUM(status='waiting'),0),
+(SELECT COUNT(*) FROM activities a JOIN activity_stats s ON s.activity_id=a.id WHERE a.user_id=?),
+COALESCE(SUM(status='failed' AND `+currentJobPredicate+`),0), COALESCE(SUM(status='blocked' AND `+currentJobPredicate+`),0), COALESCE(SUM(status='waiting'),0),
 COALESCE(SUM(type IN ('sync_activities_since','sync_latest') AND status IN ('queued','running','retry','waiting')),0),
 COALESCE(MIN(CASE WHEN status IN ('waiting','retry') THEN next_run_at END),0),
 COALESCE(SUM(type='enrich_activity' AND status IN ('queued','running','retry')),0),
 COALESCE(SUM(type='apply_activity_rules' AND status IN ('queued','running','retry','waiting')),0)
-FROM jobs WHERE user_id=?`, userID).Scan(&status.Pending, &status.Completed, &status.Failed, &status.Blocked, &status.Waiting, &status.Discovering, &status.NextRunAt, &status.Enriching, &status.Publishing)
+FROM jobs WHERE user_id=?`, userID, userID).Scan(&status.Pending, &status.Completed, &status.Failed, &status.Blocked, &status.Waiting, &status.Discovering, &status.NextRunAt, &status.Enriching, &status.Publishing)
 	return status, err
 }
 
@@ -131,7 +164,7 @@ func (s *Store) RetryUserJobs(ctx context.Context, userID int64, includeBlocked 
 	if includeBlocked {
 		statuses += ",'blocked'"
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE jobs SET status='queued', attempts=0, next_run_at=?, updated_at=? WHERE user_id=? AND status IN (`+statuses+`)`, time.Now().Unix(), time.Now().Unix(), userID)
+	_, err := s.db.ExecContext(ctx, `UPDATE jobs SET status='queued', attempts=0, next_run_at=?, updated_at=? WHERE user_id=? AND status IN (`+statuses+`) AND `+currentJobPredicate, time.Now().Unix(), time.Now().Unix(), userID)
 	return err
 }
 

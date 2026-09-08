@@ -32,7 +32,7 @@
   </head>
   <body>
     <div class="wrap">
-      <div class="nav">
+      <div class="nav{{if eq .Page "activities"}} nav-with-sync{{end}}">
         <a href="/" class="brand">
           <img src="/static/weirdstats.png" alt="weirdstats" class="logo">
         </a>
@@ -63,6 +63,7 @@
             </svg>
           </button>
         </div>
+        {{block "sync-status" .}}{{end}}
       </div>
       {{template "content" .}}
       {{template "footer" .}}

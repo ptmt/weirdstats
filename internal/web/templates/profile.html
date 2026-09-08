@@ -8,58 +8,6 @@
     <h2 class="section-title">Your parsed activities</h2>
   </section>
 
-  <section class="card" aria-live="polite" id="sync-status">
-    <h3>Activity import</h3>
-    <p id="sync-message">{{.Sync.Message}}</p>
-    <p class="muted" id="sync-counts">{{.Sync.Completed}} processed · {{.Sync.Pending}} waiting · {{.Sync.Failed}} need attention</p>
-    <p id="sync-new-activities" hidden><a href="">Refresh to see newly processed activities</a></p>
-    <p class="muted" id="sync-discovering" {{if not .Sync.Discovering}}hidden{{end}}>Still finding activities in Strava.</p>
-    <p id="sync-next" {{if not .Sync.NextRunAt}}hidden{{end}}>Next attempt: <time data-unix="{{.Sync.NextRunAt}}">{{.Sync.NextRunAt}}</time></p>
-    <div id="sync-errors">{{range .Sync.Errors}}<p>{{.Message}} <small>Reference #{{.JobID}}</small></p>{{end}}</div>
-    <a class="btn secondary" id="sync-reconnect" href="/connect/strava?force=1" {{if not .Sync.Blocked}}hidden{{end}}>Reconnect Strava</a>
-    <button class="btn secondary" type="button" id="retry-import" {{if not .Sync.Failed}}hidden{{end}}>Retry failed activities</button>
-    <p><a href="/activities/settings">Map processing and publishing preferences</a></p>
-  </section>
-  <style>#sync-status [hidden] { display: none; }</style>
-  <script>
-    document.querySelectorAll('time[data-unix]').forEach(node => {
-      node.textContent = new Date(Number(node.dataset.unix) * 1000).toLocaleString();
-    });
-    document.getElementById('retry-import')?.addEventListener('click', async (event) => {
-      event.target.disabled = true;
-      try {
-        const response = await fetch('/api/sync', { method: 'POST' });
-        if (!response.ok) throw new Error();
-        location.reload();
-      } catch {
-        event.target.disabled = false;
-        event.target.textContent = 'Could not retry. Try again.';
-      }
-    });
-    const initialCompleted = {{.Sync.Completed}};
-    setInterval(async () => {
-      if (document.hidden) return;
-      try {
-        const response = await fetch('/api/sync');
-        if (!response.ok) return;
-        const status = await response.json();
-        document.getElementById('sync-message').textContent = status.message;
-        document.getElementById('sync-counts').textContent = `${status.completed} processed · ${status.pending} waiting · ${status.failed} need attention`;
-        document.getElementById('sync-new-activities').hidden = status.completed <= initialCompleted;
-        document.getElementById('sync-discovering').hidden = !status.discovering;
-        document.getElementById('sync-next').hidden = !status.next_run_at;
-        document.querySelector('#sync-next time').textContent = new Date(status.next_run_at * 1000).toLocaleString();
-        document.getElementById('sync-reconnect').hidden = !status.blocked;
-        document.getElementById('retry-import').hidden = !status.failed;
-        document.getElementById('sync-errors').replaceChildren(...status.errors.map(error => {
-          const p = document.createElement('p');
-          p.textContent = `${error.message} Reference #${error.job_id}`;
-          return p;
-        }));
-      } catch { /* Keep the last known progress while offline. */ }
-    }, 15000);
-  </script>
-
   {{if .Contributions}}
     {{range .Contributions}}
       <section class="card contrib-card">
@@ -379,4 +327,32 @@
       });
     });
   </script>
+{{end}}
+
+{{define "sync-status"}}
+  <details class="sync-status" id="sync-status" data-state="{{.Sync.State}}" data-completed="{{.Sync.Completed}}">
+    <summary aria-label="Activity import status: {{.Sync.Label}}" aria-controls="sync-panel">
+      <span class="sync-indicator" aria-hidden="true"></span>
+      <span id="sync-label" aria-live="polite" aria-atomic="true">{{.Sync.Label}}</span>
+      <svg class="sync-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>
+    </summary>
+    <section class="sync-panel" id="sync-panel" aria-label="Activity import details">
+      <div class="sync-heading">
+        <strong>Activity import</strong>
+        <button type="button" id="sync-close" aria-label="Close import details"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button>
+      </div>
+      <p id="sync-message">{{.Sync.Message}}</p>
+      <p class="muted" id="sync-counts">{{.Sync.Completed}} processed · {{.Sync.Pending}} waiting{{if .Sync.Failed}} · {{.Sync.Failed}} failed attempts{{end}}</p>
+      <p class="muted" id="sync-discovering" {{if not .Sync.Discovering}}hidden{{end}}>Still finding activities in Strava.</p>
+      <p class="muted" id="sync-next" {{if not .Sync.NextRunAt}}hidden{{end}}>Next attempt: <time data-unix="{{.Sync.NextRunAt}}">{{.Sync.NextRunAt}}</time></p>
+      <div class="sync-errors" id="sync-errors">{{range .Sync.Errors}}<p>{{if gt .Count 1}}<strong>{{.Count}} attempts: </strong>{{end}}{{.Message}} <small>Reference #{{.JobID}}</small></p>{{end}}</div>
+      <div class="sync-actions">
+        <a class="btn secondary small" id="sync-new-activities" href="" hidden>Refresh activities</a>
+        <a class="btn secondary small" id="sync-reconnect" href="/connect/strava?force=1" {{if not .Sync.Blocked}}hidden{{end}}>Reconnect Strava</a>
+        <button class="btn secondary small" type="button" id="retry-import" {{if not .Sync.Failed}}hidden{{end}}>Retry failed work</button>
+      </div>
+      <a class="sync-settings" href="/activities/settings">Processing preferences <span aria-hidden="true">→</span></a>
+    </section>
+  </details>
+  <script src="/static/sync-status.js" defer></script>
 {{end}}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -85,6 +86,41 @@ func TestSyncErrorsAreOwnedAndSanitized(t *testing.T) {
 	}
 	if view.Failed != 1 || len(view.Errors) != 1 || view.Errors[0].Message == "sensitive provider URL" {
 		t.Fatalf("unsafe status: %+v", view)
+	}
+}
+
+func TestSyncGroupsRepeatedFailuresAndLabelsCompactStatus(t *testing.T) {
+	ctx := context.Background()
+	store, err := storage.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err = store.InitSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for i := int64(1); i <= 92; i++ {
+		if _, err = store.CreateJob(ctx, storage.Job{Type: "process_activity", UserID: 11, ActivityID: i, Status: "failed", LastError: "secret URL and coordinates"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s, err := NewServer(store, nil, nil, nil, gps.StopOptions{}, StravaConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := s.syncView(ctx, 11)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Label != "92 need attention" || view.State != "attention" || len(view.Errors) != 1 || view.Errors[0].Count != 92 || strings.Contains(view.Errors[0].Message, "secret") {
+		t.Fatalf("unexpected status: %+v", view)
+	}
+	if err = store.RetryUserJobs(ctx, 11, false); err != nil {
+		t.Fatal(err)
+	}
+	view, err = s.syncView(ctx, 11)
+	if err != nil || view.State != "working" || view.Label != "Processing · 92 left" || len(view.Errors) != 0 {
+		t.Fatalf("unexpected retry status: %+v %v", view, err)
 	}
 }
 
