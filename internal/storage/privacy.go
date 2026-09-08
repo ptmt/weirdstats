@@ -67,6 +67,12 @@ func validateActivityWrite(ctx context.Context, tx jobDB, userID, activityID int
 func HasJobContext(ctx context.Context) bool { _, ok := ctx.Value(jobContextKey{}).(int64); return ok }
 
 func (s *Store) GuardActivityContext(ctx context.Context, id int64) (context.Context, error) {
+	if guard, ok := ctx.Value(connectionKey{}).(connectionGuard); ok {
+		if guard.ActivityID != id {
+			return ctx, ErrConnectionChanged
+		}
+		return ctx, s.CheckActivityContext(ctx)
+	}
 	a, err := s.GetActivity(ctx, id)
 	if err != nil {
 		return ctx, err

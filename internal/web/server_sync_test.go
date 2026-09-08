@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"weirdstats/internal/gps"
 	"weirdstats/internal/ingest"
+	"weirdstats/internal/maps"
 	"weirdstats/internal/storage"
 )
 
@@ -122,5 +124,56 @@ func TestLimitedReconnectPurgesBroaderDataAfterDisconnect(t *testing.T) {
 	rows, err := store.ListJobs(ctx, 10)
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("recovery jobs: %v %v", rows, err)
+	}
+}
+
+func TestPosterMapContextRequiresConsentAndActiveConnection(t *testing.T) {
+	ctx := context.Background()
+	store, err := storage.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err = store.InitSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.UpsertActivity(ctx, storage.Activity{ID: 42, UserID: 11, Type: "Ride", Name: "Private ride", StartTime: time.Now()}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.UpsertStravaToken(ctx, storage.StravaToken{UserID: 11, AccessToken: "fake"}); err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1); fmt.Fprint(w, `{"elements":[]}`) }))
+	defer upstream.Close()
+	s, err := NewServer(store, nil, nil, &maps.OverpassClient{BaseURL: upstream.URL, DisableCache: true}, gps.StopOptions{}, StravaConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	points := []gps.Point{{Lat: 1, Lon: 2}, {Lat: 1.1, Lon: 2.1}}
+	bbox := maps.BBox{South: 1, West: 2, North: 1.1, East: 2.1}
+	if _, err = s.posterMapContext(ctx, 42, points, bbox, 100, posterProjection{}); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 0 {
+		t.Fatal("poster queried private locations without opt-in")
+	}
+	if err = store.SaveProcessingPreferences(ctx, 11, storage.ProcessingPreferences{ExternalMaps: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.posterMapContext(ctx, 42, points, bbox, 100, posterProjection{}); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 1 {
+		t.Fatal("opted-in poster did not load map context")
+	}
+	if err = store.DeleteStravaToken(ctx, 11); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.posterMapContext(ctx, 42, points, bbox, 100, posterProjection{}); err == nil {
+		t.Fatal("disconnected poster query accepted")
+	}
+	if calls.Load() != 1 {
+		t.Fatal("poster queried after disconnect")
 	}
 }

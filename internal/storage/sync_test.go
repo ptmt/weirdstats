@@ -97,6 +97,9 @@ func TestActivityInvalidationFencesEarlierFetch(t *testing.T) {
 	if _, err = s.UpsertActivity(old, a, nil); !errors.Is(err, ErrConnectionChanged) {
 		t.Fatalf("old fetch accepted: %v", err)
 	}
+	if _, err = s.GuardActivityContext(old, 42); !errors.Is(err, ErrConnectionChanged) {
+		t.Fatalf("old context was replaced with a fresh authorization: %v", err)
+	}
 	fresh, err := s.ActivityFetchContext(ctx, 11, 42, "first")
 	if err != nil {
 		t.Fatal(err)

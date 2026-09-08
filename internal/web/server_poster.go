@@ -434,6 +434,19 @@ func (s *Server) posterPageData(ctx context.Context, userID, activityID int64, p
 		trace.AddField("error", "get_activity")
 		return posterPageData{}, errPosterActivityNotFound
 	}
+	s, err = s.forUser(ctx, userID)
+	if err != nil {
+		return posterPageData{}, err
+	}
+	if s.overpass != nil {
+		guarded, guardErr := s.store.GuardActivityContext(ctx, activityID)
+		if guardErr != nil {
+			// Retained data can still render locally after disconnect.
+			s.overpass = nil
+		} else {
+			ctx = guarded
+		}
+	}
 
 	stepStart = time.Now()
 	points, err := s.store.LoadActivityPoints(ctx, activityID)
@@ -712,12 +725,40 @@ func (s *Server) posterMapContext(ctx context.Context, activityID int64, points 
 		trace.AddField("skipped", true)
 		return posterMapContextView{}, nil
 	}
+	activity, err := s.store.GetActivity(ctx, activityID)
+	if err != nil {
+		return posterMapContextView{}, err
+	}
+	prefs, err := s.store.ProcessingPreferences(ctx, activity.UserID)
+	if err != nil {
+		return posterMapContextView{}, err
+	}
+	if !prefs.ExternalMaps {
+		trace.AddField("skipped", true)
+		return posterMapContextView{}, nil
+	}
+	ctx, err = s.store.GuardActivityContext(ctx, activityID)
+	if err != nil {
+		return posterMapContextView{}, err
+	}
+	ctx = maps.WithAccessCheck(ctx, func(checkCtx context.Context) error {
+		if err := s.store.CheckActivityContext(checkCtx); err != nil {
+			return err
+		}
+		current, err := s.store.ProcessingPreferences(checkCtx, activity.UserID)
+		if err != nil {
+			return err
+		}
+		if !current.ExternalMaps {
+			return storage.ErrProcessingDisabled
+		}
+		return nil
+	})
 
 	if bbox == (maps.BBox{}) {
 		trace.AddField("skipped", true)
 		return posterMapContextView{}, nil
 	}
-	trace.AddField("bbox", fmt.Sprintf("%q", bbox.String()))
 	trace.AddField("padding_m", paddingMeters)
 	trace.AddField("timeout", posterContextLoadTimeout)
 
@@ -729,7 +770,6 @@ func (s *Server) posterMapContext(ctx context.Context, activityID int64, points 
 	trace.AddStep("fetch_context", stepStart)
 	if err != nil {
 		trace.AddField("error", "fetch_context")
-		trace.AddField("error_detail", fmt.Sprintf("%q", err.Error()))
 		return posterMapContextView{}, err
 	}
 	trace.AddField("raw_roads", len(contextData.Roads))
@@ -744,10 +784,6 @@ func (s *Server) posterMapContext(ctx context.Context, activityID int64, points 
 	trace.AddField("waterways", len(view.Waterways))
 	trace.AddField("waters", len(view.Waters))
 	trace.AddField("peaks", len(view.Peaks))
-	trace.AddField("road_names", fmt.Sprintf("%q", posterSelectedLineNames(view.Roads)))
-	trace.AddField("waterway_names", fmt.Sprintf("%q", posterSelectedLineNames(view.Waterways)))
-	trace.AddField("water_names", fmt.Sprintf("%q", posterSelectedAreaNames(view.Waters)))
-	trace.AddField("peak_names", fmt.Sprintf("%q", posterSelectedPeakNames(view.Peaks)))
 	return view, nil
 }
 
