@@ -10,15 +10,19 @@
 		09D785566584ADA3767B5001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17C19AD589121BF86B37C05 /* ContentView.swift */; };
 		0EB262200283E8B41FDB1AD8 /* AuthSessionBroker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A148120F32A48E095AE5A2AC /* AuthSessionBroker.swift */; };
 		2909B966F2B80B069AA4EF95 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72A4881C8173EE70A41794A4 /* AppModel.swift */; };
+		4886B20EED6C061A3912D774 /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 666A1D8D0FCF11A17266C522 /* WelcomeView.swift */; };
 		5B44EBE66EE74C2CF3F5032F /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A99C1329B8F6DFCEED7D596 /* APIClient.swift */; };
 		93BB67927522DC5CFE5F5BF7 /* KeychainTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6C36EB7E3AE6C04C9A0A486 /* KeychainTokenStore.swift */; };
 		D5AD5A25D5B0FDCFF602172C /* WeirdStatsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 004409E3A4C1CADA776F8A15 /* WeirdStatsApp.swift */; };
+		FBB3A55B856DFDC50CAB7972 /* weirdstats.png in Resources */ = {isa = PBXBuildFile; fileRef = 04F31F3F83B1004304F19510 /* weirdstats.png */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		004409E3A4C1CADA776F8A15 /* WeirdStatsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeirdStatsApp.swift; sourceTree = "<group>"; };
+		04F31F3F83B1004304F19510 /* weirdstats.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = weirdstats.png; sourceTree = "<group>"; };
 		3D3E462001615D350BEAB740 /* WeirdStats.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = WeirdStats.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4A99C1329B8F6DFCEED7D596 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		666A1D8D0FCF11A17266C522 /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		72A4881C8173EE70A41794A4 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		A148120F32A48E095AE5A2AC /* AuthSessionBroker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthSessionBroker.swift; sourceTree = "<group>"; };
 		EBBE467A8F7BE6E69C2AEF77 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -30,9 +34,19 @@
 		3D26E0110114BC698A38B862 = {
 			isa = PBXGroup;
 			children = (
+				66E7AF7B44F253B095801F79 /* static */,
 				9638D4548D14915624A02AF1 /* WeirdStats */,
 				B89D80D941F05F7C4AE5C2A6 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		66E7AF7B44F253B095801F79 /* static */ = {
+			isa = PBXGroup;
+			children = (
+				04F31F3F83B1004304F19510 /* weirdstats.png */,
+			);
+			name = static;
+			path = ../internal/web/static;
 			sourceTree = "<group>";
 		};
 		9638D4548D14915624A02AF1 /* WeirdStats */ = {
@@ -45,6 +59,7 @@
 				EBBE467A8F7BE6E69C2AEF77 /* Info.plist */,
 				F6C36EB7E3AE6C04C9A0A486 /* KeychainTokenStore.swift */,
 				004409E3A4C1CADA776F8A15 /* WeirdStatsApp.swift */,
+				666A1D8D0FCF11A17266C522 /* WelcomeView.swift */,
 			);
 			path = WeirdStats;
 			sourceTree = "<group>";
@@ -65,6 +80,7 @@
 			buildConfigurationList = ADB3210868802D4D91D98980 /* Build configuration list for PBXNativeTarget "WeirdStats" */;
 			buildPhases = (
 				A40EC1E18F993B7A12C65827 /* Sources */,
+				ED914A96074269A66EAD25F9 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -110,6 +126,17 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+		ED914A96074269A66EAD25F9 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FBB3A55B856DFDC50CAB7972 /* weirdstats.png in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		A40EC1E18F993B7A12C65827 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -121,6 +148,7 @@
 				09D785566584ADA3767B5001 /* ContentView.swift in Sources */,
 				93BB67927522DC5CFE5F5BF7 /* KeychainTokenStore.swift in Sources */,
 				D5AD5A25D5B0FDCFF602172C /* WeirdStatsApp.swift in Sources */,
+				4886B20EED6C061A3912D774 /* WelcomeView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

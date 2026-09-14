@@ -11,6 +11,8 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: WeirdStats
+      - path: ../internal/web/static/weirdstats.png
+        buildPhase: resources
     info:
       path: WeirdStats/Info.plist
       properties:

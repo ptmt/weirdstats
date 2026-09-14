@@ -5,51 +5,12 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if model.isSignedIn {
-                    signedInView
-                } else {
-                    signedOutView
-                }
-            }
-            .navigationTitle("WeirdStats")
-        }
-    }
-
-    private var signedOutView: some View {
-        Form {
-            Section("Backend") {
-                TextField("https://your-weirdstats.example", text: $model.serverURLText)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.URL)
-            }
-
-            Section {
-                Button(action: {
-                    Task {
-                        await model.signIn()
-                    }
-                }) {
-                    if model.isAuthenticating {
-                        ProgressView()
-                            .frame(maxWidth: .infinity)
-                    } else {
-                        Text("Connect Strava")
-                            .frame(maxWidth: .infinity)
-                    }
-                }
-                .disabled(model.isAuthenticating)
-            } footer: {
-                Text("The app opens the backend mobile OAuth flow in ASWebAuthenticationSession and exchanges the short-lived grant for a backend bearer token.")
-            }
-
-            if !model.errorMessage.isEmpty {
-                Section("Error") {
-                    Text(model.errorMessage)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                }
+            if model.isSignedIn {
+                signedInView
+                    .navigationTitle("WeirdStats")
+            } else {
+                WelcomeView()
+                    .toolbar(.hidden, for: .navigationBar)
             }
         }
     }
