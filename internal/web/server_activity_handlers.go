@@ -318,12 +318,18 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type mapPoint struct {
-		Lat float64 `json:"lat"`
-		Lon float64 `json:"lon"`
+		Lat        float64 `json:"lat"`
+		Lon        float64 `json:"lon"`
+		SpeedColor string  `json:"speedColor,omitempty"`
 	}
+	speedStyle := buildRouteSpeedStyle(points, s.stopOpts.SpeedThreshold)
 	var routePoints []mapPoint
-	for _, p := range points {
-		routePoints = append(routePoints, mapPoint{Lat: p.Lat, Lon: p.Lon})
+	for i, p := range points {
+		point := mapPoint{Lat: p.Lat, Lon: p.Lon}
+		if i > 0 {
+			point.SpeedColor = speedStyle.Colors[i-1]
+		}
+		routePoints = append(routePoints, point)
 	}
 
 	stepStart = time.Now()
@@ -442,6 +448,9 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 		StopMinDuration:   formatDuration(int(s.stopOpts.MinDuration.Seconds())),
 		HasRoutePoints:    len(routePoints) > 0,
 		HasSpeedSeries:    len(speeds) > 0,
+		HasMapSpeed:       speedStyle.Available,
+		MapSpeedSlowKmh:   speedStyle.SlowKmh,
+		MapSpeedFastKmh:   speedStyle.FastKmh,
 	}
 
 	stepStart = time.Now()

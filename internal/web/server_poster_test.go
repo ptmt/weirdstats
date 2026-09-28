@@ -143,6 +143,18 @@ func TestActivityPoster_RendersStoredDetectedFacts(t *testing.T) {
 			t.Fatalf("did not expect %q in poster response", unwanted)
 		}
 	}
+
+	req.URL.RawQuery = "lens=speed&format=square"
+	speedRec := httptest.NewRecorder()
+	server.Activity(speedRec, req)
+	if speedRec.Code != http.StatusOK {
+		t.Fatalf("speed poster returned %d", speedRec.Code)
+	}
+	for _, want := range []string{"story-shot--square", "story-shot--lens-speed", `class="route-speed"`, `class="speed-legend"`, "--poster-height: 1080px"} {
+		if !strings.Contains(speedRec.Body.String(), want) {
+			t.Fatalf("speed poster missing %q", want)
+		}
+	}
 }
 
 func TestActivityPoster_FallsBackToRebuiltFactsWhenCacheMissing(t *testing.T) {
@@ -350,7 +362,14 @@ func TestActivityPosterPNG_RendersImage(t *testing.T) {
 	}()
 
 	wantPNG := tinyPosterPNG(t)
-	posterPNGCapture = func(_ context.Context, html []byte) ([]byte, error) {
+	posterPNGCapture = func(_ context.Context, html []byte, width, height int) ([]byte, error) {
+		wantHeight := 1920
+		if bytes.Contains(html, []byte("class=\"story-shot story-shot--portrait")) {
+			wantHeight = 1350
+		}
+		if width != 1080 || height != wantHeight {
+			t.Fatalf("unexpected export dimensions: %d x %d", width, height)
+		}
 		for _, want := range [][]byte{
 			[]byte("PNG Route"),
 			[]byte("poster-export"),
@@ -434,6 +453,13 @@ func TestActivityPosterPNG_RendersImage(t *testing.T) {
 	}
 	if !bytes.Equal(rec.Body.Bytes(), wantPNG) {
 		t.Fatalf("unexpected png body")
+	}
+
+	req.URL.RawQuery += "&format=portrait"
+	portraitRec := httptest.NewRecorder()
+	server.Activity(portraitRec, req)
+	if portraitRec.Code != http.StatusOK || !bytes.Equal(portraitRec.Body.Bytes(), wantPNG) {
+		t.Fatalf("portrait PNG export failed: status %d", portraitRec.Code)
 	}
 }
 

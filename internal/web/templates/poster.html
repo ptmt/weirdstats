@@ -39,8 +39,8 @@
       }
       body.poster-export {
         min-height: 0;
-        width: 1170px;
-        height: 2532px;
+        width: var(--poster-width);
+        height: var(--poster-height);
         overflow: hidden;
       }
       body.poster-transparent {
@@ -65,8 +65,8 @@
       }
       .poster-page--export {
         display: block;
-        width: 1170px;
-        height: 2532px;
+        width: var(--poster-width);
+        height: var(--poster-height);
         padding: 0;
       }
       .poster-controls {
@@ -171,10 +171,11 @@
         place-items: start center;
         min-width: 0;
       }
+      .poster-page--export .poster-preview { display: block; place-items: normal; }
       .story-shot {
         position: relative;
         width: min(430px, 100%);
-        aspect-ratio: 1170 / 2532;
+        aspect-ratio: var(--poster-aspect);
         border-radius: 42px;
         background:
           linear-gradient(180deg, rgba(255, 255, 255, 0.42), transparent 18%),
@@ -183,6 +184,11 @@
         border: 1px solid rgba(255, 255, 255, 0.64);
         overflow: hidden;
         isolation: isolate;
+      }
+      .story-shot--lens-clean,
+      .story-shot--lens-speed {
+        background: linear-gradient(155deg, #fbfaf6, #eaf1f4);
+        border-color: rgba(47, 57, 75, 0.1);
       }
       .story-shot::before {
         content: "";
@@ -208,14 +214,32 @@
         transform: rotate(-16deg);
         z-index: 0;
       }
+      .story-shot--lens-clean::before,
+      .story-shot--lens-clean::after,
+      .story-shot--lens-speed::before,
+      .story-shot--lens-speed::after { display: none; }
       .story-shot--export {
         width: 430px;
         border-radius: 0;
         border: 0;
         box-shadow: none;
-        transform: scale(2.7209302326);
+        transform: scale(var(--poster-scale));
         transform-origin: top left;
       }
+      .story-shot--square .story-inner,
+      .story-shot--portrait .story-inner {
+        padding: 18px;
+        gap: 10px;
+      }
+      .story-shot--square .story-head h1 { font-size: 30px; }
+      .story-shot--square .story-meta { font-size: 11px; }
+      .story-shot--square .story-brand { font-size: 8px; padding: 4px 8px; }
+      .story-shot--square .story-weird-stats {
+        inset: 8px 8px 50px;
+        grid-template-columns: 72px 1fr 72px;
+      }
+      .story-shot--square .story-weird-stat-summary { font-size: 9px; line-height: 1.15; }
+      .story-shot--portrait .story-weird-stats { inset: 12px 12px 58px; }
       .story-shot--no-header .story-inner {
         grid-template-rows: 1fr;
       }
@@ -324,6 +348,42 @@
         overflow: hidden;
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
       }
+      .story-shot--lens-clean .story-map-frame,
+      .story-shot--lens-speed .story-map-frame {
+        background: #f6f4ed;
+      }
+      .story-shot--lens-clean .context-road,
+      .story-shot--lens-speed .context-road { stroke: rgba(61, 71, 92, 0.16); }
+      .story-shot--lens-clean .context-water-area,
+      .story-shot--lens-speed .context-water-area { fill: #dcebf0; stroke: #b9d8df; }
+      .story-shot--lens-clean .context-waterway,
+      .story-shot--lens-speed .context-waterway { stroke: #a9d0d9; }
+      .story-shot--lens-clean .context-road-label,
+      .story-shot--lens-speed .context-road-label,
+      .story-shot--lens-clean .context-water-label,
+      .story-shot--lens-speed .context-water-label { opacity: 0.55; }
+      .speed-legend {
+        position: absolute;
+        right: 14px;
+        bottom: 58px;
+        display: grid;
+        gap: 5px;
+        width: 132px;
+        padding: 8px 10px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.9);
+        color: #263047;
+        font-size: 9px;
+        font-weight: 800;
+        box-shadow: 0 4px 14px rgba(29, 43, 61, 0.08);
+      }
+      .speed-legend-bar {
+        display: block;
+        height: 7px;
+        border-radius: 99px;
+        background: linear-gradient(90deg, #377cfb, #19b9d2, #76c866, #f4b544, #f06b3f, #df3974);
+      }
+      .speed-legend-labels { display: flex; justify-content: space-between; }
       .story-weird-stats {
         position: absolute;
         inset: 14px 14px 64px;
@@ -508,8 +568,22 @@
       }
       .route-base {
         fill: none;
-        stroke: rgba(22, 11, 57, 0.24);
-        stroke-width: 12;
+        stroke: #8b49db;
+        stroke-width: 11;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .route-halo {
+        fill: none;
+        stroke: rgba(255, 255, 255, 0.94);
+        stroke-width: 19;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .story-shot--lens-speed .route-base { stroke: #d7dbe2; }
+      .route-speed {
+        fill: none;
+        stroke-width: 11;
         stroke-linecap: round;
         stroke-linejoin: round;
       }
@@ -564,7 +638,7 @@
       }
     </style>
   </head>
-  <body class="{{if .PNGExport}}poster-export{{end}}{{if .Options.Transparent}} poster-transparent{{end}}">
+  <body class="{{if .PNGExport}}poster-export{{end}}{{if .Options.Transparent}} poster-transparent{{end}}" style="--poster-width: {{.ExportWidth}}px; --poster-height: {{.ExportHeight}}px; --poster-aspect: {{.ExportWidth}} / {{.ExportHeight}}; --poster-scale: {{printf "%.8f" .ExportScale}};">
     <div class="poster-page{{if .PNGExport}} poster-page--export{{end}}">
       {{if not .PNGExport}}
         <form class="poster-controls" method="get" action="/activity/{{.ActivityID}}/poster">
@@ -573,6 +647,21 @@
             <p>Trim the poster down, switch the treatment, then export the exact same render as PNG.</p>
           </div>
           <div class="poster-controls-grid">
+            <label class="poster-select">
+              <span>Map lens</span>
+              <select name="lens" onchange="this.form.submit()">
+                <option value="clean" {{if eq .Options.Lens "clean"}}selected{{end}}>Clean route</option>
+                <option value="speed" {{if eq .Options.Lens "speed"}}selected{{end}} {{if not .HasSpeed}}disabled{{end}}>Speed gradient</option>
+              </select>
+            </label>
+            <label class="poster-select">
+              <span>Export shape</span>
+              <select name="format" onchange="this.form.submit()">
+                <option value="story" {{if eq .Options.Format "story"}}selected{{end}}>Story · 1080 × 1920</option>
+                <option value="portrait" {{if eq .Options.Format "portrait"}}selected{{end}}>Portrait · 1080 × 1350</option>
+                <option value="square" {{if eq .Options.Format "square"}}selected{{end}}>Square · 1080 × 1080</option>
+              </select>
+            </label>
             <div class="poster-toggle">
               <input type="hidden" name="header" value="0" />
               <input type="checkbox" id="poster-header" name="header" value="1" {{if .Options.ShowHeader}}checked{{end}} onchange="this.form.submit()" />
@@ -586,7 +675,7 @@
             <div class="poster-toggle">
               <input type="hidden" name="context" value="0" />
               <input type="checkbox" id="poster-context" name="context" value="1" {{if .Options.ShowContext}}checked{{end}} onchange="this.form.submit()" />
-              <span>Context</span>
+              <span>Local context</span>
             </div>
             <div class="poster-toggle">
               <input type="hidden" name="basics" value="0" />
@@ -627,7 +716,7 @@
         </form>
       {{end}}
       <div class="poster-preview">
-        <article class="story-shot{{if .PNGExport}} story-shot--export{{end}}{{if not .ShowHeaderBlock}} story-shot--no-header{{end}}{{if .Options.Transparent}} story-shot--transparent{{end}}{{if .Options.Uppercase}} story-shot--uppercase{{end}}{{if .Options.Monochrome}} story-shot--mono{{end}}">
+        <article class="story-shot story-shot--{{.Options.Format}} story-shot--lens-{{.Options.Lens}}{{if .PNGExport}} story-shot--export{{end}}{{if not .ShowHeaderBlock}} story-shot--no-header{{end}}{{if .Options.Transparent}} story-shot--transparent{{end}}{{if .Options.Uppercase}} story-shot--uppercase{{end}}{{if .Options.Monochrome}} story-shot--mono{{end}}">
           <div class="story-inner">
             {{if .ShowHeaderBlock}}
               <header class="story-head">
@@ -664,10 +753,20 @@
                       </g>
                       <text class="context-peak-label" x="{{printf "%.1f" .X}}" y="{{printf "%.1f" .Y}}" dy="-20">{{.Name}}</text>
                     {{end}}
+                    <path class="route-halo" d="{{.RoutePath}}" />
                     <path class="route-base" d="{{.RoutePath}}" />
+                    {{if eq .Options.Lens "speed"}}
+                      {{range .SpeedPaths}}<path class="route-speed" d="{{.Path}}" stroke="{{.Color}}" />{{end}}
+                    {{end}}
                     <circle class="start-dot" cx="{{printf "%.1f" .RouteStartX}}" cy="{{printf "%.1f" .RouteStartY}}" r="12" fill="#75ff57" />
                     <circle class="end-dot" cx="{{printf "%.1f" .RouteEndX}}" cy="{{printf "%.1f" .RouteEndY}}" r="12" fill="#160b39" />
                   </svg>
+                  {{if eq .Options.Lens "speed"}}
+                    <div class="speed-legend" aria-label="Speed from {{.SpeedSlowKmh}} to {{.SpeedFastKmh}} kilometers per hour">
+                      <span>SPEED · KM/H</span><span class="speed-legend-bar"></span>
+                      <span class="speed-legend-labels"><span>{{.SpeedSlowKmh}}</span><span>{{.SpeedFastKmh}}</span></span>
+                    </div>
+                  {{end}}
                   {{if or .WeirdStatsLeft .WeirdStatsRight}}
                     <div class="story-weird-stats">
                       <div class="story-weird-stats-col">

@@ -187,7 +187,37 @@
         height: min(74vh, 760px);
         min-height: 560px;
         width: 100%;
+        background-color: #f6f4ed;
+        background-image:
+          radial-gradient(circle at 22% 18%, rgba(193, 220, 224, 0.32), transparent 38%),
+          repeating-linear-gradient(0deg, transparent 0 79px, rgba(82, 101, 117, 0.045) 80px),
+          repeating-linear-gradient(90deg, transparent 0 79px, rgba(82, 101, 117, 0.045) 80px);
       }
+      .map-lens-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .map-lens-group { display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); }
+      .map-lens-group button {
+        border: 0;
+        border-radius: 999px;
+        padding: 8px 13px;
+        background: transparent;
+        color: var(--ink-muted);
+        font: inherit;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .map-lens-group button[aria-pressed="true"] { background: #8b49db; color: #fff; }
+      .map-lens-group button:disabled { opacity: 0.4; cursor: not-allowed; }
+      .map-lens-group button:focus-visible { outline: 2px solid #8b49db; outline-offset: 2px; }
+      .map-speed-legend { display: flex; align-items: center; gap: 10px; color: var(--ink-muted); font-size: 12px; font-weight: 700; }
+      .map-speed-legend[hidden] { display: none; }
+      .map-speed-legend-bar { width: 126px; height: 9px; border-radius: 99px; background: linear-gradient(90deg, #377cfb, #19b9d2, #76c866, #f4b544, #f06b3f, #df3974); }
       .activity-route-events {
         display: grid;
         gap: 14px;
@@ -505,7 +535,7 @@
               Refresh
             </button>
           </form>
-          <a class="activity-action-btn" href="/activity/{{.Activity.ID}}/poster" target="_blank" rel="noopener">
+          <a class="activity-action-btn" href="/activity/{{.Activity.ID}}/poster" data-poster-link target="_blank" rel="noopener">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="18" cy="5" r="3"/>
               <circle cx="6" cy="12" r="3"/>
@@ -569,7 +599,7 @@
               </svg>
               Open in Strava
             </a>
-            <a href="/activity/{{.Activity.ID}}/poster" class="dropdown-link" target="_blank" rel="noopener">
+            <a href="/activity/{{.Activity.ID}}/poster" class="dropdown-link" data-poster-link target="_blank" rel="noopener">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="18" cy="5" r="3"/>
                 <circle cx="6" cy="12" r="3"/>
@@ -615,8 +645,19 @@
       <div class="activity-route-grid">
         <div class="activity-route-map-wrap">
           {{if .HasRoutePoints}}
+            <div class="map-lens-toolbar">
+              <div class="map-lens-group" role="group" aria-label="Map lens">
+                <button type="button" data-map-lens="clean" aria-pressed="true">Clean</button>
+                <button type="button" data-map-lens="speed" aria-pressed="false" {{if not .HasMapSpeed}}disabled title="No usable speed data for this route"{{end}}>Speed</button>
+              </div>
+              <div class="map-lens-group" role="group" aria-label="Map detail">
+                <button type="button" data-map-detail="minimal" aria-pressed="true">Minimal</button>
+                <button type="button" data-map-detail="streets" aria-pressed="false">Streets</button>
+              </div>
+            </div>
             <div id="map"></div>
-            <div class="map-note">Magenta: route line · Red: traffic lights · Blue: road crossings · Amber: stops · Overlay colors match the fact list.</div>
+            <div class="map-speed-legend" id="map-speed-legend" hidden><span>Slower · {{.MapSpeedSlowKmh}} km/h</span><span class="map-speed-legend-bar"></span><span>Faster · {{.MapSpeedFastKmh}} km/h</span></div>
+            <div class="map-note">Select a fact or stop to reveal it on the route. Green marks the start; dark marks the finish.</div>
             <div class="map-note" id="map-error" style="display:none; color:#c00;">Map tiles failed to load. Configure an alternative tile URL if needed.</div>
           {{else}}
             <div class="activity-empty-state">
@@ -925,16 +966,75 @@
 
       const map = L.map('map', { zoomControl: true, scrollWheelZoom: false });
       const coords = points.map(p => [p.lat, p.lon]);
-      const polyline = L.polyline(coords, { color: '#a855f7', weight: 4, opacity: 0.9 }).addTo(map);
-      map.fitBounds(polyline.getBounds(), { padding: [12, 12] });
+      L.polyline(coords, { color: '#fff', weight: 10, opacity: 0.94, interactive: false }).addTo(map);
+      const routeLine = L.polyline(coords, { color: '#8b49db', weight: 6, opacity: 0.96, interactive: false }).addTo(map);
+      map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
+      const speedLayer = L.layerGroup();
+      for (let start = 1; start < points.length;) {
+        const color = points[start].speedColor || '#9ca3af';
+        let end = start + 1;
+        while (end < points.length && points[end].speedColor === color) end++;
+        L.polyline(coords.slice(start - 1, end), { color, weight: 6, opacity: 0.98, interactive: false }).addTo(speedLayer);
+        start = end;
+      }
       const tile = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         attribution: '&copy; OpenStreetMap contributors'
-      }).addTo(map);
+      });
       tile.on('tileerror', function() {
         const err = document.getElementById('map-error');
         if (err) err.style.display = 'block';
       });
+
+      const startMarker = L.circleMarker(coords[0], { radius: 6, color: '#fff', weight: 2, fillColor: '#4bba73', fillOpacity: 1 }).addTo(map);
+      const endMarker = L.circleMarker(coords[coords.length - 1], { radius: 6, color: '#fff', weight: 2, fillColor: '#263047', fillOpacity: 1 }).addTo(map);
+
+      let activeLens = 'clean';
+      let activeDetail = 'minimal';
+      function updatePosterLinks() {
+        document.querySelectorAll('[data-poster-link]').forEach(link => {
+          const url = new URL(link.href, window.location.href);
+          url.searchParams.set('lens', activeLens);
+          url.searchParams.set('context', activeDetail === 'streets' ? '1' : '0');
+          link.href = url.pathname + url.search;
+        });
+      }
+      document.querySelectorAll('[data-map-lens]').forEach(button => {
+        button.addEventListener('click', () => {
+          if (button.disabled || button.dataset.mapLens === activeLens) return;
+          activeLens = button.dataset.mapLens;
+          if (activeLens === 'speed') {
+            map.removeLayer(routeLine);
+            speedLayer.addTo(map);
+          } else {
+            map.removeLayer(speedLayer);
+            routeLine.addTo(map);
+          }
+          startMarker.bringToFront();
+          endMarker.bringToFront();
+          if (focusedLayer) {
+            map.removeLayer(focusedLayer);
+            focusedLayer.addTo(map);
+          }
+          document.querySelectorAll('[data-map-lens]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+          document.getElementById('map-speed-legend').hidden = activeLens !== 'speed';
+          updatePosterLinks();
+        });
+      });
+      document.querySelectorAll('[data-map-detail]').forEach(button => {
+        button.addEventListener('click', () => {
+          if (button.dataset.mapDetail === activeDetail) return;
+          activeDetail = button.dataset.mapDetail;
+          if (activeDetail === 'streets') tile.addTo(map);
+          else {
+            map.removeLayer(tile);
+            document.getElementById('map-error').style.display = 'none';
+          }
+          document.querySelectorAll('[data-map-detail]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+          updatePosterLinks();
+        });
+      });
+      updatePosterLinks();
 
       const stopMarkers = new Map();
       stops.forEach(stop => {
@@ -945,7 +1045,7 @@
           fillColor: color,
           fillOpacity: 0.85,
           weight: 2
-        }).addTo(map);
+        });
         let label = stop.duration;
         if (stop.has_traffic_light) label += ' · traffic light';
         else if (stop.has_road_crossing) label += ' · road crossing' + (stop.crossing_road ? ` (${stop.crossing_road})` : '');
@@ -979,10 +1079,23 @@
         });
 
         if (layer.getLayers().length > 0) {
-          layer.addTo(map);
           factLayers.set(fact.id, layer);
         }
       });
+
+      let focusedLayer = null;
+      function showFocusLayer(layer) {
+        if (!layer) return;
+        if (focusedLayer === layer) {
+          map.removeLayer(layer);
+          focusedLayer = null;
+          return;
+        }
+        if (focusedLayer && focusedLayer !== layer) map.removeLayer(focusedLayer);
+        focusedLayer = layer;
+        if (!map.hasLayer(layer)) layer.addTo(map);
+        focusLayer(layer);
+      }
 
       function openLayerPopup(layer) {
         if (!layer) return;
@@ -1028,7 +1141,7 @@
 
       document.querySelectorAll('[data-focus-fact]').forEach(button => {
         button.addEventListener('click', () => {
-          focusLayer(factLayers.get(button.dataset.focusFact));
+          showFocusLayer(factLayers.get(button.dataset.focusFact));
         });
       });
 
@@ -1040,7 +1153,7 @@
           const key = `${lat.toFixed(6)},${lon.toFixed(6)}`;
           const marker = stopMarkers.get(key);
           if (marker) {
-            focusLayer(marker);
+            showFocusLayer(marker);
             return;
           }
           map.flyTo([lat, lon], Math.max(map.getZoom(), 16), { animate: true, duration: 0.6 });

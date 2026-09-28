@@ -462,6 +462,10 @@ func TestActivityDetail_ShowsMapLinkedFacts(t *testing.T) {
 		"2026 best",
 		"All-time best",
 		"The map is the primary view.",
+		`data-map-lens="clean"`,
+		`data-map-lens="speed"`,
+		`data-map-detail="minimal"`,
+		`"speedColor":"`,
 		"Speed timeline",
 		"/activity/" + strconv.FormatInt(activityID, 10) + "/poster",
 	} {

@@ -156,6 +156,9 @@ type ActivityDetailData struct {
 	StopMinDuration   string
 	HasRoutePoints    bool
 	HasSpeedSeries    bool
+	HasMapSpeed       bool
+	MapSpeedSlowKmh   int
+	MapSpeedFastKmh   int
 }
 
 type StravaInfo struct {
