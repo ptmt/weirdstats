@@ -575,87 +575,6 @@
   </section>
 
   <section class="activity-detail-grid">
-    {{with .RidePacing}}
-      <article class="card">
-        <div class="activity-stage-head">
-          <div>
-            <h3 class="section-title">Race pace</h3>
-            <div class="map-note">Four equal-distance splits from {{.Distance}} of stored GPS. Times are elapsed and include pauses; power and heart rate appear where recorded.</div>
-          </div>
-        </div>
-        <div class="pacing-highlights">
-          {{if .FastestFiveKM}}
-            <div class="pacing-highlight">
-              <span class="pacing-highlight-label">Quickest 5 km</span>
-              <strong>{{.FastestFiveKM}}</strong>
-              <span class="pacing-highlight-detail">{{.FastestFiveFrom}}</span>
-            </div>
-          {{end}}
-          <div class="pacing-highlight">
-            <span class="pacing-highlight-label">Fastest quarter</span>
-            <strong>{{.FastestSplit}}</strong>
-            <span class="pacing-highlight-detail">Best average speed across the four splits</span>
-          </div>
-          <div class="pacing-highlight">
-            <span class="pacing-highlight-label">Finish vs start</span>
-            <strong>{{.FinishChange}}</strong>
-            <span class="pacing-highlight-detail">{{.FinishDetail}}</span>
-          </div>
-        </div>
-        <div class="pacing-table-wrap">
-          <table class="pacing-table">
-            <thead><tr><th scope="col">Split</th><th scope="col">Route</th><th scope="col">Time</th><th scope="col">Avg speed</th><th scope="col">Avg power</th><th scope="col">Avg HR</th></tr></thead>
-            <tbody>
-              {{range .Splits}}
-                <tr>
-                  <td>{{.Label}} {{if .Fastest}}<span class="pacing-fastest">★ fastest</span>{{end}}</td>
-                  <td>{{.Distance}}</td>
-                  <td>{{.Duration}}</td>
-                  <td>{{.Speed}}</td>
-                  <td>{{if .HasPower}}{{.Power}}{{else}}—{{end}}</td>
-                  <td>{{if .HasHeartRate}}{{.HeartRate}}{{else}}—{{end}}</td>
-                </tr>
-              {{end}}
-            </tbody>
-          </table>
-        </div>
-      </article>
-    {{end}}
-    {{with .Drafting}}
-      <article class="card">
-        <div class="activity-stage-head">
-          <div>
-            <h3 class="section-title">Power at steady speed</h3>
-            <div class="map-note">{{.Detail}}</div>
-          </div>
-          {{if .Candidates}}<span class="activity-panel-count">{{.Confidence}}/100 · {{.ConfidenceLabel}}</span>{{end}}
-        </div>
-        {{if .Candidates}}
-          <div class="badge-row" style="margin-bottom: 16px;">
-            <span class="pill secondary">{{.Count}} possible shifts</span>
-            <span class="pill secondary">{{.CandidateTime}} in matched windows</span>
-          </div>
-          <div class="activity-data-grid">
-            {{range .Candidates}}
-              <div class="activity-data-row">
-                <div class="activity-data-copy">
-                  <div class="activity-data-label">{{.Interval}} · {{.Duration}}</div>
-                  <div class="activity-data-detail">{{.PowerDrop}} while averaging {{.Speed}}</div>
-                </div>
-                <div class="activity-data-value">{{.Confidence}}/100</div>
-              </div>
-            {{end}}
-          </div>
-        {{else}}
-          <p class="muted">{{.Status}}</p>
-          {{if .NeedsRefresh}}
-            <form method="post" action="/activity/{{$.Activity.ID}}/refresh">
-              <button type="submit" class="activity-action-btn">Refresh activity</button>
-            </form>
-          {{end}}
-        {{end}}
-      </article>
-    {{end}}
     <article class="card">
       <div class="activity-stage-head">
         <div>
@@ -737,6 +656,87 @@
         </aside>
       </div>
     </article>
+    {{with .RidePacing}}
+      <article class="card">
+        <div class="activity-stage-head">
+          <div>
+            <h3 class="section-title">Race pace</h3>
+            <div class="map-note">Four equal-distance splits from {{.Distance}} of stored GPS. Times are elapsed and include pauses; power and heart rate appear where recorded.</div>
+          </div>
+        </div>
+        <div class="pacing-highlights">
+          {{if .FastestFiveKM}}
+            <div class="pacing-highlight">
+              <span class="pacing-highlight-label">Quickest 5 km</span>
+              <strong>{{.FastestFiveKM}}</strong>
+              <span class="pacing-highlight-detail">{{.FastestFiveFrom}}</span>
+            </div>
+          {{end}}
+          <div class="pacing-highlight">
+            <span class="pacing-highlight-label">Fastest quarter</span>
+            <strong>{{.FastestSplit}}</strong>
+            <span class="pacing-highlight-detail">Best average speed across the four splits</span>
+          </div>
+          <div class="pacing-highlight">
+            <span class="pacing-highlight-label">Finish vs start</span>
+            <strong>{{.FinishChange}}</strong>
+            <span class="pacing-highlight-detail">{{.FinishDetail}}</span>
+          </div>
+        </div>
+        <div class="pacing-table-wrap">
+          <table class="pacing-table">
+            <thead><tr><th scope="col">Split</th><th scope="col">Route</th><th scope="col">Time</th><th scope="col">Avg speed</th><th scope="col">Avg power</th><th scope="col">Avg HR</th></tr></thead>
+            <tbody>
+              {{range .Splits}}
+                <tr>
+                  <td>{{.Label}} {{if .Fastest}}<span class="pacing-fastest">★ fastest</span>{{end}}</td>
+                  <td>{{.Distance}}</td>
+                  <td>{{.Duration}}</td>
+                  <td>{{.Speed}}</td>
+                  <td>{{if .HasPower}}{{.Power}}{{else}}—{{end}}</td>
+                  <td>{{if .HasHeartRate}}{{.HeartRate}}{{else}}—{{end}}</td>
+                </tr>
+              {{end}}
+            </tbody>
+          </table>
+        </div>
+      </article>
+    {{end}}
+    {{with .Drafting}}
+      <article class="card">
+        <div class="activity-stage-head">
+          <div>
+            <h3 class="section-title">Power at steady speed</h3>
+            <div class="map-note">{{.Detail}}</div>
+          </div>
+          {{if .Candidates}}<span class="activity-panel-count">{{.Confidence}}/100 · {{.ConfidenceLabel}}</span>{{end}}
+        </div>
+        {{if .Candidates}}
+          <div class="badge-row" style="margin-bottom: 16px;">
+            <span class="pill secondary">{{.Count}} possible shifts</span>
+            <span class="pill secondary">{{.CandidateTime}} in matched windows</span>
+          </div>
+          <div class="activity-data-grid">
+            {{range .Candidates}}
+              <div class="activity-data-row">
+                <div class="activity-data-copy">
+                  <div class="activity-data-label">{{.Interval}} · {{.Duration}}</div>
+                  <div class="activity-data-detail">{{.PowerDrop}} while averaging {{.Speed}}</div>
+                </div>
+                <div class="activity-data-value">{{.Confidence}}/100</div>
+              </div>
+            {{end}}
+          </div>
+        {{else}}
+          <p class="muted">{{.Status}}</p>
+          {{if .NeedsRefresh}}
+            <form method="post" action="/activity/{{$.Activity.ID}}/refresh">
+              <button type="submit" class="activity-action-btn">Refresh activity</button>
+            </form>
+          {{end}}
+        {{end}}
+      </article>
+    {{end}}
     <article class="card chart-card">
       <div class="chart-head">
         <h3>Speed timeline</h3>
