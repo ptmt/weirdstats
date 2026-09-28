@@ -77,6 +77,59 @@
         display: grid;
         gap: 20px;
       }
+      .pacing-highlights {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin: 18px 0;
+      }
+      .pacing-highlight {
+        display: grid;
+        align-content: start;
+        gap: 6px;
+        padding: 16px;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: rgba(168, 85, 247, 0.06);
+      }
+      .pacing-highlight-label {
+        color: var(--ink-muted);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .pacing-highlight strong {
+        color: var(--ink);
+        font-size: 24px;
+        font-variant-numeric: tabular-nums;
+      }
+      .pacing-highlight-detail {
+        color: var(--ink-muted);
+        font-size: 12px;
+      }
+      .pacing-table-wrap { overflow-x: auto; }
+      .pacing-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-variant-numeric: tabular-nums;
+      }
+      .pacing-table th,
+      .pacing-table td {
+        padding: 11px 10px;
+        border-bottom: 1px solid var(--border);
+        text-align: left;
+        white-space: nowrap;
+      }
+      .pacing-table th {
+        color: var(--ink-muted);
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .pacing-table td { color: var(--ink); font-size: 13px; }
+      .pacing-table tr:last-child td { border-bottom: 0; }
+      .pacing-fastest { color: var(--purple); font-size: 11px; font-weight: 700; }
       .activity-stage-head {
         display: flex;
         align-items: flex-start;
@@ -317,6 +370,7 @@
         cursor: pointer;
       }
       @media (max-width: 980px) {
+        .pacing-highlights { grid-template-columns: 1fr; }
         .activity-route-grid {
           grid-template-columns: 1fr;
         }
@@ -521,6 +575,52 @@
   </section>
 
   <section class="activity-detail-grid">
+    {{with .RidePacing}}
+      <article class="card">
+        <div class="activity-stage-head">
+          <div>
+            <h3 class="section-title">Race pace</h3>
+            <div class="map-note">Four equal-distance splits from {{.Distance}} of stored GPS. Times are elapsed and include pauses; power and heart rate appear where recorded.</div>
+          </div>
+        </div>
+        <div class="pacing-highlights">
+          {{if .FastestFiveKM}}
+            <div class="pacing-highlight">
+              <span class="pacing-highlight-label">Quickest 5 km</span>
+              <strong>{{.FastestFiveKM}}</strong>
+              <span class="pacing-highlight-detail">{{.FastestFiveFrom}}</span>
+            </div>
+          {{end}}
+          <div class="pacing-highlight">
+            <span class="pacing-highlight-label">Fastest quarter</span>
+            <strong>{{.FastestSplit}}</strong>
+            <span class="pacing-highlight-detail">Best average speed across the four splits</span>
+          </div>
+          <div class="pacing-highlight">
+            <span class="pacing-highlight-label">Finish vs start</span>
+            <strong>{{.FinishChange}}</strong>
+            <span class="pacing-highlight-detail">{{.FinishDetail}}</span>
+          </div>
+        </div>
+        <div class="pacing-table-wrap">
+          <table class="pacing-table">
+            <thead><tr><th scope="col">Split</th><th scope="col">Route</th><th scope="col">Time</th><th scope="col">Avg speed</th><th scope="col">Avg power</th><th scope="col">Avg HR</th></tr></thead>
+            <tbody>
+              {{range .Splits}}
+                <tr>
+                  <td>{{.Label}} {{if .Fastest}}<span class="pacing-fastest">★ fastest</span>{{end}}</td>
+                  <td>{{.Distance}}</td>
+                  <td>{{.Duration}}</td>
+                  <td>{{.Speed}}</td>
+                  <td>{{if .HasPower}}{{.Power}}{{else}}—{{end}}</td>
+                  <td>{{if .HasHeartRate}}{{.HeartRate}}{{else}}—{{end}}</td>
+                </tr>
+              {{end}}
+            </tbody>
+          </table>
+        </div>
+      </article>
+    {{end}}
     <article class="card">
       <div class="activity-stage-head">
         <div>

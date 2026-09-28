@@ -143,6 +143,7 @@ type routePreviewPoint struct {
 type ActivityDetailData struct {
 	PageData
 	Activity          ActivityView
+	RidePacing        *RidePacingView
 	Stops             []StopView
 	DetectedFacts     []ActivityMapFactView
 	DataItems         []ActivityDataItem

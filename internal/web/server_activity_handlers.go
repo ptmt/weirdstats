@@ -426,6 +426,7 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 			UserCount:  s.userCount(r.Context()),
 		},
 		Activity:          view,
+		RidePacing:        buildRidePacingView(activity, points),
 		Stops:             stopViews,
 		DetectedFacts:     detectedFacts,
 		DataItems:         dataItems,
