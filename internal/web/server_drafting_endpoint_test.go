@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"weirdstats/internal/gps"
@@ -80,5 +81,12 @@ func TestActivityDraftingRecalculatesSavedRide(t *testing.T) {
 	}
 	if other := request("/activity/43/drafting?window=10&drop=12"); other.Code != http.StatusNotFound {
 		t.Fatalf("other activity visible: %d", other.Code)
+	}
+	page := request("/activity/42")
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "Possible shifts along the ride") ||
+		!strings.Contains(page.Body.String(), "const initialView = {") ||
+		!strings.Contains(page.Body.String(), "const rideSeries = [{") ||
+		!strings.Contains(page.Body.String(), "after start") {
+		t.Fatalf("ride page missing timeline data: status=%d", page.Code)
 	}
 }

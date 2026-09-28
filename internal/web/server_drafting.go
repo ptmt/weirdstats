@@ -1,7 +1,9 @@
 package web
 
 import (
+	"encoding/json"
 	"fmt"
+	"html/template"
 	"math"
 	"sort"
 	"time"
@@ -24,14 +26,30 @@ type DraftingView struct {
 	ConfidenceLabel string
 	CandidateTime   string
 	Candidates      []DraftingCandidateView
+	Events          []DraftingCandidateView
+	RideDurationSec int
+	TimelineJSON    template.JS `json:"-"`
+	InitialJSON     template.JS `json:"-"`
 }
 
 type DraftingCandidateView struct {
-	Interval   string
-	Duration   string
-	Speed      string
-	PowerDrop  string
-	Confidence int
+	Interval         string
+	Duration         string
+	Speed            string
+	SpeedChange      string
+	GradeChange      string
+	PowerDrop        string
+	Confidence       int
+	StartSec         int
+	EndSec           int
+	BaselineStartSec int
+	LowStartSec      int
+}
+
+type draftTimelinePoint struct {
+	TimeSec int      `json:"t"`
+	Power   *float64 `json:"p"`
+	Speed   *float64 `json:"s"`
 }
 
 type draftBucket struct {
@@ -59,6 +77,7 @@ type draftCandidate struct {
 	highPower  float64
 	lowPower   float64
 	speed      float64
+	lowGrade   float64
 	speedDiff  float64
 	gradeDiff  float64
 	confidence int
@@ -82,7 +101,20 @@ type draftingOptions struct {
 var defaultDraftingOptions = draftingOptions{windowSeconds: 15, minDropPercent: 12}
 
 func buildDraftingView(activity storage.Activity, points []gps.Point) *DraftingView {
-	return buildDraftingViewWithOptions(activity, points, defaultDraftingOptions)
+	view := buildDraftingViewWithOptions(activity, points, defaultDraftingOptions)
+	if view != nil && view.CanTune {
+		series := buildDraftTimeline(points)
+		if series == nil {
+			series = []draftTimelinePoint{}
+		}
+		if timeline, err := json.Marshal(series); err == nil {
+			view.TimelineJSON = template.JS(timeline)
+		}
+		if initial, err := json.Marshal(view); err == nil {
+			view.InitialJSON = template.JS(initial)
+		}
+	}
+	return view
 }
 
 func buildDraftingViewWithOptions(activity storage.Activity, points []gps.Point, options draftingOptions) *DraftingView {
@@ -99,7 +131,8 @@ func buildDraftingViewWithOptions(activity storage.Activity, points []gps.Point,
 	if !hasPower {
 		return nil
 	}
-	view := &DraftingView{WindowSeconds: options.windowSeconds, MinDropPercent: options.minDropPercent}
+	view := &DraftingView{WindowSeconds: options.windowSeconds, MinDropPercent: options.minDropPercent, InitialJSON: template.JS("null"), TimelineJSON: template.JS("[]")}
+	view.RideDurationSec = int(points[len(points)-1].Time.Sub(points[0].Time).Seconds())
 	if activity.DeviceWatts == nil {
 		if activity.PowerSourceChecked {
 			view.Status = "Power source unavailable from Strava"
@@ -128,24 +161,32 @@ func buildDraftingViewWithOptions(activity storage.Activity, points []gps.Point,
 
 	view.Status = "Possible draft-like shifts"
 	view.Count = len(candidates)
-	view.Detail = fmt.Sprintf("Adjacent %d-second windows with a power drop of at least %d%% and 20 W at similar speed, grade, and direction. Scores measure pattern strength, not drafting probability or proven position.", options.windowSeconds, options.minDropPercent)
+	view.Detail = "Power fell while speed stayed steady. Select a marker to inspect the compared windows. Scores describe pattern strength, not rider position."
 	if activity.AthleteCount > 1 {
 		view.Detail = fmt.Sprintf("Strava grouped %d riders. %s", activity.AthleteCount, view.Detail)
 	} else {
-		view.Detail = "Strava group count is unavailable for this ride; scores are capped at 65. " + view.Detail
+		view.Detail = "Strava group count unavailable; maximum score 65. " + view.Detail
 	}
 	var totalDuration time.Duration
 	for i := range candidates {
 		candidate := &candidates[i]
 		candidate.confidence = draftConfidence(*candidate, len(candidates), activity.AthleteCount > 1)
 		totalDuration += candidate.end.Sub(candidate.start)
-		view.Candidates = append(view.Candidates, DraftingCandidateView{
-			Interval:   fmt.Sprintf("%s–%s into ride", formatPacingDuration(candidate.start.Sub(points[0].Time)), formatPacingDuration(candidate.end.Sub(points[0].Time))),
-			Duration:   formatDuration(int(candidate.end.Sub(candidate.start).Seconds())),
-			Speed:      fmt.Sprintf("%.1f km/h", candidate.speed*3.6),
-			PowerDrop:  fmt.Sprintf("%.0f → %.0f W (−%.0f%%)", candidate.highPower, candidate.lowPower, (1-candidate.lowPower/candidate.highPower)*100),
-			Confidence: candidate.confidence,
-		})
+		event := DraftingCandidateView{
+			Interval:         fmt.Sprintf("%s → %s after start", formatDraftElapsed(candidate.start.Sub(points[0].Time)), formatDraftElapsed(candidate.end.Sub(points[0].Time))),
+			Duration:         formatDuration(int(candidate.end.Sub(candidate.start).Seconds())),
+			Speed:            fmt.Sprintf("%.1f km/h", candidate.speed*3.6),
+			SpeedChange:      fmt.Sprintf("%.1f → %.1f km/h", candidate.high.speed*3.6, candidate.speed*3.6),
+			GradeChange:      fmt.Sprintf("%+.1f%% → %+.1f%%", candidate.high.grade, candidate.lowGrade),
+			PowerDrop:        fmt.Sprintf("%.0f → %.0f W (−%.0f%%)", candidate.highPower, candidate.lowPower, (1-candidate.lowPower/candidate.highPower)*100),
+			Confidence:       candidate.confidence,
+			StartSec:         int(candidate.start.Sub(points[0].Time).Seconds()),
+			EndSec:           int(candidate.end.Sub(points[0].Time).Seconds()),
+			BaselineStartSec: int(candidate.high.start.Sub(points[0].Time).Seconds()),
+			LowStartSec:      int(candidate.high.start.Sub(points[0].Time).Seconds()) + options.windowSeconds,
+		}
+		view.Events = append(view.Events, event)
+		view.Candidates = append(view.Candidates, event)
 		if candidate.confidence > view.Confidence {
 			view.Confidence = candidate.confidence
 		}
@@ -161,7 +202,59 @@ func buildDraftingViewWithOptions(activity storage.Activity, points []gps.Point,
 	if len(view.Candidates) > 5 {
 		view.Candidates = view.Candidates[:5]
 	}
+	sort.Slice(view.Candidates, func(i, j int) bool { return view.Candidates[i].StartSec < view.Candidates[j].StartSec })
 	return view
+}
+
+func formatDraftElapsed(duration time.Duration) string {
+	seconds := max(0, int(duration.Seconds()))
+	if seconds >= 3600 {
+		return fmt.Sprintf("%dh %02dm %02ds", seconds/3600, seconds/60%60, seconds%60)
+	}
+	return fmt.Sprintf("%dm %02ds", seconds/60, seconds%60)
+}
+
+func buildDraftTimeline(points []gps.Point) []draftTimelinePoint {
+	if len(points) < 2 {
+		return nil
+	}
+	duration := int(points[len(points)-1].Time.Sub(points[0].Time).Seconds())
+	if duration <= 0 || duration > 24*3600 {
+		return nil
+	}
+	type sampleBucket struct {
+		powerSum, speedSum     float64
+		powerCount, speedCount int
+	}
+	buckets := make([]sampleBucket, duration/5+1)
+	for _, point := range points {
+		second := int(point.Time.Sub(points[0].Time).Seconds())
+		if second < 0 || second > duration {
+			continue
+		}
+		bucket := &buckets[second/5]
+		if point.HasPower && !math.IsNaN(point.Power) && !math.IsInf(point.Power, 0) && point.Power >= 0 {
+			bucket.powerSum += point.Power
+			bucket.powerCount++
+		}
+		if !math.IsNaN(point.Speed) && !math.IsInf(point.Speed, 0) && point.Speed >= 0 {
+			bucket.speedSum += point.Speed * 3.6
+			bucket.speedCount++
+		}
+	}
+	timeline := make([]draftTimelinePoint, len(buckets))
+	for index, bucket := range buckets {
+		timeline[index].TimeSec = index * 5
+		if bucket.powerCount > 0 {
+			value := bucket.powerSum / float64(bucket.powerCount)
+			timeline[index].Power = &value
+		}
+		if bucket.speedCount > 0 {
+			value := bucket.speedSum / float64(bucket.speedCount)
+			timeline[index].Speed = &value
+		}
+	}
+	return timeline
 }
 
 func buildDraftBuckets(points []gps.Point) []draftBucket {
@@ -269,7 +362,7 @@ func detectDraftCandidates(buckets []draftBucket, options draftingOptions) []dra
 		}
 		candidate := draftCandidate{
 			start: low.start, end: low.start.Add(time.Duration(options.windowSeconds) * time.Second),
-			high: high, highPower: high.power, lowPower: low.power, speed: low.speed,
+			high: high, highPower: high.power, lowPower: low.power, speed: low.speed, lowGrade: low.grade,
 			speedDiff: math.Abs(high.speed - low.speed), gradeDiff: math.Abs(high.grade - low.grade),
 		}
 		if len(candidates) > 0 && !candidate.start.After(candidates[len(candidates)-1].end) {

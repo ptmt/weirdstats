@@ -172,7 +172,35 @@
       .draft-control output { color: var(--ink); font-variant-numeric: tabular-nums; }
       .draft-control input { width: 100%; accent-color: var(--purple); }
       .draft-controls-note { width: 100%; color: var(--ink-muted); font-size: 12px; }
-      #draft-summary[hidden], #draft-confidence[hidden], #draft-status[hidden] { display: none; }
+      #draft-summary[hidden], #draft-confidence[hidden], #draft-status[hidden], #draft-list-note[hidden] { display: none; }
+      .draft-visual {
+        display: grid;
+        gap: 12px;
+        margin: 0 0 18px;
+        padding: 18px;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: rgba(168, 85, 247, 0.025);
+      }
+      .draft-visual[hidden], .draft-focus[hidden] { display: none; }
+      .draft-visual-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; }
+      .draft-visual-head strong { color: var(--ink); font-size: 14px; }
+      .draft-visual-head span, .draft-axis, .draft-legend, .draft-focus-context { color: var(--ink-muted); font-size: 12px; }
+      .draft-track { position: relative; height: 25px; border-radius: 8px; background: #e7e9ef; }
+      .draft-marker { position: absolute; top: 0; height: 100%; min-width: 7px; padding: 0; border: 2px solid white; border-radius: 7px; cursor: pointer; }
+      .draft-marker-exploratory { background: #e6a23c; }
+      .draft-marker-moderate { background: #a855f7; }
+      .draft-marker-strong { background: #22a36a; }
+      .draft-marker:hover, .draft-marker.selected { outline: 2px solid var(--ink); z-index: 1; }
+      .draft-axis { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
+      .draft-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+      .draft-legend span { display: inline-flex; align-items: center; gap: 6px; }
+      .draft-swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+      .draft-focus { display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid var(--border); }
+      .draft-focus strong { color: var(--ink); font-size: 14px; }
+      .draft-focus-chart { height: 250px; position: relative; }
+      .draft-event-row { width: 100%; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+      .draft-event-row:hover, .draft-event-row.selected { border-color: var(--purple); background: rgba(168, 85, 247, 0.055); }
       .activity-route-grid {
         display: grid;
         grid-template-columns: minmax(0, 2fr) minmax(300px, 0.95fr);
@@ -789,7 +817,28 @@
               <span class="draft-control-head"><span>Minimum power drop</span><output id="draft-drop-value">{{.MinDropPercent}}%</output></span>
               <input id="draft-drop" type="range" min="8" max="25" step="1" value="{{.MinDropPercent}}">
             </label>
-            <div class="draft-controls-note">Short windows can find quick rotations, with less certain scores. Changes recalculate from saved ride data. <span id="draft-update" aria-live="polite"></span></div>
+            <div class="draft-controls-note">Short windows find quick rotations with lower confidence. A 20 W drop is always required. Changes use saved ride data. <span id="draft-update" aria-live="polite"></span></div>
+          </div>
+          <div class="draft-visual" id="draft-visual" hidden>
+            <div class="draft-visual-head"><strong>Possible shifts along the ride</strong><span>Elapsed time from start · choose a marker or clue to inspect.</span></div>
+            <div class="draft-track" id="draft-track" role="group" aria-label="Possible shifts across the ride"></div>
+            <div class="draft-axis" id="draft-axis"></div>
+            <div class="draft-legend">
+              <span><i class="draft-swatch draft-marker-exploratory"></i>Exploratory</span>
+              <span><i class="draft-swatch draft-marker-moderate"></i>Moderate clue</span>
+              <span><i class="draft-swatch draft-marker-strong"></i>Strong clue</span>
+            </div>
+            <div class="draft-focus" id="draft-focus" hidden>
+              <strong id="draft-focus-title"></strong>
+              <div class="draft-focus-chart"><canvas id="draft-focus-chart"></canvas></div>
+              <div class="draft-focus-context" id="draft-focus-context"></div>
+              <div class="draft-legend">
+                <span><i class="draft-swatch" style="background:#a855f7"></i>Power</span>
+                <span><i class="draft-swatch" style="background:#06b6d4"></i>Speed</span>
+                <span><i class="draft-swatch" style="background:#b9e9f1"></i>Higher-power window</span>
+                <span><i class="draft-swatch" style="background:#ead5fa"></i>Lower-power window</span>
+              </div>
+            </div>
           </div>
           <div class="badge-row" id="draft-summary" style="margin-bottom: 16px;" {{if not .Candidates}}hidden{{end}}>
             <span class="pill secondary" id="draft-count">{{.Count}} possible shifts</span>
@@ -797,15 +846,16 @@
           </div>
           <div class="activity-data-grid" id="draft-list">
             {{range .Candidates}}
-              <div class="activity-data-row">
-                <div class="activity-data-copy">
-                  <div class="activity-data-label">{{.Interval}} · {{.Duration}}</div>
-                  <div class="activity-data-detail">{{.PowerDrop}} while averaging {{.Speed}}</div>
-                </div>
-                <div class="activity-data-value">{{.Confidence}}/100</div>
-              </div>
+              <button type="button" class="activity-data-row draft-event-row" data-start="{{.StartSec}}" data-end="{{.EndSec}}">
+                <span class="activity-data-copy">
+                  <span class="activity-data-label">{{.Interval}} · {{.Duration}}</span>
+                  <span class="activity-data-detail">Avg power {{.PowerDrop}} · Speed {{.SpeedChange}} · Grade {{.GradeChange}}</span>
+                </span>
+                <span class="activity-data-value">{{.Confidence}}/100</span>
+              </button>
             {{end}}
           </div>
+          <div class="map-note" id="draft-list-note" {{if le .Count 5}}hidden{{end}}>Showing the five strongest matches in ride order.</div>
           <p class="muted" id="draft-status" {{if .Candidates}}hidden{{end}}>{{.Status}}</p>
         {{else}}
           <p class="muted">{{.Status}}</p>
@@ -878,6 +928,9 @@
       const dropInput = document.getElementById('draft-drop');
       if (!panel || !windowInput || !dropInput) return;
 
+      const initialView = {{with .Drafting}}{{.InitialJSON}}{{else}}null{{end}};
+      const rideSeries = {{with .Drafting}}{{.TimelineJSON}}{{else}}[]{{end}};
+
       const windowValue = document.getElementById('draft-window-value');
       const dropValue = document.getElementById('draft-drop-value');
       const update = document.getElementById('draft-update');
@@ -887,37 +940,162 @@
       const count = document.getElementById('draft-count');
       const time = document.getElementById('draft-time');
       const list = document.getElementById('draft-list');
+      const listNote = document.getElementById('draft-list-note');
       const status = document.getElementById('draft-status');
+      const visual = document.getElementById('draft-visual');
+      const track = document.getElementById('draft-track');
+      const axis = document.getElementById('draft-axis');
+      const focus = document.getElementById('draft-focus');
+      const focusTitle = document.getElementById('draft-focus-title');
+      const focusContext = document.getElementById('draft-focus-context');
+      const focusCanvas = document.getElementById('draft-focus-chart');
       let timer;
       let request;
       let revision = 0;
+      let chart;
+      let selectedEvent;
+      let currentView = initialView;
+
+      function elapsedLabel(seconds) {
+        seconds = Math.max(0, Math.round(seconds));
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor(seconds / 60) % 60;
+        const remainder = seconds % 60;
+        return hours ? `${hours}h ${String(minutes).padStart(2, '0')}m ${String(remainder).padStart(2, '0')}s` :
+          `${minutes}m ${String(remainder).padStart(2, '0')}s`;
+      }
+
+      function axisLabel(seconds) {
+        seconds = Math.round(seconds);
+        return seconds >= 3600 ? `${Math.floor(seconds / 3600)}h ${Math.floor(seconds / 60) % 60}m` : `${Math.floor(seconds / 60)}m`;
+      }
+
+      function eventTone(score) {
+        return score >= 75 ? 'strong' : score >= 50 ? 'moderate' : 'exploratory';
+      }
+
+      function selectEvent(event) {
+        selectedEvent = event;
+        focus.hidden = false;
+        focusTitle.textContent = `${event.Interval} · ${event.Duration} matched`;
+        focusContext.textContent = `Strongest adjacent ${currentView.WindowSeconds}s windows: average power ${event.PowerDrop} · speed ${event.SpeedChange} · grade ${event.GradeChange}. The timeline marker spans ${event.Duration} of matching windows.`;
+        panel.querySelectorAll('.draft-marker, .draft-event-row').forEach(element => {
+          element.classList.toggle('selected', Number(element.dataset.start) === event.StartSec && Number(element.dataset.end) === event.EndSec);
+        });
+        if (!window.Chart || !rideSeries.length) return;
+        const from = Math.max(0, event.StartSec - 60);
+        const to = Math.min(currentView.RideDurationSec, event.EndSec + 60);
+        const samples = rideSeries.filter(point => point.t >= from && point.t <= to);
+        const speedValues = samples.map(point => point.s).filter(value => Number.isFinite(value));
+        const speedMin = speedValues.length ? Math.min(...speedValues) : 0;
+        const speedMax = speedValues.length ? Math.max(...speedValues) : 40;
+        if (chart) chart.destroy();
+        const highlight = {
+          id: 'draftWindowHighlight',
+          beforeDatasetsDraw(c) {
+            const x = c.scales.x;
+            const area = c.chartArea;
+            const shade = (start, end, color) => {
+              const left = Math.max(area.left, x.getPixelForValue(start));
+              const right = Math.min(area.right, x.getPixelForValue(end));
+              if (right <= left) return;
+              c.ctx.fillStyle = color;
+              c.ctx.fillRect(left, area.top, right - left, area.bottom - area.top);
+            };
+            c.ctx.save();
+            shade(event.BaselineStartSec, event.BaselineStartSec + currentView.WindowSeconds, 'rgba(6,182,212,0.14)');
+            shade(event.LowStartSec, event.LowStartSec + currentView.WindowSeconds, 'rgba(168,85,247,0.15)');
+            c.ctx.restore();
+          }
+        };
+        chart = new Chart(focusCanvas, {
+          type: 'line',
+          data: { datasets: [
+            { label: 'Power (W)', data: samples.map(point => ({ x: point.t, y: point.p })), yAxisID: 'power', borderColor: '#a855f7', borderWidth: 2, pointRadius: 0, tension: 0.2, spanGaps: false },
+            { label: 'Speed (km/h)', data: samples.map(point => ({ x: point.t, y: point.s })), yAxisID: 'speed', borderColor: '#06b6d4', borderWidth: 2, pointRadius: 0, tension: 0.2, spanGaps: false }
+          ] },
+          options: {
+            responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+              x: { type: 'linear', min: from, max: to, title: { display: true, text: 'Time after ride start' }, ticks: { maxTicksLimit: 6, callback: value => elapsedLabel(value) } },
+              power: { type: 'linear', position: 'left', title: { display: true, text: 'Power (W)' }, beginAtZero: false },
+              speed: { type: 'linear', position: 'right', min: Math.max(0, speedMin - 5), max: speedMax + 5, title: { display: true, text: 'Speed (km/h)' }, grid: { drawOnChartArea: false } }
+            },
+            plugins: { legend: { display: false }, tooltip: { callbacks: { title: items => elapsedLabel(items[0].parsed.x) } } }
+          },
+          plugins: [highlight]
+        });
+      }
+
+      function renderTimeline(view) {
+        visual.hidden = false;
+        const duration = Math.max(1, view.RideDurationSec);
+        const events = Array.isArray(view.Events) ? view.Events : [];
+        const markers = events.map(event => {
+          const marker = document.createElement('button');
+          marker.type = 'button';
+          marker.className = `draft-marker draft-marker-${eventTone(event.Confidence)}`;
+          marker.dataset.start = event.StartSec;
+          marker.dataset.end = event.EndSec;
+          marker.title = `${event.Interval} · ${event.Confidence}/100`;
+          marker.setAttribute('aria-label', marker.title);
+          const left = Math.min(99, Math.max(0, event.StartSec / duration * 100));
+          marker.style.left = `${left}%`;
+          marker.style.width = `${Math.min(100 - left, Math.max(0.4, (event.EndSec - event.StartSec) / duration * 100))}%`;
+          marker.addEventListener('click', () => selectEvent(event));
+          return marker;
+        });
+        track.replaceChildren(...markers);
+        axis.replaceChildren(...[0, 0.25, 0.5, 0.75, 1].map(fraction => {
+          const label = document.createElement('span');
+          label.textContent = axisLabel(duration * fraction);
+          return label;
+        }));
+        if (!events.length) {
+          focus.hidden = true;
+          selectedEvent = null;
+          if (chart) { chart.destroy(); chart = null; }
+          return;
+        }
+        const keep = selectedEvent && events.find(event => event.StartSec === selectedEvent.StartSec && event.EndSec === selectedEvent.EndSec);
+        const strongest = view.Candidates.reduce((best, event) => !best || event.Confidence > best.Confidence ? event : best, null);
+        selectEvent(keep || strongest || events[0]);
+      }
 
       function render(view) {
+        currentView = view;
         detail.textContent = view.Detail;
         const hasCandidates = Array.isArray(view.Candidates) && view.Candidates.length > 0;
         confidence.hidden = !hasCandidates;
         summary.hidden = !hasCandidates;
         status.hidden = hasCandidates;
         status.textContent = view.Status;
+        listNote.hidden = view.Count <= 5;
         if (!hasCandidates) {
           list.replaceChildren();
+          renderTimeline(view);
           return;
         }
         confidence.textContent = `${view.Confidence}/100 · ${view.ConfidenceLabel}`;
         count.textContent = `${view.Count} possible shifts`;
-        time.textContent = `${view.CandidateTime} in matched windows`;
+        time.textContent = `${view.CandidateTime} across matched episodes`;
         const rows = view.Candidates.map(candidate => {
-          const row = document.createElement('div');
-          row.className = 'activity-data-row';
-          const copy = document.createElement('div');
+          const row = document.createElement('button');
+          row.type = 'button';
+          row.className = 'activity-data-row draft-event-row';
+          row.dataset.start = candidate.StartSec;
+          row.dataset.end = candidate.EndSec;
+          row.addEventListener('click', () => selectEvent(candidate));
+          const copy = document.createElement('span');
           copy.className = 'activity-data-copy';
-          const label = document.createElement('div');
+          const label = document.createElement('span');
           label.className = 'activity-data-label';
           label.textContent = `${candidate.Interval} · ${candidate.Duration}`;
-          const explanation = document.createElement('div');
+          const explanation = document.createElement('span');
           explanation.className = 'activity-data-detail';
-          explanation.textContent = `${candidate.PowerDrop} while averaging ${candidate.Speed}`;
-          const score = document.createElement('div');
+          explanation.textContent = `Avg power ${candidate.PowerDrop} · Speed ${candidate.SpeedChange} · Grade ${candidate.GradeChange}`;
+          const score = document.createElement('span');
           score.className = 'activity-data-value';
           score.textContent = `${candidate.Confidence}/100`;
           copy.append(label, explanation);
@@ -925,6 +1103,7 @@
           return row;
         });
         list.replaceChildren(...rows);
+        renderTimeline(view);
       }
 
       function onChange() {
@@ -956,6 +1135,7 @@
 
       windowInput.addEventListener('input', onChange);
       dropInput.addEventListener('input', onChange);
+      if (initialView) render(initialView);
     })();
 
     (function() {

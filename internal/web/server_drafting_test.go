@@ -1,7 +1,9 @@
 package web
 
 import (
+	"encoding/json"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -49,6 +51,37 @@ func TestBuildDraftingView_ShortShiftNeedsShortWindow(t *testing.T) {
 	if short.Confidence > 55 {
 		t.Fatalf("brief isolated clue scored too highly: %+v", short)
 	}
+	if !strings.Contains(short.Events[0].Interval, "after start") || !strings.Contains(short.Events[0].Interval, "m ") ||
+		short.Events[0].BaselineStartSec+10 != short.Events[0].LowStartSec {
+		t.Fatalf("unclear or misaligned event: %+v", short.Events[0])
+	}
+}
+
+func TestBuildDraftTimelineKeepsPowerGaps(t *testing.T) {
+	start := time.Date(2026, 9, 20, 9, 0, 0, 0, time.UTC)
+	points := make([]gps.Point, 15)
+	for second := range points {
+		points[second] = gps.Point{Time: start.Add(time.Duration(second) * time.Second), Speed: 10}
+		if second < 10 {
+			points[second].HasPower = true
+			points[second].Power = 100
+			if second >= 5 {
+				points[second].Power = 200
+			}
+		}
+	}
+	timeline := buildDraftTimeline(points)
+	if len(timeline) != 3 || timeline[0].Power == nil || *timeline[0].Power != 100 ||
+		timeline[1].Power == nil || *timeline[1].Power != 200 || timeline[2].Power != nil ||
+		timeline[0].Speed == nil || *timeline[0].Speed != 36 {
+		t.Fatalf("unexpected timeline samples: %+v", timeline)
+	}
+	meter := true
+	view := buildDraftingView(storage.Activity{Type: "Ride", DeviceWatts: &meter}, draftingTestPoints(func(second int) (float64, float64, float64) { return 220, 10, 0 }))
+	var initial map[string]any
+	if err := json.Unmarshal([]byte(view.InitialJSON), &initial); err != nil || initial["RideDurationSec"] != float64(480) {
+		t.Fatalf("invalid initial visualization data: %v %+v", err, initial)
+	}
 }
 
 func TestBuildDraftingView_PowerDropSensitivity(t *testing.T) {
@@ -64,6 +97,25 @@ func TestBuildDraftingView_PowerDropSensitivity(t *testing.T) {
 	strict := buildDraftingViewWithOptions(activity, points, draftingOptions{windowSeconds: 15, minDropPercent: 20})
 	if sensitive == nil || sensitive.Count == 0 || strict == nil || strict.Count != 0 {
 		t.Fatalf("minimum drop did not change detection: sensitive=%+v strict=%+v", sensitive, strict)
+	}
+}
+
+func TestBuildDraftingView_TimelineKeepsAllEpisodes(t *testing.T) {
+	points := draftingTestPoints(func(second int) (float64, float64, float64) {
+		if second/40%2 == 1 {
+			return 180, 10, 0
+		}
+		return 280, 10, 0
+	})
+	meter := true
+	view := buildDraftingView(storage.Activity{Type: "Ride", DeviceWatts: &meter}, points)
+	if view == nil || view.Count <= 5 || len(view.Events) != view.Count || len(view.Candidates) != 5 {
+		t.Fatalf("timeline dropped episodes: %+v", view)
+	}
+	for i := 1; i < len(view.Candidates); i++ {
+		if view.Candidates[i].StartSec < view.Candidates[i-1].StartSec {
+			t.Fatalf("matches not in ride order: %+v", view.Candidates)
+		}
 	}
 }
 
