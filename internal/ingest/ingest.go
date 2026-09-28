@@ -68,7 +68,7 @@ func (i *Ingestor) fetchAndUpsert(ctx context.Context, userID, activityID int64)
 	}
 	row := storage.Activity{ID: activity.ID, UserID: userID, Type: activity.Type, Name: activity.Name,
 		StartTime: activity.StartDate, Description: activity.Description, Distance: activity.Distance, MovingTime: activity.MovingTime,
-		AveragePower: activity.AveragePower, AverageHeartRate: activity.AverageHeartRate, Visibility: activity.Visibility,
+		AveragePower: activity.AveragePower, DeviceWatts: activity.DeviceWatts, AthleteCount: activity.AthleteCount, AverageHeartRate: activity.AverageHeartRate, Visibility: activity.Visibility,
 		IsPrivate: activity.Private, HideFromHome: activity.HideFromHome, PhotoURL: activity.PhotoURL}
 	// Keep metadata visible even when stream retrieval needs another attempt.
 	if _, err := i.Store.UpsertActivity(ctx, row, nil); err != nil {

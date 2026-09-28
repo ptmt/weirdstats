@@ -200,6 +200,8 @@ type Activity struct {
 	Distance         float64
 	MovingTime       int
 	AveragePower     float64
+	DeviceWatts      *bool
+	AthleteCount     int
 	AverageHeartRate float64
 	Visibility       string
 	Private          bool
@@ -240,6 +242,8 @@ func (c *Client) GetActivity(ctx context.Context, id int64) (Activity, error) {
 		Distance         float64  `json:"distance"`
 		MovingTime       int      `json:"moving_time"`
 		AverageWatts     float64  `json:"average_watts"`
+		DeviceWatts      *bool    `json:"device_watts"`
+		AthleteCount     int      `json:"athlete_count"`
 		AverageHeartrate *float64 `json:"average_heartrate"`
 		Visibility       string   `json:"visibility"`
 		Private          bool     `json:"private"`
@@ -292,6 +296,8 @@ func (c *Client) GetActivity(ctx context.Context, id int64) (Activity, error) {
 		Distance:         payload.Distance,
 		MovingTime:       payload.MovingTime,
 		AveragePower:     payload.AverageWatts,
+		DeviceWatts:      payload.DeviceWatts,
+		AthleteCount:     payload.AthleteCount,
 		AverageHeartRate: avgHR,
 		Visibility:       payload.Visibility,
 		Private:          payload.Private,

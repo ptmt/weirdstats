@@ -144,6 +144,7 @@ type ActivityDetailData struct {
 	PageData
 	Activity          ActivityView
 	RidePacing        *RidePacingView
+	Drafting          *DraftingView
 	Stops             []StopView
 	DetectedFacts     []ActivityMapFactView
 	DataItems         []ActivityDataItem

@@ -297,6 +297,7 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 	trace.AddStep("load_detected_facts", stepStart)
 	trace.AddField("detected_facts_present", detectedFactsPresent)
 	trace.AddField("detected_facts", len(detectedFacts))
+	refreshRideSegmentFactSummary(detectedFacts, activity.Type, points, s.stopOpts)
 
 	if len(detectedFacts) > 0 {
 		stepStart = time.Now()
@@ -427,6 +428,7 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 		},
 		Activity:          view,
 		RidePacing:        buildRidePacingView(activity, points),
+		Drafting:          buildDraftingView(activity, points),
 		Stops:             stopViews,
 		DetectedFacts:     detectedFacts,
 		DataItems:         dataItems,

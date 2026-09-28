@@ -621,6 +621,41 @@
         </div>
       </article>
     {{end}}
+    {{with .Drafting}}
+      <article class="card">
+        <div class="activity-stage-head">
+          <div>
+            <h3 class="section-title">Power at steady speed</h3>
+            <div class="map-note">{{.Detail}}</div>
+          </div>
+          {{if .Candidates}}<span class="activity-panel-count">{{.Confidence}}/100 · {{.ConfidenceLabel}}</span>{{end}}
+        </div>
+        {{if .Candidates}}
+          <div class="badge-row" style="margin-bottom: 16px;">
+            <span class="pill secondary">{{.Count}} possible shifts</span>
+            <span class="pill secondary">{{.CandidateTime}} in matched windows</span>
+          </div>
+          <div class="activity-data-grid">
+            {{range .Candidates}}
+              <div class="activity-data-row">
+                <div class="activity-data-copy">
+                  <div class="activity-data-label">{{.Interval}} · {{.Duration}}</div>
+                  <div class="activity-data-detail">{{.PowerDrop}} while averaging {{.Speed}}</div>
+                </div>
+                <div class="activity-data-value">{{.Confidence}}/100</div>
+              </div>
+            {{end}}
+          </div>
+        {{else}}
+          <p class="muted">{{.Status}}</p>
+          {{if .NeedsRefresh}}
+            <form method="post" action="/activity/{{$.Activity.ID}}/refresh">
+              <button type="submit" class="activity-action-btn">Refresh activity</button>
+            </form>
+          {{end}}
+        {{end}}
+      </article>
+    {{end}}
     <article class="card">
       <div class="activity-stage-head">
         <div>
