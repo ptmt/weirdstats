@@ -473,6 +473,7 @@ func (s *Server) posterPageData(ctx context.Context, userID, activityID int64, p
 		trace.AddField("error", "load_detected_facts")
 		return posterPageData{}, fmt.Errorf("load detected facts: %w", err)
 	}
+	refreshRideSegmentFactSummary(detectedFacts, activity.Type, points, s.stopOpts)
 	trace.AddField("facts", len(detectedFacts))
 
 	visibleFacts := posterLimitFacts(detectedFacts, options.FactsLimit)

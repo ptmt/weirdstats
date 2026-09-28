@@ -65,7 +65,7 @@ var weirdStatsFactDefinitions = []weirdStatsFactDefinition{
 	{
 		ID:                      weirdStatsFactLongestSegment,
 		Label:                   "Longest segment",
-		Description:             "Detect the longest moving segment with distance, speed, and power when available.",
+		Description:             "Detect the longest moving segment with duration, speed, and power when available.",
 		RemarkableDescription:   "Posts when segment distance is the first value seen, a new all-time best, or a new yearly best.",
 		DefaultEnabled:          true,
 		DefaultAutoPostEveryRun: true,

@@ -17,6 +17,7 @@ import (
 
 type rideSegmentFact struct {
 	DistanceMeters float64
+	Duration       time.Duration
 	AvgPower       float64
 	AvgSpeedMPS    float64
 	StartIndex     int
@@ -228,12 +229,13 @@ func rideSegmentFactForWindow(points []gps.Point, start, end time.Time, speedThr
 		}
 	}
 
-	if distanceM <= 0 || speedCount == 0 {
+	if distanceM <= 0 || speedCount == 0 || !points[lastIdx].Time.After(points[firstIdx].Time) {
 		return rideSegmentFact{}
 	}
 
 	fact := rideSegmentFact{
 		DistanceMeters: distanceM,
+		Duration:       points[lastIdx].Time.Sub(points[firstIdx].Time),
 		AvgSpeedMPS:    speedTotal / float64(speedCount),
 		StartIndex:     firstIdx,
 		EndIndex:       lastIdx,
@@ -752,6 +754,22 @@ func formatCompactNumber(value float64, precision int) string {
 		text = strings.TrimSuffix(text, ".")
 	}
 	return text
+}
+
+func refreshRideSegmentFactSummary(facts []ActivityMapFactView, activityType string, points []gps.Point, opts gps.StopOptions) {
+	for i := range facts {
+		if facts[i].ID != weirdStatsFactLongestSegment {
+			continue
+		}
+		if !strings.Contains(facts[i].Summary, "km - ") {
+			return
+		}
+		rideFact := longestRideSegmentFact(activityType, points, opts)
+		if summary := trimFactPrefix(buildRideSegmentPart(rideFact), "Longest segment: "); summary != "" {
+			facts[i].Summary = summary
+		}
+		return
+	}
 }
 
 func buildActivityMapFacts(

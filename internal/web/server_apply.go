@@ -528,10 +528,10 @@ func shouldPostWeirdStatsDescription(activityType string, distanceMeters float64
 }
 
 func buildRideSegmentPart(fact rideSegmentFact) string {
-	if fact.DistanceMeters <= 0 || fact.AvgSpeedMPS <= 0 {
+	if fact.DistanceMeters <= 0 || fact.Duration <= 0 || fact.AvgSpeedMPS <= 0 {
 		return ""
 	}
-	parts := []string{formatCompactNumber(fact.DistanceMeters/1000, 1) + "km"}
+	parts := []string{formatDuration(int(fact.Duration.Seconds()))}
 	if fact.AvgPower > 0 {
 		parts = append(parts, formatCompactNumber(fact.AvgPower, 0)+"w")
 	}
