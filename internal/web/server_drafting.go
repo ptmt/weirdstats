@@ -86,8 +86,13 @@ func buildDraftingView(activity storage.Activity, points []gps.Point) *DraftingV
 	}
 	view := &DraftingView{}
 	if activity.DeviceWatts == nil {
+		if activity.PowerSourceChecked {
+			view.Status = "Power source unavailable from Strava"
+			view.Detail = "Strava did not report whether these watts came from a power meter, so draft clues cannot be scored reliably for this ride."
+			return view
+		}
 		view.Status = "Power source unverified"
-		view.Detail = "Refresh this ride to check whether Strava watts came from a power meter. Draft clues need measured power."
+		view.Detail = "Check whether Strava recorded these watts from a power meter. Draft clues need measured power."
 		view.NeedsRefresh = true
 		return view
 	}

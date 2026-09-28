@@ -21,6 +21,18 @@ func EnqueueProcessActivity(ctx context.Context, store *storage.Store, activityI
 	return err
 }
 
+func EnqueueRefreshActivity(ctx context.Context, store *storage.Store, activityID, userID int64) error {
+	if store == nil {
+		return fmt.Errorf("job store not configured")
+	}
+	payload, err := json.Marshal(ProcessActivityPayload{ActivityID: activityID, UserID: userID, Refetch: true})
+	if err != nil {
+		return err
+	}
+	_, err = store.CreateJob(ctx, storage.Job{UserID: userID, ActivityID: activityID, Type: JobTypeProcessActivity, Payload: string(payload), MaxAttempts: 10, NextRunAt: time.Now()})
+	return err
+}
+
 func EnqueueApplyActivityRules(ctx context.Context, store *storage.Store, activityID, userID int64, automatic ...bool) error {
 	if store == nil {
 		return fmt.Errorf("job store not configured")

@@ -22,25 +22,26 @@ type Store struct {
 }
 
 type Activity struct {
-	ID               int64
-	UserID           int64
-	Type             string
-	Name             string
-	StartTime        time.Time
-	Description      string
-	Distance         float64
-	MovingTime       int
-	AveragePower     float64
-	DeviceWatts      *bool
-	AthleteCount     int
-	AverageHeartRate float64
-	Visibility       string
-	IsPrivate        bool
-	HideFromHome     bool
-	HiddenByRule     bool
-	PhotoURL         string
-	UpdatedAt        time.Time
-	StreamsFetched   bool
+	ID                 int64
+	UserID             int64
+	Type               string
+	Name               string
+	StartTime          time.Time
+	Description        string
+	Distance           float64
+	MovingTime         int
+	AveragePower       float64
+	DeviceWatts        *bool
+	PowerSourceChecked bool
+	AthleteCount       int
+	AverageHeartRate   float64
+	Visibility         string
+	IsPrivate          bool
+	HideFromHome       bool
+	HiddenByRule       bool
+	PhotoURL           string
+	UpdatedAt          time.Time
+	StreamsFetched     bool
 }
 
 type WebhookEvent struct {
@@ -242,6 +243,7 @@ func (s *Store) InitSchema(ctx context.Context) error {
 		`ALTER TABLE activities ADD COLUMN moving_time INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE activities ADD COLUMN average_power REAL NOT NULL DEFAULT 0`,
 		`ALTER TABLE activities ADD COLUMN device_watts INTEGER`,
+		`ALTER TABLE activities ADD COLUMN power_source_checked INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE activities ADD COLUMN athlete_count INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE activities ADD COLUMN average_heartrate REAL NOT NULL DEFAULT 0`,
 		`ALTER TABLE activities ADD COLUMN visibility TEXT NOT NULL DEFAULT ''`,
@@ -273,6 +275,7 @@ CREATE TABLE IF NOT EXISTS activities (
 	moving_time INTEGER NOT NULL DEFAULT 0,
 	average_power REAL NOT NULL DEFAULT 0,
 	device_watts INTEGER,
+	power_source_checked INTEGER NOT NULL DEFAULT 0,
 	athlete_count INTEGER NOT NULL DEFAULT 0,
 	average_heartrate REAL NOT NULL DEFAULT 0,
 	visibility TEXT NOT NULL DEFAULT '',
@@ -428,6 +431,30 @@ func (s *Store) UpsertActivity(ctx context.Context, activity Activity, points []
 	return s.upsertActivityWithPoints(ctx, activity, points, true)
 }
 
+func (s *Store) UpdateActivityPowerSource(ctx context.Context, userID, activityID int64, deviceWatts *bool) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := validateActivityWrite(ctx, tx, userID, activityID); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE activities SET device_watts=?, power_source_checked=1, updated_at=? WHERE id=? AND user_id=?`,
+		deviceWatts, time.Now().Unix(), activityID, userID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return sql.ErrNoRows
+	}
+	return tx.Commit()
+}
+
 func (s *Store) upsertActivityWithPoints(ctx context.Context, activity Activity, points []gps.Point, allowUpsert bool) (int64, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -443,8 +470,8 @@ func (s *Store) upsertActivityWithPoints(ctx context.Context, activity Activity,
 	var res sql.Result
 	if allowUpsert && activity.ID != 0 {
 		res, err = tx.ExecContext(ctx, `
-INSERT INTO activities (id, user_id, type, name, start_time, description, distance, moving_time, average_power, device_watts, athlete_count, average_heartrate, visibility, is_private, hide_from_home, photo_url, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO activities (id, user_id, type, name, start_time, description, distance, moving_time, average_power, device_watts, power_source_checked, athlete_count, average_heartrate, visibility, is_private, hide_from_home, photo_url, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
 	user_id = excluded.user_id,
 	type = excluded.type,
@@ -455,6 +482,7 @@ ON CONFLICT(id) DO UPDATE SET
 	moving_time = excluded.moving_time,
 	average_power = excluded.average_power,
 	device_watts = excluded.device_watts,
+	power_source_checked = excluded.power_source_checked,
 	athlete_count = excluded.athlete_count,
 	average_heartrate = excluded.average_heartrate,
 	visibility = excluded.visibility,
@@ -462,17 +490,17 @@ ON CONFLICT(id) DO UPDATE SET
 	hide_from_home = excluded.hide_from_home,
 	photo_url = excluded.photo_url,
 	updated_at = excluded.updated_at
-`, activity.ID, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, activity.AveragePower, activity.DeviceWatts, activity.AthleteCount, activity.AverageHeartRate, activity.Visibility, boolToInt(activity.IsPrivate), boolToInt(activity.HideFromHome), activity.PhotoURL, time.Now().Unix())
+`, activity.ID, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, activity.AveragePower, activity.DeviceWatts, boolToInt(activity.PowerSourceChecked), activity.AthleteCount, activity.AverageHeartRate, activity.Visibility, boolToInt(activity.IsPrivate), boolToInt(activity.HideFromHome), activity.PhotoURL, time.Now().Unix())
 	} else if activity.ID != 0 {
 		res, err = tx.ExecContext(ctx, `
-INSERT INTO activities (id, user_id, type, name, start_time, description, distance, moving_time, average_power, device_watts, athlete_count, average_heartrate, visibility, is_private, hide_from_home, photo_url, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, activity.ID, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, activity.AveragePower, activity.DeviceWatts, activity.AthleteCount, activity.AverageHeartRate, activity.Visibility, boolToInt(activity.IsPrivate), boolToInt(activity.HideFromHome), activity.PhotoURL, time.Now().Unix())
+INSERT INTO activities (id, user_id, type, name, start_time, description, distance, moving_time, average_power, device_watts, power_source_checked, athlete_count, average_heartrate, visibility, is_private, hide_from_home, photo_url, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, activity.ID, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, activity.AveragePower, activity.DeviceWatts, boolToInt(activity.PowerSourceChecked), activity.AthleteCount, activity.AverageHeartRate, activity.Visibility, boolToInt(activity.IsPrivate), boolToInt(activity.HideFromHome), activity.PhotoURL, time.Now().Unix())
 	} else {
 		res, err = tx.ExecContext(ctx, `
-INSERT INTO activities (user_id, type, name, start_time, description, distance, moving_time, average_power, device_watts, athlete_count, average_heartrate, visibility, is_private, hide_from_home, photo_url, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, activity.AveragePower, activity.DeviceWatts, activity.AthleteCount, activity.AverageHeartRate, activity.Visibility, boolToInt(activity.IsPrivate), boolToInt(activity.HideFromHome), activity.PhotoURL, time.Now().Unix())
+INSERT INTO activities (user_id, type, name, start_time, description, distance, moving_time, average_power, device_watts, power_source_checked, athlete_count, average_heartrate, visibility, is_private, hide_from_home, photo_url, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, activity.AveragePower, activity.DeviceWatts, boolToInt(activity.PowerSourceChecked), activity.AthleteCount, activity.AverageHeartRate, activity.Visibility, boolToInt(activity.IsPrivate), boolToInt(activity.HideFromHome), activity.PhotoURL, time.Now().Unix())
 	}
 	if err != nil {
 		return 0, err
@@ -2206,7 +2234,7 @@ WHERE activity_id = ?
 
 func (s *Store) GetActivity(ctx context.Context, activityID int64) (Activity, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT id, user_id, type, name, start_time, description, distance, moving_time, average_power, device_watts, athlete_count, average_heartrate, visibility, is_private, hide_from_home, hidden_by_rule, photo_url, updated_at
+SELECT id, user_id, type, name, start_time, description, distance, moving_time, average_power, device_watts, power_source_checked, athlete_count, average_heartrate, visibility, is_private, hide_from_home, hidden_by_rule, photo_url, updated_at
 FROM activities
 WHERE id = ?
 `, activityID)
@@ -2217,6 +2245,7 @@ WHERE id = ?
 	var hiddenByRule int
 	var updatedAt int64
 	var deviceWatts sql.NullBool
+	var powerSourceChecked int
 	if err := row.Scan(
 		&activity.ID,
 		&activity.UserID,
@@ -2228,6 +2257,7 @@ WHERE id = ?
 		&activity.MovingTime,
 		&activity.AveragePower,
 		&deviceWatts,
+		&powerSourceChecked,
 		&activity.AthleteCount,
 		&activity.AverageHeartRate,
 		&activity.Visibility,
@@ -2243,6 +2273,7 @@ WHERE id = ?
 	if deviceWatts.Valid {
 		activity.DeviceWatts = &deviceWatts.Bool
 	}
+	activity.PowerSourceChecked = powerSourceChecked != 0
 	activity.IsPrivate = isPrivate != 0
 	activity.HideFromHome = hideFromHome != 0
 	activity.HiddenByRule = hiddenByRule != 0
@@ -2255,7 +2286,7 @@ func (s *Store) GetActivityForUser(ctx context.Context, userID, activityID int64
 		return Activity{}, errors.New("user id required")
 	}
 	row := s.db.QueryRowContext(ctx, `
-SELECT id, user_id, type, name, start_time, description, distance, moving_time, average_power, device_watts, athlete_count, average_heartrate, visibility, is_private, hide_from_home, hidden_by_rule, photo_url, updated_at
+SELECT id, user_id, type, name, start_time, description, distance, moving_time, average_power, device_watts, power_source_checked, athlete_count, average_heartrate, visibility, is_private, hide_from_home, hidden_by_rule, photo_url, updated_at
 FROM activities
 WHERE id = ? AND user_id = ?
 `, activityID, userID)
@@ -2266,6 +2297,7 @@ WHERE id = ? AND user_id = ?
 	var hiddenByRule int
 	var updatedAt int64
 	var deviceWatts sql.NullBool
+	var powerSourceChecked int
 	if err := row.Scan(
 		&activity.ID,
 		&activity.UserID,
@@ -2277,6 +2309,7 @@ WHERE id = ? AND user_id = ?
 		&activity.MovingTime,
 		&activity.AveragePower,
 		&deviceWatts,
+		&powerSourceChecked,
 		&activity.AthleteCount,
 		&activity.AverageHeartRate,
 		&activity.Visibility,
@@ -2292,6 +2325,7 @@ WHERE id = ? AND user_id = ?
 	if deviceWatts.Valid {
 		activity.DeviceWatts = &deviceWatts.Bool
 	}
+	activity.PowerSourceChecked = powerSourceChecked != 0
 	activity.IsPrivate = isPrivate != 0
 	activity.HideFromHome = hideFromHome != 0
 	activity.HiddenByRule = hiddenByRule != 0

@@ -94,6 +94,14 @@ func TestBuildDraftingView_RequiresMeasuredPower(t *testing.T) {
 	}
 }
 
+func TestBuildDraftingView_StopsPromptingAfterSourceCheck(t *testing.T) {
+	points := draftingTestPoints(func(second int) (float64, float64, float64) { return 220, 10, 0 })
+	view := buildDraftingView(storage.Activity{Type: "Ride", PowerSourceChecked: true}, points)
+	if view == nil || view.NeedsRefresh || view.Status != "Power source unavailable from Strava" {
+		t.Fatalf("expected checked-but-unavailable state, got %+v", view)
+	}
+}
+
 func draftingTestPoints(values func(int) (float64, float64, float64)) []gps.Point {
 	start := time.Date(2026, 9, 20, 9, 0, 0, 0, time.UTC)
 	longitudeStep := 10 / (111195 * math.Cos(48*math.Pi/180))

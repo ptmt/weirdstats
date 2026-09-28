@@ -49,6 +49,7 @@ type SyncLatestCursor struct {
 
 type ProcessActivityPayload struct {
 	Publish    bool  `json:"publish,omitempty"`
+	Refetch    bool  `json:"refetch,omitempty"`
 	ActivityID int64 `json:"activity_id"`
 	UserID     int64 `json:"user_id,omitempty"`
 }
@@ -259,6 +260,14 @@ func (r *Runner) handleProcessActivity(ctx context.Context, job storage.Job) err
 	}
 	workCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
+	if payload.Refetch {
+		if r.Ingestor == nil {
+			return r.Store.MarkJobFailed(ctx, job.ID, job.Cursor, "ingestor not configured")
+		}
+		if err := r.Ingestor.RefreshActivity(workCtx, payload.ActivityID); err != nil {
+			return r.markJobRetry(ctx, job, SyncSinceCursor{}, err)
+		}
+	}
 	if err := r.Processor.Process(workCtx, payload.ActivityID); err != nil {
 		return r.markJobRetry(ctx, job, SyncSinceCursor{}, err)
 	}

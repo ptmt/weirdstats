@@ -730,8 +730,8 @@
         {{else}}
           <p class="muted">{{.Status}}</p>
           {{if .NeedsRefresh}}
-            <form method="post" action="/activity/{{$.Activity.ID}}/refresh">
-              <button type="submit" class="activity-action-btn">Refresh activity</button>
+            <form method="post" action="/activity/{{$.Activity.ID}}/verify-power">
+              <button type="submit" class="activity-action-btn">Check power source</button>
             </form>
           {{end}}
         {{end}}

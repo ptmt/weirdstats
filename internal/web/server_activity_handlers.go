@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"weirdstats/internal/ingest"
 	"weirdstats/internal/jobs"
 	"weirdstats/internal/stats"
 	"weirdstats/internal/storage"
@@ -470,6 +472,10 @@ func (s *Server) Activity(w http.ResponseWriter, r *http.Request) {
 		s.RefreshActivity(w, r)
 		return
 	}
+	if strings.HasSuffix(r.URL.Path, "/verify-power") {
+		s.VerifyActivityPower(w, r)
+		return
+	}
 	if strings.HasSuffix(r.URL.Path, "/apply") {
 		s.ApplyActivityRules(w, r)
 		return
@@ -499,7 +505,7 @@ func (s *Server) RefreshActivity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "activity not found", http.StatusNotFound)
 		return
 	}
-	if err := jobs.EnqueueProcessActivity(r.Context(), s.store, activityID, userID); err != nil {
+	if err := jobs.EnqueueRefreshActivity(r.Context(), s.store, activityID, userID); err != nil {
 		http.Error(w, "failed to enqueue activity", http.StatusInternalServerError)
 		return
 	}
@@ -509,6 +515,40 @@ func (s *Server) RefreshActivity(w http.ResponseWriter, r *http.Request) {
 		redirectURL = fmt.Sprintf("/activity/%d", activityID)
 	}
 	http.Redirect(w, r, redirectURL, http.StatusFound)
+}
+
+func (s *Server) VerifyActivityPower(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.requireUserID(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	idStr := strings.TrimPrefix(r.URL.Path, "/activity/")
+	idStr = strings.TrimSuffix(idStr, "/verify-power")
+	activityID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || activityID == 0 {
+		http.Error(w, "invalid activity id", http.StatusBadRequest)
+		return
+	}
+	if _, err := s.store.GetActivityForUser(r.Context(), userID, activityID); err != nil {
+		http.Error(w, "activity not found", http.StatusNotFound)
+		return
+	}
+	if s.ingestor == nil {
+		http.Error(w, "power source check unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	checkCtx, cancel := context.WithTimeout(ingest.ContextWithUserID(r.Context(), userID), 8*time.Second)
+	defer cancel()
+	if err := s.ingestor.CheckPowerSource(checkCtx, activityID); err != nil {
+		log.Printf("activity %d power source check failed: %v", activityID, err)
+		http.Error(w, "failed to check power source with Strava", http.StatusBadGateway)
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/activity/%d", activityID), http.StatusFound)
 }
 
 func (s *Server) DownloadActivity(w http.ResponseWriter, r *http.Request) {

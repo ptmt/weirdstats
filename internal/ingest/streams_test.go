@@ -7,7 +7,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"weirdstats/internal/gps"
 	"weirdstats/internal/storage"
 	"weirdstats/internal/strava"
 )
@@ -62,5 +64,48 @@ func TestMissingStreamsPreserveMetadataAndKnownAbsence(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestFailedRefreshKeepsExistingActivityAndPoints(t *testing.T) {
+	ctx := ContextWithUserID(context.Background(), 11)
+	store, err := storage.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.InitSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertStravaToken(ctx, storage.StravaToken{UserID: 11, AccessToken: "fake"}); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Date(2026, 9, 20, 9, 0, 0, 0, time.UTC)
+	if _, err := store.InsertActivity(ctx, storage.Activity{ID: 42, UserID: 11, Type: "Ride", Name: "original", StartTime: start, StreamsFetched: true},
+		[]gps.Point{{Lat: 48, Lon: 11, Time: start, Power: 200, HasPower: true}}); err != nil {
+		t.Fatal(err)
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/streams") {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		fmt.Fprint(w, `{"id":42,"name":"updated","type":"Ride","start_date":"2026-09-20T09:00:00Z","device_watts":true}`)
+	}))
+	defer upstream.Close()
+	i := Ingestor{Store: store, Strava: &strava.Client{BaseURL: upstream.URL}}
+	if err := i.RefreshActivity(ctx, 42); err == nil {
+		t.Fatal("expected stream fetch failure")
+	}
+	activity, err := store.GetActivity(ctx, 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	points, err := store.LoadActivityPoints(ctx, 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if activity.Name != "original" || activity.DeviceWatts != nil || len(points) != 1 {
+		t.Fatalf("failed refresh changed saved ride: %+v, %d points", activity, len(points))
 	}
 }

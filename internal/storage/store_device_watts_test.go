@@ -20,9 +20,10 @@ func TestActivityDeviceWattsRoundTrip(t *testing.T) {
 	meter := true
 	activity := Activity{
 		ID: 42, UserID: 7, Type: "Ride", Name: "TTT",
-		StartTime:    time.Date(2026, 9, 20, 9, 0, 0, 0, time.UTC),
-		DeviceWatts:  &meter,
-		AthleteCount: 4,
+		StartTime:          time.Date(2026, 9, 20, 9, 0, 0, 0, time.UTC),
+		DeviceWatts:        &meter,
+		PowerSourceChecked: true,
+		AthleteCount:       4,
 	}
 	if _, err := store.InsertActivity(ctx, activity, nil); err != nil {
 		t.Fatal(err)
@@ -33,6 +34,9 @@ func TestActivityDeviceWattsRoundTrip(t *testing.T) {
 	}
 	if loaded.DeviceWatts == nil || !*loaded.DeviceWatts {
 		t.Fatalf("expected meter flag, got %+v", loaded.DeviceWatts)
+	}
+	if !loaded.PowerSourceChecked {
+		t.Fatal("expected power source check to persist")
 	}
 	if loaded.AthleteCount != 4 {
 		t.Fatalf("expected group count 4, got %d", loaded.AthleteCount)
@@ -88,7 +92,7 @@ func TestActivityPowerMetadataMigratesExistingDatabase(t *testing.T) {
 	}
 
 	meter := true
-	activity := Activity{ID: 43, UserID: 7, Type: "Ride", Name: "TTT", StartTime: time.Now(), DeviceWatts: &meter, AthleteCount: 4}
+	activity := Activity{ID: 43, UserID: 7, Type: "Ride", Name: "TTT", StartTime: time.Now(), DeviceWatts: &meter, PowerSourceChecked: true, AthleteCount: 4}
 	if _, err := store.InsertActivity(ctx, activity, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +100,7 @@ func TestActivityPowerMetadataMigratesExistingDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.DeviceWatts == nil || !*loaded.DeviceWatts || loaded.AthleteCount != 4 {
+	if loaded.DeviceWatts == nil || !*loaded.DeviceWatts || !loaded.PowerSourceChecked || loaded.AthleteCount != 4 {
 		t.Fatalf("metadata missing after migration: %+v", loaded)
 	}
 }
