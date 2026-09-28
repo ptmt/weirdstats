@@ -146,6 +146,33 @@
         flex-wrap: wrap;
         gap: 8px;
       }
+      .draft-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px 28px;
+        margin: 0 0 18px;
+        padding: 16px;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+      }
+      .draft-control {
+        display: grid;
+        gap: 8px;
+        min-width: 190px;
+        flex: 1 1 190px;
+        color: var(--ink-muted);
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .draft-control-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .draft-control output { color: var(--ink); font-variant-numeric: tabular-nums; }
+      .draft-control input { width: 100%; accent-color: var(--purple); }
+      .draft-controls-note { width: 100%; color: var(--ink-muted); font-size: 12px; }
+      #draft-summary[hidden], #draft-confidence[hidden], #draft-status[hidden] { display: none; }
       .activity-route-grid {
         display: grid;
         grid-template-columns: minmax(0, 2fr) minmax(300px, 0.95fr);
@@ -703,20 +730,31 @@
       </article>
     {{end}}
     {{with .Drafting}}
-      <article class="card">
+      <article class="card" id="draft-analysis" data-activity-id="{{$.Activity.ID}}">
         <div class="activity-stage-head">
           <div>
             <h3 class="section-title">Power at steady speed</h3>
-            <div class="map-note">{{.Detail}}</div>
+            <div class="map-note" id="draft-detail">{{.Detail}}</div>
           </div>
-          {{if .Candidates}}<span class="activity-panel-count">{{.Confidence}}/100 · {{.ConfidenceLabel}}</span>{{end}}
+          {{if .CanTune}}<span class="activity-panel-count" id="draft-confidence" {{if not .Candidates}}hidden{{end}}>{{.Confidence}}/100 · {{.ConfidenceLabel}}</span>{{end}}
         </div>
-        {{if .Candidates}}
-          <div class="badge-row" style="margin-bottom: 16px;">
-            <span class="pill secondary">{{.Count}} possible shifts</span>
-            <span class="pill secondary">{{.CandidateTime}} in matched windows</span>
+        {{if .CanTune}}
+          <div class="draft-controls">
+            <label class="draft-control" for="draft-window">
+              <span class="draft-control-head"><span>Comparison window</span><output id="draft-window-value">{{.WindowSeconds}}s</output></span>
+              <input id="draft-window" type="range" min="10" max="30" step="5" value="{{.WindowSeconds}}">
+            </label>
+            <label class="draft-control" for="draft-drop">
+              <span class="draft-control-head"><span>Minimum power drop</span><output id="draft-drop-value">{{.MinDropPercent}}%</output></span>
+              <input id="draft-drop" type="range" min="8" max="25" step="1" value="{{.MinDropPercent}}">
+            </label>
+            <div class="draft-controls-note">Short windows can find quick rotations, with less certain scores. Changes recalculate from saved ride data. <span id="draft-update" aria-live="polite"></span></div>
           </div>
-          <div class="activity-data-grid">
+          <div class="badge-row" id="draft-summary" style="margin-bottom: 16px;" {{if not .Candidates}}hidden{{end}}>
+            <span class="pill secondary" id="draft-count">{{.Count}} possible shifts</span>
+            <span class="pill secondary" id="draft-time">{{.CandidateTime}} in matched windows</span>
+          </div>
+          <div class="activity-data-grid" id="draft-list">
             {{range .Candidates}}
               <div class="activity-data-row">
                 <div class="activity-data-copy">
@@ -727,6 +765,7 @@
               </div>
             {{end}}
           </div>
+          <p class="muted" id="draft-status" {{if .Candidates}}hidden{{end}}>{{.Status}}</p>
         {{else}}
           <p class="muted">{{.Status}}</p>
           {{if .NeedsRefresh}}
@@ -791,6 +830,92 @@
         }
       });
     });
+
+    (function() {
+      const panel = document.getElementById('draft-analysis');
+      const windowInput = document.getElementById('draft-window');
+      const dropInput = document.getElementById('draft-drop');
+      if (!panel || !windowInput || !dropInput) return;
+
+      const windowValue = document.getElementById('draft-window-value');
+      const dropValue = document.getElementById('draft-drop-value');
+      const update = document.getElementById('draft-update');
+      const detail = document.getElementById('draft-detail');
+      const confidence = document.getElementById('draft-confidence');
+      const summary = document.getElementById('draft-summary');
+      const count = document.getElementById('draft-count');
+      const time = document.getElementById('draft-time');
+      const list = document.getElementById('draft-list');
+      const status = document.getElementById('draft-status');
+      let timer;
+      let request;
+      let revision = 0;
+
+      function render(view) {
+        detail.textContent = view.Detail;
+        const hasCandidates = Array.isArray(view.Candidates) && view.Candidates.length > 0;
+        confidence.hidden = !hasCandidates;
+        summary.hidden = !hasCandidates;
+        status.hidden = hasCandidates;
+        status.textContent = view.Status;
+        if (!hasCandidates) {
+          list.replaceChildren();
+          return;
+        }
+        confidence.textContent = `${view.Confidence}/100 · ${view.ConfidenceLabel}`;
+        count.textContent = `${view.Count} possible shifts`;
+        time.textContent = `${view.CandidateTime} in matched windows`;
+        const rows = view.Candidates.map(candidate => {
+          const row = document.createElement('div');
+          row.className = 'activity-data-row';
+          const copy = document.createElement('div');
+          copy.className = 'activity-data-copy';
+          const label = document.createElement('div');
+          label.className = 'activity-data-label';
+          label.textContent = `${candidate.Interval} · ${candidate.Duration}`;
+          const explanation = document.createElement('div');
+          explanation.className = 'activity-data-detail';
+          explanation.textContent = `${candidate.PowerDrop} while averaging ${candidate.Speed}`;
+          const score = document.createElement('div');
+          score.className = 'activity-data-value';
+          score.textContent = `${candidate.Confidence}/100`;
+          copy.append(label, explanation);
+          row.append(copy, score);
+          return row;
+        });
+        list.replaceChildren(...rows);
+      }
+
+      function onChange() {
+        windowValue.textContent = `${windowInput.value}s`;
+        dropValue.textContent = `${dropInput.value}%`;
+        clearTimeout(timer);
+        if (request) request.abort();
+        const current = ++revision;
+        update.textContent = 'Recalculating…';
+        timer = setTimeout(async () => {
+          request = new AbortController();
+          try {
+            const params = new URLSearchParams({ window: windowInput.value, drop: dropInput.value });
+            const response = await fetch(`/activity/${panel.dataset.activityId}/drafting?${params}`, {
+              signal: request.signal, credentials: 'same-origin'
+            });
+            if (!response.ok) throw new Error('recalculation failed');
+            const view = await response.json();
+            if (current !== revision) return;
+            render(view);
+            update.textContent = '';
+          } catch (error) {
+            if (current === revision && error.name !== 'AbortError') {
+              update.textContent = 'Could not recalculate. Try again.';
+            }
+          }
+        }, 180);
+      }
+
+      windowInput.addEventListener('input', onChange);
+      dropInput.addEventListener('input', onChange);
+    })();
 
     (function() {
       const points = {{.RoutePointsJSON}};

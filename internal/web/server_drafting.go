@@ -16,6 +16,9 @@ type DraftingView struct {
 	Status          string
 	Detail          string
 	NeedsRefresh    bool
+	CanTune         bool
+	WindowSeconds   int
+	MinDropPercent  int
 	Count           int
 	Confidence      int
 	ConfidenceLabel string
@@ -52,6 +55,7 @@ type draftBucket struct {
 type draftCandidate struct {
 	start      time.Time
 	end        time.Time
+	high       draftBucket
 	highPower  float64
 	lowPower   float64
 	speed      float64
@@ -61,16 +65,27 @@ type draftCandidate struct {
 }
 
 const (
-	draftWindowDuration     = 30 * time.Second
+	draftBucketDuration     = 5 * time.Second
 	draftMinSpeedMPS        = 7.0
-	draftMaxSpeedDiffMPS    = 0.7
-	draftMaxGradePercent    = 2.0
-	draftMaxGradeDiff       = 0.6
+	draftMaxSpeedDiffMPS    = 0.5
+	draftMaxGradePercent    = 4.0
+	draftMaxGradeDiff       = 0.7
 	draftMaxAccelerationMPS = 0.35
 	draftMaxSampleGap       = 10 * time.Second
 )
 
+type draftingOptions struct {
+	windowSeconds  int
+	minDropPercent int
+}
+
+var defaultDraftingOptions = draftingOptions{windowSeconds: 15, minDropPercent: 12}
+
 func buildDraftingView(activity storage.Activity, points []gps.Point) *DraftingView {
+	return buildDraftingViewWithOptions(activity, points, defaultDraftingOptions)
+}
+
+func buildDraftingViewWithOptions(activity storage.Activity, points []gps.Point, options draftingOptions) *DraftingView {
 	if !isRideType(activity.Type) || len(points) < 2 {
 		return nil
 	}
@@ -84,7 +99,7 @@ func buildDraftingView(activity storage.Activity, points []gps.Point) *DraftingV
 	if !hasPower {
 		return nil
 	}
-	view := &DraftingView{}
+	view := &DraftingView{WindowSeconds: options.windowSeconds, MinDropPercent: options.minDropPercent}
 	if activity.DeviceWatts == nil {
 		if activity.PowerSourceChecked {
 			view.Status = "Power source unavailable from Strava"
@@ -101,22 +116,23 @@ func buildDraftingView(activity storage.Activity, points []gps.Point) *DraftingV
 		view.Detail = "Strava-estimated watts are calculated partly from speed and elevation, so they cannot independently show a drafting-related power drop."
 		return view
 	}
+	view.CanTune = true
 
 	buckets := buildDraftBuckets(points)
-	candidates := detectDraftCandidates(buckets)
+	candidates := detectDraftCandidates(buckets, options)
 	if len(candidates) == 0 {
 		view.Status = "No clear same-speed drops"
-		view.Detail = "No sustained power drops passed the steady-speed, near-flat, and direction checks in this ride. Short rotations may be missed."
+		view.Detail = fmt.Sprintf("No power drop of at least %d%% and 20 W passed the %d-second speed, grade, and direction checks. Try a shorter window for quick rotations.", options.minDropPercent, options.windowSeconds)
 		return view
 	}
 
 	view.Status = "Possible draft-like shifts"
 	view.Count = len(candidates)
-	view.Detail = "Adjacent 30-second windows at similar speed, grade, and direction. The score measures pattern strength, not the probability of drafting or time proven at the back."
+	view.Detail = fmt.Sprintf("Adjacent %d-second windows with a power drop of at least %d%% and 20 W at similar speed, grade, and direction. Scores measure pattern strength, not drafting probability or proven position.", options.windowSeconds, options.minDropPercent)
 	if activity.AthleteCount > 1 {
 		view.Detail = fmt.Sprintf("Strava grouped %d riders. %s", activity.AthleteCount, view.Detail)
 	} else {
-		view.Detail = "Strava has not confirmed a group for this ride; scores are capped at 65. " + view.Detail
+		view.Detail = "Strava group count is unavailable for this ride; scores are capped at 65. " + view.Detail
 	}
 	var totalDuration time.Duration
 	for i := range candidates {
@@ -153,16 +169,19 @@ func buildDraftBuckets(points []gps.Point) []draftBucket {
 	if start.IsZero() || !end.After(start) || end.Sub(start) > 24*time.Hour {
 		return nil
 	}
-	count := int(math.Ceil(end.Sub(start).Seconds() / draftWindowDuration.Seconds()))
+	count := int(math.Ceil(end.Sub(start).Seconds() / draftBucketDuration.Seconds()))
 	buckets := make([]draftBucket, count)
 	for i := range buckets {
-		buckets[i].start = start.Add(time.Duration(i) * draftWindowDuration)
+		buckets[i].start = start.Add(time.Duration(i) * draftBucketDuration)
 	}
 	for i := 1; i < len(points); i++ {
 		prev, curr := points[i-1], points[i]
 		dt := curr.Time.Sub(prev.Time)
 		if dt <= 0 || dt > draftMaxSampleGap || !validPacingCoordinate(prev) || !validPacingCoordinate(curr) ||
-			!prev.HasPower || !prev.HasGrade || !curr.HasGrade || math.IsNaN(prev.Power) ||
+			!prev.HasPower || !prev.HasGrade || !curr.HasGrade ||
+			math.IsNaN(prev.Power) || math.IsInf(prev.Power, 0) ||
+			math.IsNaN(prev.Speed) || math.IsInf(prev.Speed, 0) || math.IsNaN(curr.Speed) || math.IsInf(curr.Speed, 0) ||
+			math.IsNaN(prev.Grade) || math.IsInf(prev.Grade, 0) || math.IsNaN(curr.Grade) || math.IsInf(curr.Grade, 0) ||
 			prev.Power < 0 || prev.Speed < draftMinSpeedMPS || curr.Speed < draftMinSpeedMPS ||
 			math.Abs(prev.Grade) > draftMaxGradePercent || math.Abs(curr.Grade) > draftMaxGradePercent ||
 			math.Abs(curr.Speed-prev.Speed)/dt.Seconds() > draftMaxAccelerationMPS {
@@ -176,11 +195,11 @@ func buildDraftBuckets(points []gps.Point) []draftBucket {
 		east := (curr.Lon - prev.Lon) * 111195 * math.Cos(meanLat)
 		north := (curr.Lat - prev.Lat) * 111195
 		for from := prev.Time; from.Before(curr.Time); {
-			index := int(from.Sub(start) / draftWindowDuration)
+			index := int(from.Sub(start) / draftBucketDuration)
 			if index < 0 || index >= len(buckets) {
 				break
 			}
-			to := buckets[index].start.Add(draftWindowDuration)
+			to := buckets[index].start.Add(draftBucketDuration)
 			if to.After(curr.Time) {
 				to = curr.Time
 			}
@@ -198,61 +217,106 @@ func buildDraftBuckets(points []gps.Point) []draftBucket {
 			from = to
 		}
 	}
-	for i := range buckets {
-		bucket := &buckets[i]
-		if bucket.validSecs < 24 || bucket.distance < 150 {
-			continue
-		}
-		straightness := math.Hypot(bucket.east, bucket.north) / bucket.distance
-		if straightness < 0.85 {
-			continue
-		}
-		bucket.speed = bucket.speedSum / bucket.validSecs
-		variance := bucket.speedSqSum/bucket.validSecs - bucket.speed*bucket.speed
-		if math.Sqrt(math.Max(0, variance)) > 0.6 {
-			continue
-		}
-		bucket.power = bucket.powerSum / bucket.validSecs
-		bucket.grade = bucket.gradeSum / bucket.validSecs
-		length := math.Hypot(bucket.east, bucket.north)
-		bucket.headingEast, bucket.headingNorth = bucket.east/length, bucket.north/length
-		bucket.valid = true
-	}
 	return buckets
 }
 
-func detectDraftCandidates(buckets []draftBucket) []draftCandidate {
+func aggregateDraftWindow(buckets []draftBucket, first, count int) draftBucket {
+	if first < 0 || first+count > len(buckets) {
+		return draftBucket{}
+	}
+	window := draftBucket{start: buckets[first].start}
+	for _, bucket := range buckets[first : first+count] {
+		window.validSecs += bucket.validSecs
+		window.speedSum += bucket.speedSum
+		window.speedSqSum += bucket.speedSqSum
+		window.powerSum += bucket.powerSum
+		window.gradeSum += bucket.gradeSum
+		window.east += bucket.east
+		window.north += bucket.north
+		window.distance += bucket.distance
+	}
+	if window.validSecs < 0.8*float64(count)*draftBucketDuration.Seconds() || window.distance <= 0 {
+		return window
+	}
+	window.speed = window.speedSum / window.validSecs
+	variance := window.speedSqSum/window.validSecs - window.speed*window.speed
+	if window.speed < draftMinSpeedMPS || math.Sqrt(math.Max(0, variance)) > 0.45 ||
+		math.Hypot(window.east, window.north)/window.distance < 0.85 {
+		return window
+	}
+	window.power = window.powerSum / window.validSecs
+	window.grade = window.gradeSum / window.validSecs
+	length := math.Hypot(window.east, window.north)
+	window.headingEast, window.headingNorth = window.east/length, window.north/length
+	window.valid = true
+	return window
+}
+
+func detectDraftCandidates(buckets []draftBucket, options draftingOptions) []draftCandidate {
+	width := options.windowSeconds / int(draftBucketDuration.Seconds())
+	if width < 1 {
+		return nil
+	}
 	var candidates []draftCandidate
-	for i := 1; i < len(buckets); i++ {
-		high, low := buckets[i-1], buckets[i]
+	for first := width; first+width <= len(buckets); first++ {
+		high := aggregateDraftWindow(buckets, first-width, width)
+		low := aggregateDraftWindow(buckets, first, width)
 		if !similarDraftWindows(high, low) || high.power < 120 {
 			continue
 		}
-		drop := high.power - low.power
-		if drop < math.Max(30, 0.15*high.power) {
+		if high.power-low.power < math.Max(20, float64(options.minDropPercent)*high.power/100) {
 			continue
 		}
-		last, powerSum, speedSum := i, low.power, low.speed
-		for j := i + 1; j < len(buckets) && j < i+8; j++ {
-			if !similarDraftWindows(high, buckets[j]) || buckets[j].power > high.power*0.85 {
+		candidate := draftCandidate{
+			start: low.start, end: low.start.Add(time.Duration(options.windowSeconds) * time.Second),
+			high: high, highPower: high.power, lowPower: low.power, speed: low.speed,
+			speedDiff: math.Abs(high.speed - low.speed), gradeDiff: math.Abs(high.grade - low.grade),
+		}
+		if len(candidates) > 0 && !candidate.start.After(candidates[len(candidates)-1].end) {
+			last := &candidates[len(candidates)-1]
+			if candidate.end.After(last.end) {
+				last.end = candidate.end
+			}
+			if candidate.highPower-candidate.lowPower > last.highPower-last.lowPower {
+				start, end := last.start, last.end
+				*last = candidate
+				last.start, last.end = start, end
+			}
+			continue
+		}
+		candidates = append(candidates, candidate)
+	}
+	// The transition windows identify the shift. Extend an episode only while
+	// successive complete windows remain lower at comparable speed and grade.
+	for i := range candidates {
+		candidate := &candidates[i]
+		for candidate.end.Sub(candidate.start) < 4*time.Minute {
+			first := int(candidate.end.Sub(buckets[0].start) / draftBucketDuration)
+			next := aggregateDraftWindow(buckets, first, width)
+			if !similarDraftWindows(candidate.high, next) ||
+				next.power > candidate.highPower*(1-0.7*float64(options.minDropPercent)/100) {
 				break
 			}
-			last, powerSum, speedSum = j, powerSum+buckets[j].power, speedSum+buckets[j].speed
+			candidate.end = next.start.Add(time.Duration(options.windowSeconds) * time.Second)
 		}
-		windowCount := float64(last - i + 1)
-		avgLow := powerSum / windowCount
-		candidates = append(candidates, draftCandidate{
-			start:     low.start,
-			end:       buckets[last].start.Add(draftWindowDuration),
-			highPower: high.power,
-			lowPower:  avgLow,
-			speed:     speedSum / windowCount,
-			speedDiff: math.Abs(high.speed - speedSum/windowCount),
-			gradeDiff: math.Abs(high.grade - low.grade),
-		})
-		i = last
 	}
-	return candidates
+	merged := make([]draftCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if len(merged) == 0 || candidate.start.After(merged[len(merged)-1].end) {
+			merged = append(merged, candidate)
+			continue
+		}
+		last := &merged[len(merged)-1]
+		start, end := last.start, last.end
+		if candidate.end.After(end) {
+			end = candidate.end
+		}
+		if candidate.highPower-candidate.lowPower > last.highPower-last.lowPower {
+			*last = candidate
+		}
+		last.start, last.end = start, end
+	}
+	return merged
 }
 
 func similarDraftWindows(a, b draftBucket) bool {
@@ -266,20 +330,25 @@ func similarDraftWindows(a, b draftBucket) bool {
 func draftConfidence(candidate draftCandidate, repetitions int, grouped bool) int {
 	drop := 1 - candidate.lowPower/candidate.highPower
 	duration := candidate.end.Sub(candidate.start).Seconds()
-	score := 20 + 8 + 17*clamp01((drop-0.15)/0.25) +
+	score := 5 + 17*clamp01((drop-0.08)/0.25) +
 		20*clamp01(1-candidate.speedDiff/draftMaxSpeedDiffMPS) +
 		10*clamp01(1-candidate.gradeDiff/draftMaxGradeDiff) +
-		10*clamp01(duration/120) +
-		5*math.Min(float64(repetitions-1), 3)
+		15*clamp01(duration/90) +
+		8*math.Min(float64(repetitions-1), 3)
+	if grouped {
+		score += 6
+	}
 	limit := 65.0
 	if grouped {
 		limit = 90
 	}
-	if repetitions < 2 {
-		limit = math.Min(limit, 65)
-	}
-	if duration < 60 {
+	if duration < 20 {
+		limit = math.Min(limit, 40)
+	} else if duration < 45 {
 		limit = math.Min(limit, 55)
+	}
+	if repetitions < 2 && !grouped {
+		limit = math.Min(limit, 60)
 	}
 	return int(math.Min(limit, math.Round(score)))
 }

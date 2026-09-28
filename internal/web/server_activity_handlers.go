@@ -476,6 +476,10 @@ func (s *Server) Activity(w http.ResponseWriter, r *http.Request) {
 		s.VerifyActivityPower(w, r)
 		return
 	}
+	if strings.HasSuffix(r.URL.Path, "/drafting") {
+		s.ActivityDrafting(w, r)
+		return
+	}
 	if strings.HasSuffix(r.URL.Path, "/apply") {
 		s.ApplyActivityRules(w, r)
 		return
@@ -549,6 +553,56 @@ func (s *Server) VerifyActivityPower(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/activity/%d", activityID), http.StatusFound)
+}
+
+func (s *Server) ActivityDrafting(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.requireUserID(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	idStr := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/activity/"), "/drafting")
+	activityID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || activityID <= 0 {
+		http.Error(w, "invalid activity id", http.StatusBadRequest)
+		return
+	}
+	options := defaultDraftingOptions
+	if raw := r.URL.Query().Get("window"); raw != "" {
+		options.windowSeconds, err = strconv.Atoi(raw)
+		if err != nil || options.windowSeconds < 10 || options.windowSeconds > 30 || options.windowSeconds%5 != 0 {
+			http.Error(w, "invalid comparison window", http.StatusBadRequest)
+			return
+		}
+	}
+	if raw := r.URL.Query().Get("drop"); raw != "" {
+		options.minDropPercent, err = strconv.Atoi(raw)
+		if err != nil || options.minDropPercent < 8 || options.minDropPercent > 25 {
+			http.Error(w, "invalid power drop", http.StatusBadRequest)
+			return
+		}
+	}
+	activity, err := s.store.GetActivityForUser(r.Context(), userID, activityID)
+	if err != nil {
+		http.Error(w, "activity not found", http.StatusNotFound)
+		return
+	}
+	points, err := s.store.LoadActivityPoints(r.Context(), activityID)
+	if err != nil {
+		http.Error(w, "failed to load activity points", http.StatusInternalServerError)
+		return
+	}
+	view := buildDraftingViewWithOptions(activity, points, options)
+	if view == nil {
+		http.Error(w, "draft analysis unavailable", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(view)
 }
 
 func (s *Server) DownloadActivity(w http.ResponseWriter, r *http.Request) {
