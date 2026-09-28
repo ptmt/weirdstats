@@ -670,14 +670,16 @@ func (s *Server) Landing(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	userID, _ := s.currentUserID(r.Context(), r)
+	if _, ok := s.currentUserID(r.Context(), r); ok {
+		http.Redirect(w, r, appendMessage("/activities/", r.URL.Query().Get("msg")), http.StatusFound)
+		return
+	}
 	data := LandingPageData{
 		PageData: PageData{
 			Title:      "weirdstats",
 			Page:       "home",
 			Message:    r.URL.Query().Get("msg"),
 			FooterText: "Built for myself, friends, and random strangers. Not for scale, not for profit.",
-			Strava:     s.getStravaInfo(r.Context(), userID),
 			UserCount:  s.userCount(r.Context()),
 		},
 		Facts: buildSettingsFacts(defaultWeirdStatsFactSettings()),

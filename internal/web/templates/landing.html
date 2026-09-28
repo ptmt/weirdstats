@@ -12,15 +12,17 @@
 
       <ul class="landing-fact-list">
         {{range .Facts}}
-          <li class="landing-fact-item">
-            <div class="landing-fact-title">
-              <span>{{.Label}}</span>
-              {{if .RideOnly}}
-                <span class="landing-fact-note">Ride only</span>
-              {{end}}
-            </div>
-            <p>{{.Description}}</p>
-          </li>
+          {{if .Enabled}}
+            <li class="landing-fact-item">
+              <div class="landing-fact-title">
+                <span>{{.Label}}</span>
+                {{if .RideOnly}}
+                  <span class="landing-fact-note">Ride only</span>
+                {{end}}
+              </div>
+              <p>{{.Description}}</p>
+            </li>
+          {{end}}
         {{end}}
       </ul>
 

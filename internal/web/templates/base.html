@@ -33,11 +33,11 @@
   <body>
     <div class="wrap">
       <div class="nav{{if eq .Page "activities"}} nav-with-sync{{end}}">
-        <a href="/" class="brand">
+        <a href="{{if .Strava.Connected}}/activities/{{else}}/{{end}}" class="brand">
           <img src="/static/weirdstats.png" alt="weirdstats" class="logo">
         </a>
         <div class="nav-links">
-          <a href="/"{{if eq .Page "home"}} class="active"{{end}}>Home</a>
+          {{if not .Strava.Connected}}<a href="/"{{if eq .Page "home"}} class="active"{{end}}>Home</a>{{end}}
           {{if .Strava.Connected}}
             <a href="/activities/"{{if eq .Page "activities"}} class="active"{{end}}>Activities</a>
             <a href="/activities/settings"{{if eq .Page "settings"}} class="active"{{end}}>Settings</a>

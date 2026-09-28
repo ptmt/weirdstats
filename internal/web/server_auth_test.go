@@ -103,6 +103,12 @@ func TestActivities_ShowsOnlyCurrentUserActivities(t *testing.T) {
 	if !strings.Contains(body, "Bob Visible Ride") {
 		t.Fatalf("expected Bob activity in response")
 	}
+	if strings.Contains(body, `>Home</a>`) {
+		t.Fatalf("did not expect Home link for signed-in users")
+	}
+	if !strings.Contains(body, `<a href="/activities/" class="brand">`) {
+		t.Fatalf("expected brand to link to Activities for signed-in users")
+	}
 }
 
 func TestActivities_FiltersFeedByDay(t *testing.T) {
