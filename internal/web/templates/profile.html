@@ -5,7 +5,10 @@
         <strong>{{.Message}}</strong>
       </div>
     {{end}}
-    <h2 class="section-title">Your parsed activities</h2>
+    <div class="page-heading">
+      <h2 class="section-title">Activities</h2>
+      <p class="muted">Your latest efforts. A few extra details.</p>
+    </div>
   </section>
 
   {{if .Contributions}}
@@ -13,7 +16,7 @@
       <section class="card contrib-card">
         <div class="contrib-header">
           <div>
-            <h3>{{.Year}}</h3>
+            <h3>Activity history <span class="contrib-year">{{.Year}}</span></h3>
           </div>
           <div class="contrib-legend">
             <span class="legend-label">Less</span>
@@ -44,8 +47,6 @@
       </section>
     {{end}}
   {{end}}
-
-  {{if .NextPageURL}}<p><a class="btn secondary" href="{{.NextPageURL}}">Older activities</a></p>{{end}}
 
   {{if .DayFilterActive}}
     <section class="activity-filter-bar">
@@ -221,6 +222,8 @@
     </section>
   {{end}}
 
+  {{if .NextPageURL}}<div class="feed-pagination"><a class="btn secondary" href="{{.NextPageURL}}">Older activities <span aria-hidden="true">→</span></a></div>{{end}}
+
   <link rel="stylesheet" href="/static/leaflet/leaflet.css" />
   <script src="/static/leaflet/leaflet.js"></script>
   <script>
@@ -269,7 +272,7 @@
           return;
         }
         const polyline = L.polyline(coords, {
-          color: '#a855f7',
+          color: '#fc4c02',
           weight: 3,
           opacity: 0.95
         }).addTo(map);
@@ -279,14 +282,14 @@
 
         L.circleMarker(coords[0], {
           radius: 4,
-          color: 'rgba(6, 182, 212, 0.95)',
-          fillColor: 'rgba(6, 182, 212, 0.95)',
+          color: '#1b8554',
+          fillColor: '#1b8554',
           fillOpacity: 1
         }).addTo(map);
         L.circleMarker(coords[coords.length - 1], {
           radius: 4,
-          color: 'rgba(236, 72, 153, 0.95)',
-          fillColor: 'rgba(236, 72, 153, 0.95)',
+          color: '#242428',
+          fillColor: '#242428',
           fillOpacity: 1
         }).addTo(map);
 

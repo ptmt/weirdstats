@@ -7,8 +7,19 @@
     {{end}}
 
     <section class="card landing-panel">
+      <div class="landing-eyebrow">A closer look at your activities</div>
       <h2>Optional stats for your Strava activities</h2>
       <p class="muted">Weirdstats listens to new activities, extracts these stats, and can write them back to the description. Turn any of them off in settings.</p>
+
+      <div class="cta-row landing-actions">
+        {{if .Strava.Connected}}
+          <a class="btn" href="/activities/">View Activities</a>
+          <a class="btn secondary" href="/activities/settings">Settings</a>
+        {{else}}
+          <a class="btn" href="/connect/strava?next=/activities/">{{if gt .UserCount 0}}Sign in with Strava{{else}}Connect Strava{{end}}</a>
+          <a class="btn secondary" href="/activities/">View activities</a>
+        {{end}}
+      </div>
 
       <ul class="landing-fact-list">
         {{range .Facts}}
@@ -25,16 +36,6 @@
           {{end}}
         {{end}}
       </ul>
-
-      <div class="cta-row landing-actions">
-        {{if .Strava.Connected}}
-          <a class="btn" href="/activities/">View Activities</a>
-          <a class="btn secondary" href="/activities/settings">Settings</a>
-        {{else}}
-          <a class="btn" href="/connect/strava?next=/activities/">{{if gt .UserCount 0}}Sign in with Strava{{else}}Connect Strava{{end}}</a>
-          <a class="btn secondary" href="/activities/">View activities</a>
-        {{end}}
-      </div>
     </section>
   </section>
 {{end}}

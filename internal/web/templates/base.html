@@ -21,32 +21,32 @@
     <script>
       // Apply saved theme immediately to prevent flash
       (function() {
-        const saved = localStorage.getItem('theme');
-        if (saved) {
-          document.documentElement.setAttribute('data-theme', saved);
-        } else if (window.matchMedia('(prefers-color-scheme: light)').matches) {
-          document.documentElement.setAttribute('data-theme', 'light');
-        }
+        let theme = 'light';
+        try {
+          const saved = localStorage.getItem('theme');
+          if (saved === 'light' || saved === 'dark') theme = saved;
+        } catch (_) {}
+        document.documentElement.setAttribute('data-theme', theme);
       })();
     </script>
   </head>
   <body>
-    <div class="wrap">
-      <div class="nav{{if eq .Page "activities"}} nav-with-sync{{end}}">
-        <a href="{{if .Strava.Connected}}/activities/{{else}}/{{end}}" class="brand">
-          <img src="/static/weirdstats.png" alt="weirdstats" class="logo">
+    <header class="site-header">
+      <nav class="nav{{if eq .Page "activities"}} nav-with-sync{{end}}" aria-label="Main navigation">
+        <a href="{{if .Strava.Connected}}/activities/{{else}}/{{end}}" class="brand" aria-label="Weirdstats home">
+          <img src="/static/weirdstats.png" alt="WeirdStats" class="logo" width="677" height="369">
         </a>
         <div class="nav-links">
           {{if not .Strava.Connected}}<a href="/"{{if eq .Page "home"}} class="active"{{end}}>Home</a>{{end}}
           {{if .Strava.Connected}}
-            <a href="/activities/"{{if eq .Page "activities"}} class="active"{{end}}>Activities</a>
-            <a href="/activities/settings"{{if eq .Page "settings"}} class="active"{{end}}>Settings</a>
-            <a href="/admin/"{{if eq .Page "admin"}} class="active"{{end}}>Admin</a>
-            <span class="pill">{{if .Strava.AthleteName}}{{.Strava.AthleteName}}{{else}}Strava #{{.Strava.AthleteID}}{{end}}</span>
+            <a href="/activities/"{{if or (eq .Page "activities") (eq .Page "activity")}} class="active"{{if eq .Page "activities"}} aria-current="page"{{end}}{{end}}>Activities</a>
+            <a href="/activities/settings"{{if eq .Page "settings"}} class="active" aria-current="page"{{end}}>Settings</a>
+            <a href="/admin/"{{if eq .Page "admin"}} class="active" aria-current="page"{{end}}>Admin</a>
+            <span class="nav-athlete">{{if .Strava.AthleteName}}{{.Strava.AthleteName}}{{else}}Strava #{{.Strava.AthleteID}}{{end}}</span>
           {{else}}
             <a class="btn" href="/connect/strava?next=/activities/">{{if gt .UserCount 0}}Sign In{{else}}Connect Strava{{end}}</a>
           {{end}}
-          <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle theme">
+          <button type="button" class="theme-toggle" id="theme-toggle" title="Switch to dark theme" aria-label="Switch to dark theme">
             <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="5"/>
               <line x1="12" y1="1" x2="12" y2="3"/>
@@ -64,10 +64,12 @@
           </button>
         </div>
         {{block "sync-status" .}}{{end}}
-      </div>
+      </nav>
+    </header>
+    <main class="wrap" id="main-content">
       {{template "content" .}}
       {{template "footer" .}}
-    </div>
+    </main>
     <script>
       document.querySelectorAll('form').forEach(form => {
         form.addEventListener('submit', () => {
@@ -87,14 +89,22 @@
         if (!toggle) return;
 
         function getTheme() {
-          return document.documentElement.getAttribute('data-theme') || 'dark';
+          return document.documentElement.getAttribute('data-theme') || 'light';
+        }
+
+        function updateLabel(theme) {
+          const label = theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
+          toggle.setAttribute('aria-label', label);
+          toggle.title = label;
         }
 
         function setTheme(theme) {
           document.documentElement.setAttribute('data-theme', theme);
-          localStorage.setItem('theme', theme);
+          updateLabel(theme);
+          try { localStorage.setItem('theme', theme); } catch (_) {}
         }
 
+        updateLabel(getTheme());
         toggle.addEventListener('click', () => {
           const current = getTheme();
           setTheme(current === 'dark' ? 'light' : 'dark');

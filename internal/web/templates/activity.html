@@ -11,7 +11,7 @@
         transition: color 0.2s;
       }
       .back-link:hover {
-        color: var(--cyan);
+        color: var(--accent-ink);
       }
       .hero-copy {
         display: grid;
@@ -53,7 +53,7 @@
         align-items: center;
         gap: 6px;
         padding: 10px 14px;
-        border-radius: 10px;
+        border-radius: 4px;
         border: 1px solid var(--border);
         background: var(--surface);
         color: var(--ink);
@@ -65,8 +65,8 @@
         transition: all 0.2s ease;
       }
       .activity-action-btn:hover {
-        border-color: var(--purple);
-        background: rgba(168, 85, 247, 0.1);
+        border-color: var(--accent-ink);
+        background: var(--accent-soft);
       }
       .activity-action-btn svg {
         width: 16px;
@@ -89,8 +89,8 @@
         gap: 6px;
         padding: 16px;
         border: 1px solid var(--border);
-        border-radius: 16px;
-        background: rgba(168, 85, 247, 0.06);
+        border-radius: 4px;
+        background: var(--bg-subtle);
       }
       .pacing-highlight-label {
         color: var(--ink-muted);
@@ -129,7 +129,7 @@
       }
       .pacing-table td { color: var(--ink); font-size: 13px; }
       .pacing-table tr:last-child td { border-bottom: 0; }
-      .pacing-fastest { color: var(--purple); font-size: 11px; font-weight: 700; }
+      .pacing-fastest { color: var(--accent-ink); font-size: 11px; font-weight: 700; }
       .activity-stage-head {
         display: flex;
         align-items: flex-start;
@@ -153,7 +153,7 @@
         margin: 0 0 18px;
         padding: 16px;
         border: 1px solid var(--border);
-        border-radius: 16px;
+        border-radius: 4px;
       }
       .draft-control {
         display: grid;
@@ -170,7 +170,7 @@
         gap: 8px;
       }
       .draft-control output { color: var(--ink); font-variant-numeric: tabular-nums; }
-      .draft-control input { width: 100%; accent-color: var(--purple); }
+      .draft-control input { width: 100%; accent-color: var(--accent-ink); }
       .draft-controls-note { width: 100%; color: var(--ink-muted); font-size: 12px; }
       #draft-summary[hidden], #draft-confidence[hidden], #draft-status[hidden], #draft-list-note[hidden] { display: none; }
       .draft-visual {
@@ -179,17 +179,17 @@
         margin: 0 0 18px;
         padding: 18px;
         border: 1px solid var(--border);
-        border-radius: 16px;
-        background: rgba(168, 85, 247, 0.025);
+        border-radius: 4px;
+        background: var(--bg-subtle);
       }
       .draft-visual[hidden], .draft-focus[hidden] { display: none; }
       .draft-visual-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; }
       .draft-visual-head strong { color: var(--ink); font-size: 14px; }
       .draft-visual-head span, .draft-axis, .draft-legend, .draft-focus-context { color: var(--ink-muted); font-size: 12px; }
-      .draft-track { position: relative; height: 25px; border-radius: 8px; background: #e7e9ef; }
-      .draft-marker { position: absolute; top: 0; height: 100%; min-width: 7px; padding: 0; border: 2px solid white; border-radius: 7px; cursor: pointer; }
+      .draft-track { position: relative; height: 25px; border-radius: 4px; background: var(--bg-subtle); }
+      .draft-marker { position: absolute; top: 0; height: 100%; min-width: 7px; padding: 0; border: 2px solid var(--surface); border-radius: 4px; cursor: pointer; }
       .draft-marker-exploratory { background: #e6a23c; }
-      .draft-marker-moderate { background: #a855f7; }
+      .draft-marker-moderate { background: var(--accent); }
       .draft-marker-strong { background: #22a36a; }
       .draft-marker:hover, .draft-marker.selected { outline: 2px solid var(--ink); z-index: 1; }
       .draft-axis { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
@@ -200,7 +200,7 @@
       .draft-focus strong { color: var(--ink); font-size: 14px; }
       .draft-focus-chart { height: 250px; position: relative; }
       .draft-event-row { width: 100%; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
-      .draft-event-row:hover, .draft-event-row.selected { border-color: var(--purple); background: rgba(168, 85, 247, 0.055); }
+      .draft-event-row:hover, .draft-event-row.selected { border-color: var(--accent-ink); background: var(--accent-soft); }
       .activity-route-grid {
         display: grid;
         grid-template-columns: minmax(0, 2fr) minmax(300px, 0.95fr);
@@ -212,14 +212,10 @@
         gap: 10px;
       }
       .activity-route-map-wrap #map {
-        height: min(74vh, 760px);
-        min-height: 560px;
+        height: min(60vh, 560px);
+        min-height: 400px;
         width: 100%;
-        background-color: #f6f4ed;
-        background-image:
-          radial-gradient(circle at 22% 18%, rgba(193, 220, 224, 0.32), transparent 38%),
-          repeating-linear-gradient(0deg, transparent 0 79px, rgba(82, 101, 117, 0.045) 80px),
-          repeating-linear-gradient(90deg, transparent 0 79px, rgba(82, 101, 117, 0.045) 80px);
+        background: var(--bg-subtle);
       }
       .map-lens-toolbar {
         display: flex;
@@ -240,9 +236,9 @@
         font-weight: 700;
         cursor: pointer;
       }
-      .map-lens-group button[aria-pressed="true"] { background: #8b49db; color: #fff; }
+      .map-lens-group button[aria-pressed="true"] { background: var(--accent); color: #fff; }
       .map-lens-group button:disabled { opacity: 0.4; cursor: not-allowed; }
-      .map-lens-group button:focus-visible { outline: 2px solid #8b49db; outline-offset: 2px; }
+      .map-lens-group button:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
       .map-speed-legend { display: flex; align-items: center; gap: 10px; color: var(--ink-muted); font-size: 12px; font-weight: 700; }
       .map-speed-legend[hidden] { display: none; }
       .map-speed-legend-bar { width: 126px; height: 9px; border-radius: 99px; background: linear-gradient(90deg, #377cfb, #19b9d2, #76c866, #f4b544, #f06b3f, #df3974); }
@@ -256,8 +252,8 @@
         display: grid;
         gap: 10px;
         padding: 14px;
-        border-radius: 18px;
-        background: rgba(255, 255, 255, 0.03);
+        border-radius: 4px;
+        background: var(--bg-subtle);
         border: 1px solid var(--border);
         min-height: 0;
       }
@@ -269,9 +265,10 @@
       }
       .activity-route-events h4 {
         margin: 0;
-        font-family: "Bebas Neue", sans-serif;
-        font-size: 20px;
-        letter-spacing: 1px;
+        font-family: inherit;
+        font-size: 16px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
         color: var(--ink);
       }
       .activity-panel-count {
@@ -294,7 +291,7 @@
         gap: 10px;
         width: 100%;
         padding: 14px 15px;
-        border-radius: 14px;
+        border-radius: 4px;
         border: 1px solid var(--border);
         background: var(--surface);
         color: inherit;
@@ -305,11 +302,11 @@
       }
       .fact-row:hover {
         border-color: var(--border-bright);
-        transform: translateY(-1px);
+        background: var(--bg-subtle);
       }
       .fact-row:focus-visible,
       .stop-row:focus-visible {
-        outline: 2px solid var(--cyan);
+        outline: 2px solid var(--accent-ink);
         outline-offset: 2px;
       }
       .fact-row-head {
@@ -395,9 +392,9 @@
         justify-content: space-between;
         gap: 16px;
         padding: 14px 16px;
-        border-radius: 16px;
+        border-radius: 4px;
         border: 1px solid var(--border);
-        background: rgba(255, 255, 255, 0.03);
+        background: var(--bg-subtle);
       }
       .activity-data-row-ok {
         border-color: rgba(34, 197, 94, 0.28);
@@ -442,9 +439,9 @@
         min-height: 220px;
         padding: 22px;
         text-align: center;
-        border-radius: 18px;
+        border-radius: 4px;
         border: 1px dashed var(--border);
-        background: rgba(255, 255, 255, 0.02);
+        background: var(--bg-subtle);
         color: var(--ink-muted);
       }
       .stop-row {
@@ -461,7 +458,7 @@
         }
         .activity-route-map-wrap #map {
           height: min(56vh, 520px);
-          min-height: 420px;
+          min-height: 300px;
         }
         .activity-data-row {
           flex-direction: column;
@@ -471,9 +468,10 @@
         }
       }
       .card h3 {
-        font-family: "Bebas Neue", sans-serif;
-        font-size: 20px;
-        letter-spacing: 1px;
+        font-family: inherit;
+        font-size: 16px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
         margin: 0 0 16px;
         color: var(--ink);
       }
@@ -505,7 +503,7 @@
         border-radius: 999px;
         font-size: 12px;
         font-weight: 700;
-        background: rgba(255, 255, 255, 0.04);
+        background: var(--bg-subtle);
         border: 1px solid var(--border);
         color: var(--ink-muted);
         cursor: pointer;
@@ -516,13 +514,13 @@
         color: var(--ink);
       }
       .layer-toggle:focus-visible {
-        outline: 2px solid var(--cyan);
+        outline: 2px solid var(--accent-ink);
         outline-offset: 2px;
       }
       .layer-toggle.active {
-        background: rgba(34, 197, 94, 0.12);
-        border-color: rgba(34, 197, 94, 0.28);
-        color: var(--ink);
+        background: var(--accent-soft);
+        border-color: var(--border-bright);
+        color: var(--accent-ink);
       }
       .layer-toggle-count {
         display: inline-flex;
@@ -531,8 +529,8 @@
         min-width: 20px;
         padding: 1px 6px;
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: var(--bg-subtle);
+        border: 1px solid var(--border);
         font-size: 11px;
         line-height: 1.2;
         color: var(--ink);
@@ -649,21 +647,37 @@
         </div>
       </div>
     </div>
-    <div class="badge-row">
-      {{if .Activity.Distance}}<span class="pill primary">{{.Activity.Distance}}</span>{{end}}
-      {{if .Activity.Duration}}<span class="pill primary">{{.Activity.Duration}}</span>{{end}}
-      {{if .Activity.DetectedFactCount}}<span class="pill secondary">{{.Activity.DetectedFactCount}} map-linked facts</span>{{end}}
-      {{if .Activity.StopCount}}<span class="pill secondary">{{.Activity.StopCount}} events · {{.Activity.StopTotal}}</span>{{end}}
-      {{if .Activity.LightStops}}<span class="pill secondary">🚦 {{.Activity.LightStops}} at lights</span>{{end}}
-      {{if .Activity.RoadCrossings}}<span class="pill secondary">🚶 {{.Activity.RoadCrossings}} crossings</span>{{end}}
-    </div>
+    <dl class="activity-metrics activity-summary">
+      {{if .Activity.DistanceUnit}}
+        <div class="metric">
+          <dt class="metric-label">Distance</dt>
+          <dd class="metric-value"><span class="metric-number">{{.Activity.DistanceValue}}</span><span class="metric-unit">{{.Activity.DistanceUnit}}</span></dd>
+        </div>
+      {{end}}
+      <div class="metric">
+        <dt class="metric-label">Moving time</dt>
+        <dd class="metric-value"><span class="metric-number">{{.Activity.Duration}}</span></dd>
+      </div>
+      {{if .Activity.PaceUnit}}
+        <div class="metric">
+          <dt class="metric-label">{{.Activity.PaceLabel}}</dt>
+          <dd class="metric-value"><span class="metric-number">{{.Activity.PaceValue}}</span><span class="metric-unit">{{.Activity.PaceUnit}}</span></dd>
+        </div>
+      {{end}}
+      {{if .Activity.HasPower}}
+        <div class="metric">
+          <dt class="metric-label">Avg power</dt>
+          <dd class="metric-value"><span class="metric-number">{{.Activity.PowerValue}}</span><span class="metric-unit">{{.Activity.PowerUnit}}</span></dd>
+        </div>
+      {{end}}
+    </dl>
   </section>
 
   <section class="activity-detail-grid">
     <article class="card">
       <div class="activity-stage-head">
         <div>
-          <div class="map-note">The map is the primary view. Click a fact or stop event to focus its coordinates on the route.</div>
+          <div class="map-note">Explore the route and the moments along the way.</div>
         </div>
         <div class="activity-stage-meta">
           {{if .DetectedFacts}}<span class="activity-panel-count">{{len .DetectedFacts}} facts</span>{{end}}
@@ -833,10 +847,10 @@
               <div class="draft-focus-chart"><canvas id="draft-focus-chart"></canvas></div>
               <div class="draft-focus-context" id="draft-focus-context"></div>
               <div class="draft-legend">
-                <span><i class="draft-swatch" style="background:#a855f7"></i>Power</span>
+                <span><i class="draft-swatch" style="background:#fc4c02"></i>Power</span>
                 <span><i class="draft-swatch" style="background:#06b6d4"></i>Speed</span>
                 <span><i class="draft-swatch" style="background:#b9e9f1"></i>Higher-power window</span>
-                <span><i class="draft-swatch" style="background:#ead5fa"></i>Lower-power window</span>
+                <span><i class="draft-swatch" style="background:#ffe3d4"></i>Lower-power window</span>
               </div>
             </div>
           </div>
@@ -913,6 +927,7 @@
   <link rel="stylesheet" href="/static/leaflet/leaflet.css" />
   <script src="/static/leaflet/leaflet.js"></script>
   <script src="/static/chartjs/chart.umd.js"></script>
+  <script src="/static/chart-theme.js"></script>
   <script>
     document.addEventListener('click', function(e) {
       document.querySelectorAll('.activity-menu.open').forEach(function(menu) {
@@ -1004,14 +1019,14 @@
             };
             c.ctx.save();
             shade(event.BaselineStartSec, event.BaselineStartSec + currentView.WindowSeconds, 'rgba(6,182,212,0.14)');
-            shade(event.LowStartSec, event.LowStartSec + currentView.WindowSeconds, 'rgba(168,85,247,0.15)');
+            shade(event.LowStartSec, event.LowStartSec + currentView.WindowSeconds, 'rgba(252,76,2,0.12)');
             c.ctx.restore();
           }
         };
         chart = new Chart(focusCanvas, {
           type: 'line',
           data: { datasets: [
-            { label: 'Power (W)', data: samples.map(point => ({ x: point.t, y: point.p })), yAxisID: 'power', borderColor: '#a855f7', borderWidth: 2, pointRadius: 0, tension: 0.2, spanGaps: false },
+            { label: 'Power (W)', data: samples.map(point => ({ x: point.t, y: point.p })), yAxisID: 'power', borderColor: '#fc4c02', borderWidth: 2, pointRadius: 0, tension: 0.2, spanGaps: false },
             { label: 'Speed (km/h)', data: samples.map(point => ({ x: point.t, y: point.s })), yAxisID: 'speed', borderColor: '#06b6d4', borderWidth: 2, pointRadius: 0, tension: 0.2, spanGaps: false }
           ] },
           options: {
@@ -1147,7 +1162,7 @@
       const map = L.map('map', { zoomControl: true, scrollWheelZoom: false });
       const coords = points.map(p => [p.lat, p.lon]);
       L.polyline(coords, { color: '#fff', weight: 10, opacity: 0.94, interactive: false }).addTo(map);
-      const routeLine = L.polyline(coords, { color: '#8b49db', weight: 6, opacity: 0.96, interactive: false }).addTo(map);
+      const routeLine = L.polyline(coords, { color: '#fc4c02', weight: 6, opacity: 0.96, interactive: false }).addTo(map);
       map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
       const speedLayer = L.layerGroup();
       for (let start = 1; start < points.length;) {
@@ -1469,8 +1484,8 @@
             {
               label: isRun ? 'Pace (min/km)' : 'Speed (km/h)',
               data: chartData,
-              borderColor: '#a855f7',
-              backgroundColor: 'rgba(168,85,247,0.15)',
+              borderColor: '#fc4c02',
+              backgroundColor: 'rgba(252,76,2,0.12)',
               borderWidth: 2,
               pointRadius: 0,
               tension: 0.1,
@@ -1527,7 +1542,7 @@
 
             // Layer: Stop regions
             if (layers.stops) {
-              ctx.fillStyle = 'rgba(236,72,153,0.15)';
+              ctx.fillStyle = 'rgba(252,76,2,0.12)';
               segments.forEach(([start, end]) => {
                 const xMin = x.getPixelForValue(start);
                 const xMax = x.getPixelForValue(end);
