@@ -83,7 +83,7 @@ func TestActivityDraftingRecalculatesSavedRide(t *testing.T) {
 		t.Fatalf("other activity visible: %d", other.Code)
 	}
 	page := request("/activity/42")
-	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "Possible shifts along the ride") ||
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "Power drops along the ride") ||
 		!strings.Contains(page.Body.String(), "const initialView = {") ||
 		!strings.Contains(page.Body.String(), "const rideSeries = [{") ||
 		!strings.Contains(page.Body.String(), "after start") {

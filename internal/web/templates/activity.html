@@ -172,7 +172,13 @@
       .draft-control output { color: var(--ink); font-variant-numeric: tabular-nums; }
       .draft-control input { width: 100%; accent-color: var(--accent-ink); }
       .draft-controls-note { width: 100%; color: var(--ink-muted); font-size: 12px; }
-      #draft-summary[hidden], #draft-confidence[hidden], #draft-status[hidden], #draft-list-note[hidden] { display: none; }
+      .draft-settings { margin: 0 0 18px; }
+      .draft-settings summary { color: var(--accent-ink); cursor: pointer; font-size: 13px; font-weight: 700; }
+      .draft-settings[open] summary { margin-bottom: 10px; }
+      .draft-settings .draft-controls { margin-bottom: 0; }
+      .draft-rotation-hint { margin: 0 0 18px; }
+      .draft-rotation-hint[hidden] { display: none; }
+      #draft-summary[hidden], #draft-status[hidden], #draft-list-note[hidden] { display: none; }
       .draft-visual {
         display: grid;
         gap: 12px;
@@ -187,10 +193,7 @@
       .draft-visual-head strong { color: var(--ink); font-size: 14px; }
       .draft-visual-head span, .draft-axis, .draft-legend, .draft-focus-context { color: var(--ink-muted); font-size: 12px; }
       .draft-track { position: relative; height: 25px; border-radius: 4px; background: var(--bg-subtle); }
-      .draft-marker { position: absolute; top: 0; height: 100%; min-width: 7px; padding: 0; border: 2px solid var(--surface); border-radius: 4px; cursor: pointer; }
-      .draft-marker-exploratory { background: #e6a23c; }
-      .draft-marker-moderate { background: var(--accent); }
-      .draft-marker-strong { background: #22a36a; }
+      .draft-marker { position: absolute; top: 0; height: 100%; min-width: 7px; padding: 0; border: 2px solid var(--surface); border-radius: 4px; background: var(--accent); cursor: pointer; }
       .draft-marker:hover, .draft-marker.selected { outline: 2px solid var(--ink); z-index: 1; }
       .draft-axis { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
       .draft-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; }
@@ -201,6 +204,7 @@
       .draft-focus-chart { height: 250px; position: relative; }
       .draft-event-row { width: 100%; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
       .draft-event-row:hover, .draft-event-row.selected { border-color: var(--accent-ink); background: var(--accent-soft); }
+      .draft-effort-pattern { color: var(--ink-muted); font-size: 12px; }
       .activity-route-grid {
         display: grid;
         grid-template-columns: minmax(0, 2fr) minmax(300px, 0.95fr);
@@ -816,32 +820,16 @@
       <article class="card" id="draft-analysis" data-activity-id="{{$.Activity.ID}}">
         <div class="activity-stage-head">
           <div>
-            <h3 class="section-title">Power at steady speed</h3>
+            <h3 class="section-title">Drafting shifts</h3>
             <div class="map-note" id="draft-detail">{{.Detail}}</div>
           </div>
-          {{if .CanTune}}<span class="activity-panel-count" id="draft-confidence" {{if not .Candidates}}hidden{{end}}>{{.Confidence}}/100 · {{.ConfidenceLabel}}</span>{{end}}
         </div>
         {{if .CanTune}}
-          <div class="draft-controls">
-            <label class="draft-control" for="draft-window">
-              <span class="draft-control-head"><span>Comparison window</span><output id="draft-window-value">{{.WindowSeconds}}s</output></span>
-              <input id="draft-window" type="range" min="10" max="30" step="5" value="{{.WindowSeconds}}">
-            </label>
-            <label class="draft-control" for="draft-drop">
-              <span class="draft-control-head"><span>Minimum power drop</span><output id="draft-drop-value">{{.MinDropPercent}}%</output></span>
-              <input id="draft-drop" type="range" min="8" max="25" step="1" value="{{.MinDropPercent}}">
-            </label>
-            <div class="draft-controls-note">Short windows find quick rotations with lower confidence. A 20 W drop is always required. Changes use saved ride data. <span id="draft-update" aria-live="polite"></span></div>
-          </div>
+          <p class="map-note draft-rotation-hint" id="draft-rotation-hint" {{if not .RotationHint}}hidden{{end}}>{{.RotationHint}}</p>
           <div class="draft-visual" id="draft-visual" hidden>
-            <div class="draft-visual-head"><strong>Possible shifts along the ride</strong><span>Elapsed time from start · choose a marker or clue to inspect.</span></div>
-            <div class="draft-track" id="draft-track" role="group" aria-label="Possible shifts across the ride"></div>
+            <div class="draft-visual-head"><strong>Power drops along the ride</strong><span>Elapsed time from start · select a drop to inspect.</span></div>
+            <div class="draft-track" id="draft-track" role="group" aria-label="Power drops across the ride"></div>
             <div class="draft-axis" id="draft-axis"></div>
-            <div class="draft-legend">
-              <span><i class="draft-swatch draft-marker-exploratory"></i>Exploratory</span>
-              <span><i class="draft-swatch draft-marker-moderate"></i>Moderate clue</span>
-              <span><i class="draft-swatch draft-marker-strong"></i>Strong clue</span>
-            </div>
             <div class="draft-focus" id="draft-focus" hidden>
               <strong id="draft-focus-title"></strong>
               <div class="draft-focus-chart"><canvas id="draft-focus-chart"></canvas></div>
@@ -855,22 +843,36 @@
             </div>
           </div>
           <div class="badge-row" id="draft-summary" style="margin-bottom: 16px;" {{if not .Candidates}}hidden{{end}}>
-            <span class="pill secondary" id="draft-count">{{.Count}} possible shifts</span>
-            <span class="pill secondary" id="draft-time">{{.CandidateTime}} in matched windows</span>
+            <span class="pill secondary" id="draft-count">{{.Count}} steady-speed power drops</span>
+            <span class="pill secondary" id="draft-time">{{.CandidateTime}} across detected stretches</span>
           </div>
           <div class="activity-data-grid" id="draft-list">
             {{range .Candidates}}
               <button type="button" class="activity-data-row draft-event-row" data-start="{{.StartSec}}" data-end="{{.EndSec}}">
                 <span class="activity-data-copy">
-                  <span class="activity-data-label">{{.Interval}} · {{.Duration}}</span>
-                  <span class="activity-data-detail">Avg power {{.PowerDrop}} · Speed {{.SpeedChange}} · Grade {{.GradeChange}}</span>
+                  <span class="activity-data-label">Lower-power stretch · {{.Interval}} · {{.Duration}}</span>
+                  <span class="activity-data-detail">{{.PowerDrop}} while speed stayed similar ({{.SpeedChange}})</span>
+                  {{if .EffortPattern}}<span class="draft-effort-pattern">{{.EffortPattern}}</span>{{end}}
                 </span>
-                <span class="activity-data-value">{{.Confidence}}/100</span>
               </button>
             {{end}}
           </div>
           <div class="map-note" id="draft-list-note" {{if le .Count 5}}hidden{{end}}>Showing the five strongest matches in ride order.</div>
           <p class="muted" id="draft-status" {{if .Candidates}}hidden{{end}}>{{.Status}}</p>
+          <details class="draft-settings">
+            <summary>Adjust detection</summary>
+            <div class="draft-controls">
+              <label class="draft-control" for="draft-window">
+                <span class="draft-control-head"><span>Comparison window</span><output id="draft-window-value">{{.WindowSeconds}}s</output></span>
+                <input id="draft-window" type="range" min="10" max="30" step="5" value="{{.WindowSeconds}}">
+              </label>
+              <label class="draft-control" for="draft-drop">
+                <span class="draft-control-head"><span>Minimum power drop</span><output id="draft-drop-value">{{.MinDropPercent}}%</output></span>
+                <input id="draft-drop" type="range" min="8" max="25" step="1" value="{{.MinDropPercent}}">
+              </label>
+              <div class="draft-controls-note">Shorter windows find quicker changes. A 20 W drop is always required. Changes use saved ride data. <span id="draft-update" aria-live="polite"></span></div>
+            </div>
+          </details>
         {{else}}
           <p class="muted">{{.Status}}</p>
           {{if .NeedsRefresh}}
@@ -950,7 +952,7 @@
       const dropValue = document.getElementById('draft-drop-value');
       const update = document.getElementById('draft-update');
       const detail = document.getElementById('draft-detail');
-      const confidence = document.getElementById('draft-confidence');
+      const rotationHint = document.getElementById('draft-rotation-hint');
       const summary = document.getElementById('draft-summary');
       const count = document.getElementById('draft-count');
       const time = document.getElementById('draft-time');
@@ -985,15 +987,12 @@
         return seconds >= 3600 ? `${Math.floor(seconds / 3600)}h ${Math.floor(seconds / 60) % 60}m` : `${Math.floor(seconds / 60)}m`;
       }
 
-      function eventTone(score) {
-        return score >= 75 ? 'strong' : score >= 50 ? 'moderate' : 'exploratory';
-      }
-
       function selectEvent(event) {
         selectedEvent = event;
         focus.hidden = false;
-        focusTitle.textContent = `${event.Interval} · ${event.Duration} matched`;
-        focusContext.textContent = `Strongest adjacent ${currentView.WindowSeconds}s windows: average power ${event.PowerDrop} · speed ${event.SpeedChange} · grade ${event.GradeChange}. The timeline marker spans ${event.Duration} of matching windows.`;
+        focusTitle.textContent = `Lower-power stretch · ${event.Interval}`;
+        const pattern = event.EffortPattern ? `${event.EffortPattern}. ` : '';
+        focusContext.textContent = `${pattern}Power ${event.PowerDrop} while speed stayed similar (${event.SpeedChange}). Shaded areas show the compared windows.`;
         panel.querySelectorAll('.draft-marker, .draft-event-row').forEach(element => {
           element.classList.toggle('selected', Number(element.dataset.start) === event.StartSec && Number(element.dataset.end) === event.EndSec);
         });
@@ -1050,10 +1049,10 @@
         const markers = events.map(event => {
           const marker = document.createElement('button');
           marker.type = 'button';
-          marker.className = `draft-marker draft-marker-${eventTone(event.Confidence)}`;
+          marker.className = 'draft-marker';
           marker.dataset.start = event.StartSec;
           marker.dataset.end = event.EndSec;
-          marker.title = `${event.Interval} · ${event.Confidence}/100`;
+          marker.title = `Lower-power stretch · ${event.Interval}`;
           marker.setAttribute('aria-label', marker.title);
           const left = Math.min(99, Math.max(0, event.StartSec / duration * 100));
           marker.style.left = `${left}%`;
@@ -1081,8 +1080,9 @@
       function render(view) {
         currentView = view;
         detail.textContent = view.Detail;
+        rotationHint.textContent = view.RotationHint || '';
+        rotationHint.hidden = !view.RotationHint;
         const hasCandidates = Array.isArray(view.Candidates) && view.Candidates.length > 0;
-        confidence.hidden = !hasCandidates;
         summary.hidden = !hasCandidates;
         status.hidden = hasCandidates;
         status.textContent = view.Status;
@@ -1092,9 +1092,8 @@
           renderTimeline(view);
           return;
         }
-        confidence.textContent = `${view.Confidence}/100 · ${view.ConfidenceLabel}`;
-        count.textContent = `${view.Count} possible shifts`;
-        time.textContent = `${view.CandidateTime} across matched episodes`;
+        count.textContent = `${view.Count} steady-speed power drops`;
+        time.textContent = `${view.CandidateTime} across detected stretches`;
         const rows = view.Candidates.map(candidate => {
           const row = document.createElement('button');
           row.type = 'button';
@@ -1106,15 +1105,18 @@
           copy.className = 'activity-data-copy';
           const label = document.createElement('span');
           label.className = 'activity-data-label';
-          label.textContent = `${candidate.Interval} · ${candidate.Duration}`;
+          label.textContent = `Lower-power stretch · ${candidate.Interval} · ${candidate.Duration}`;
           const explanation = document.createElement('span');
           explanation.className = 'activity-data-detail';
-          explanation.textContent = `Avg power ${candidate.PowerDrop} · Speed ${candidate.SpeedChange} · Grade ${candidate.GradeChange}`;
-          const score = document.createElement('span');
-          score.className = 'activity-data-value';
-          score.textContent = `${candidate.Confidence}/100`;
+          explanation.textContent = `${candidate.PowerDrop} while speed stayed similar (${candidate.SpeedChange})`;
           copy.append(label, explanation);
-          row.append(copy, score);
+          if (candidate.EffortPattern) {
+            const pattern = document.createElement('span');
+            pattern.className = 'draft-effort-pattern';
+            pattern.textContent = candidate.EffortPattern;
+            copy.append(pattern);
+          }
+          row.append(copy);
           return row;
         });
         list.replaceChildren(...rows);

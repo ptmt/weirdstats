@@ -25,6 +25,7 @@ type DraftingView struct {
 	Confidence      int
 	ConfidenceLabel string
 	CandidateTime   string
+	RotationHint    string
 	Candidates      []DraftingCandidateView
 	Events          []DraftingCandidateView
 	RideDurationSec int
@@ -39,6 +40,7 @@ type DraftingCandidateView struct {
 	SpeedChange      string
 	GradeChange      string
 	PowerDrop        string
+	EffortPattern    string
 	Confidence       int
 	StartSec         int
 	EndSec           int
@@ -159,31 +161,41 @@ func buildDraftingViewWithOptions(activity storage.Activity, points []gps.Point,
 		return view
 	}
 
-	view.Status = "Possible draft-like shifts"
+	view.Status = "Power drops consistent with drafting"
 	view.Count = len(candidates)
-	view.Detail = "Power fell while speed stayed steady. Select a marker to inspect the compared windows. Scores describe pattern strength, not rider position."
+	view.Detail = "Measured power fell while speed, grade, and direction stayed similar. That pattern is consistent with moving into a draft. Select a drop to see the ride data."
 	if activity.AthleteCount > 1 {
-		view.Detail = fmt.Sprintf("Strava grouped %d riders. %s", activity.AthleteCount, view.Detail)
-	} else {
-		view.Detail = "Strava group count unavailable; maximum score 65. " + view.Detail
+		view.Status = "Likely drafting shifts"
+		view.Detail = fmt.Sprintf("Strava grouped %d riders. Measured power dropped at nearly the same speed, grade, and direction. That looks like a move into the draft. Select a drop to see the ride data.", activity.AthleteCount)
+		if activity.AthleteCount <= 6 {
+			otherRiders := activity.AthleteCount - 1
+			view.RotationHint = fmt.Sprintf("With %d riders sharing turns evenly, a turn at the front could be followed by about %d× as long in the draft: 20s → %s, 30s → %s, 1m → %s. This illustrates a rotation; the power trace cannot show rider position.",
+				activity.AthleteCount, otherRiders, formatDraftRotationDuration(20*otherRiders), formatDraftRotationDuration(30*otherRiders), formatDraftRotationDuration(60*otherRiders))
+		}
 	}
 	var totalDuration time.Duration
 	for i := range candidates {
 		candidate := &candidates[i]
 		candidate.confidence = draftConfidence(*candidate, len(candidates), activity.AthleteCount > 1)
-		totalDuration += candidate.end.Sub(candidate.start)
+		lowStart := candidate.high.start.Add(time.Duration(options.windowSeconds) * time.Second)
+		lowDuration := candidate.end.Sub(lowStart)
+		totalDuration += lowDuration
 		event := DraftingCandidateView{
-			Interval:         fmt.Sprintf("%s → %s after start", formatDraftElapsed(candidate.start.Sub(points[0].Time)), formatDraftElapsed(candidate.end.Sub(points[0].Time))),
-			Duration:         formatDuration(int(candidate.end.Sub(candidate.start).Seconds())),
+			Interval:         fmt.Sprintf("%s → %s after start", formatDraftElapsed(lowStart.Sub(points[0].Time)), formatDraftElapsed(candidate.end.Sub(points[0].Time))),
+			Duration:         formatDuration(int(lowDuration.Seconds())),
 			Speed:            fmt.Sprintf("%.1f km/h", candidate.speed*3.6),
 			SpeedChange:      fmt.Sprintf("%.1f → %.1f km/h", candidate.high.speed*3.6, candidate.speed*3.6),
 			GradeChange:      fmt.Sprintf("%+.1f%% → %+.1f%%", candidate.high.grade, candidate.lowGrade),
 			PowerDrop:        fmt.Sprintf("%.0f → %.0f W (−%.0f%%)", candidate.highPower, candidate.lowPower, (1-candidate.lowPower/candidate.highPower)*100),
 			Confidence:       candidate.confidence,
-			StartSec:         int(candidate.start.Sub(points[0].Time).Seconds()),
+			StartSec:         int(lowStart.Sub(points[0].Time).Seconds()),
 			EndSec:           int(candidate.end.Sub(points[0].Time).Seconds()),
 			BaselineStartSec: int(candidate.high.start.Sub(points[0].Time).Seconds()),
 			LowStartSec:      int(candidate.high.start.Sub(points[0].Time).Seconds()) + options.windowSeconds,
+		}
+		highDuration := precedingDraftHighDuration(buckets, *candidate, lowStart)
+		if highDuration >= time.Duration(options.windowSeconds)*time.Second && lowDuration >= time.Duration(options.windowSeconds)*time.Second {
+			event.EffortPattern = fmt.Sprintf("Higher effort %s → lower effort %s", formatDraftRotationDuration(int(highDuration.Seconds())), formatDraftRotationDuration(int(lowDuration.Seconds())))
 		}
 		view.Events = append(view.Events, event)
 		view.Candidates = append(view.Candidates, event)
@@ -212,6 +224,35 @@ func formatDraftElapsed(duration time.Duration) string {
 		return fmt.Sprintf("%dh %02dm %02ds", seconds/3600, seconds/60%60, seconds%60)
 	}
 	return fmt.Sprintf("%dm %02ds", seconds/60, seconds%60)
+}
+
+func formatDraftRotationDuration(seconds int) string {
+	if seconds < 60 {
+		return fmt.Sprintf("%ds", seconds)
+	}
+	if seconds%60 == 0 {
+		return fmt.Sprintf("%dm", seconds/60)
+	}
+	return fmt.Sprintf("%dm %ds", seconds/60, seconds%60)
+}
+
+func precedingDraftHighDuration(buckets []draftBucket, candidate draftCandidate, lowStart time.Time) time.Duration {
+	if len(buckets) == 0 {
+		return 0
+	}
+	threshold := (candidate.highPower + candidate.lowPower) / 2
+	var duration time.Duration
+	for first := int(lowStart.Sub(buckets[0].start)/draftBucketDuration) - 1; first >= 0; first-- {
+		bucket := aggregateDraftWindow(buckets, first, 1)
+		if !similarDraftWindows(candidate.high, bucket) || bucket.power < threshold {
+			break
+		}
+		duration += draftBucketDuration
+		if duration >= 4*time.Minute {
+			return 0 // A long high-power stretch is not a measurable turn.
+		}
+	}
+	return duration
 }
 
 func buildDraftTimeline(points []gps.Point) []draftTimelinePoint {
@@ -379,18 +420,26 @@ func detectDraftCandidates(buckets []draftBucket, options draftingOptions) []dra
 		}
 		candidates = append(candidates, candidate)
 	}
-	// The transition windows identify the shift. Extend an episode only while
-	// successive complete windows remain lower at comparable speed and grade.
+	// The transition windows identify the shift. Extend in 5-second steps so a
+	// short return to higher power between turns cannot be skipped by the
+	// comparison window. Two high buckets end the lower-power episode; a lone
+	// high bucket can be a brief surge within it.
 	for i := range candidates {
 		candidate := &candidates[i]
 		for candidate.end.Sub(candidate.start) < 4*time.Minute {
 			first := int(candidate.end.Sub(buckets[0].start) / draftBucketDuration)
-			next := aggregateDraftWindow(buckets, first, width)
-			if !similarDraftWindows(candidate.high, next) ||
-				next.power > candidate.highPower*(1-0.7*float64(options.minDropPercent)/100) {
+			next := aggregateDraftWindow(buckets, first, 1)
+			if !similarDraftWindows(candidate.high, next) {
 				break
 			}
-			candidate.end = next.start.Add(time.Duration(options.windowSeconds) * time.Second)
+			if next.power > candidate.highPower*(1-0.7*float64(options.minDropPercent)/100) {
+				following := aggregateDraftWindow(buckets, first+1, 1)
+				if !similarDraftWindows(candidate.high, following) ||
+					following.power > candidate.highPower*(1-0.7*float64(options.minDropPercent)/100) {
+					break
+				}
+			}
+			candidate.end = next.start.Add(draftBucketDuration)
 		}
 	}
 	merged := make([]draftCandidate, 0, len(candidates))

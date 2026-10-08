@@ -32,6 +32,38 @@ func TestBuildDraftingView_RepeatedPowerDropsAtSteadySpeed(t *testing.T) {
 	if len(view.Candidates) != 2 || view.Candidates[0].PowerDrop != "300 → 200 W (−33%)" {
 		t.Fatalf("unexpected candidates %+v", view.Candidates)
 	}
+	if view.Status != "Likely drafting shifts" || !strings.Contains(view.Detail, "move into the draft") ||
+		!strings.Contains(view.RotationHint, "20s → 1m, 30s → 1m 30s, 1m → 3m") {
+		t.Fatalf("missing plain drafting summary or four-rider example: %+v", view)
+	}
+}
+
+func TestBuildDraftingView_VariableFourRiderTurns(t *testing.T) {
+	meter := true
+	for _, frontSeconds := range []int{20, 30, 60} {
+		t.Run(formatDraftRotationDuration(frontSeconds), func(t *testing.T) {
+			cycle := 4 * frontSeconds
+			points := draftingTestPoints(func(second int) (float64, float64, float64) {
+				if second%cycle < frontSeconds {
+					return 300, 10, 0
+				}
+				return 200, 10, 0
+			})
+			view := buildDraftingView(storage.Activity{Type: "Ride", DeviceWatts: &meter, AthleteCount: 4}, points)
+			if view == nil || view.Count != 480/cycle {
+				t.Fatalf("missed repeated %ds front turns and %ds lower-power stretches: %+v", frontSeconds, 3*frontSeconds, view)
+			}
+			for _, event := range view.Events {
+				duration := event.EndSec - event.StartSec
+				if duration < 3*frontSeconds-15 || duration > 3*frontSeconds+15 {
+					t.Fatalf("incorrect lower-power stretch after %ds front turn: %+v", frontSeconds, event)
+				}
+				if !strings.Contains(event.EffortPattern, "Higher effort "+formatDraftRotationDuration(frontSeconds)+" → lower effort ") {
+					t.Fatalf("missing observed effort pattern for %ds turn: %+v", frontSeconds, event)
+				}
+			}
+		})
+	}
 }
 
 func TestBuildDraftingView_ShortShiftNeedsShortWindow(t *testing.T) {
