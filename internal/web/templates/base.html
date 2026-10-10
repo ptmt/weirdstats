@@ -32,7 +32,7 @@
   </head>
   <body>
     <header class="site-header">
-      <nav class="nav{{if eq .Page "activities"}} nav-with-sync{{end}}" aria-label="Main navigation">
+      <nav class="nav{{if .Strava.Connected}} nav-authenticated{{end}}" aria-label="Main navigation">
         <a href="{{if .Strava.Connected}}/activities/{{else}}/{{end}}" class="brand" aria-label="Weirdstats home">
           <img src="/static/weirdstats.png" alt="WeirdStats" class="logo" width="677" height="369">
         </a>
@@ -64,7 +64,11 @@
             </svg>
           </button>
         </div>
-        {{block "sync-status" .}}{{end}}
+        {{if .Strava.Connected}}
+          <div class="nav-status">
+            {{block "sync-status" .}}{{end}}
+          </div>
+        {{end}}
       </nav>
     </header>
     <main class="wrap" id="main-content">

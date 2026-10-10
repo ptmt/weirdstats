@@ -52,6 +52,7 @@
                   <input type="text" name="name" id="rule-name-{{.ID}}" value="{{.Name}}" required />
                   <label for="rule-json-{{.ID}}">Rule JSON</label>
                   <textarea name="condition" id="rule-json-{{.ID}}" class="rule-json-input" spellcheck="false" required>{{.Condition}}</textarea>
+                  <div class="field-help">To match several activity types, use <code>"op": "in"</code> with <code>"values": ["Workout", "Run"]</code>.</div>
                   <div class="rule-error" data-rule-error role="status" aria-live="polite"></div>
                   <div class="settings-actions">
                     <button class="btn small" type="submit" data-rule-submit>Save changes</button>
@@ -85,6 +86,7 @@
           <div class="builder-section">
             <label for="rule-json-input">Rule JSON input</label>
             <textarea name="condition" id="rule-json-input" class="rule-json-input" spellcheck="false" required placeholder='{"match":"all","conditions":[{"metric":"activity_type","op":"eq","values":["Workout"]}],"action":{"type":"hide","override":{"one_in":10}}}'></textarea>
+            <div class="field-help">To match several activity types, use <code>"op": "in"</code> with <code>"values": ["Workout", "Run"]</code>.</div>
             <div class="rule-error" id="rule-json-error" data-rule-error role="status" aria-live="polite"></div>
             <div class="builder-preview">
               <div class="muted">Normalized JSON preview</div>
@@ -405,6 +407,9 @@
             return "Condition " + (i + 1) + ": invalid operator " + condition.op + " for metric type " + metric.type + ".";
           }
           if (operator.value_count === 1 && condition.values.length !== 1) {
+            if (condition.op === 'eq' && condition.values.length > 1 && findOperator(metric.type, 'in')) {
+              return 'Condition ' + (i + 1) + ': use "op": "in" to match any of several values. "eq" expects exactly 1 value.';
+            }
             return "Condition " + (i + 1) + ": operator " + condition.op + " expects exactly 1 value.";
           }
           if (operator.value_count === 2 && condition.values.length !== 2) {
