@@ -16,7 +16,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -192,10 +191,11 @@ type ProfilePageData struct {
 	SelectedDayLabel string
 }
 
-type SettingsRule struct {
+type AutomationRule struct {
 	ID          int64
 	Name        string
 	Description string
+	Condition   string
 	Enabled     bool
 	IsLegacy    bool
 }
@@ -203,8 +203,12 @@ type SettingsRule struct {
 type SettingsPageData struct {
 	Processing storage.ProcessingPreferences
 	PageData
-	Facts         []SettingsFact
-	Rules         []SettingsRule
+	Facts []SettingsFact
+}
+
+type AutomationPageData struct {
+	PageData
+	Rules         []AutomationRule
 	RulesMetaJSON template.JS
 }
 
@@ -329,6 +333,15 @@ func NewServer(store *storage.Store, ingestor *ingest.Ingestor, mapAPI maps.API,
 	if err != nil {
 		return nil, err
 	}
+	automation, err := template.New("base").Funcs(funcs).ParseFS(
+		templatesFS,
+		"templates/base.html",
+		"templates/footer.html",
+		"templates/automation.html",
+	)
+	if err != nil {
+		return nil, err
+	}
 	admin, err := template.New("base").Funcs(funcs).ParseFS(
 		templatesFS,
 		"templates/base.html",
@@ -363,12 +376,13 @@ func NewServer(store *storage.Store, ingestor *ingest.Ingestor, mapAPI maps.API,
 		strava:        stravaConfig,
 		sessionSecret: sessionSecret,
 		templates: map[string]*template.Template{
-			"landing":  landing,
-			"profile":  profile,
-			"settings": settings,
-			"admin":    admin,
-			"activity": activity,
-			"poster":   poster,
+			"landing":    landing,
+			"profile":    profile,
+			"settings":   settings,
+			"automation": automation,
+			"admin":      admin,
+			"activity":   activity,
+			"poster":     poster,
 		},
 	}, nil
 }
@@ -750,40 +764,11 @@ func (s *Server) Settings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	registry := rules.DefaultRegistry()
 	factSettings, err := s.loadWeirdStatsFactSettings(r.Context(), userID)
 	if err != nil {
 		http.Error(w, "failed to load fact settings", http.StatusInternalServerError)
 		return
 	}
-	ruleRows, err := s.store.ListHideRules(r.Context(), userID)
-	if err != nil {
-		http.Error(w, "failed to load rules", http.StatusInternalServerError)
-		return
-	}
-	var viewRules []SettingsRule
-	for _, ruleRow := range ruleRows {
-		description := ruleRow.Condition
-		isLegacy := false
-		if parsed, err := rules.ParseRuleJSON(ruleRow.Condition); err == nil {
-			description = rules.Describe(parsed, registry)
-		} else {
-			isLegacy = true
-		}
-		viewRules = append(viewRules, SettingsRule{
-			ID:          ruleRow.ID,
-			Name:        ruleRow.Name,
-			Description: description,
-			Enabled:     ruleRow.Enabled,
-			IsLegacy:    isLegacy,
-		})
-	}
-	meta := rules.BuildMetadata(registry, rules.DefaultOperators())
-	metaJSON, err := json.Marshal(meta)
-	if err != nil {
-		metaJSON = []byte(`{\"metrics\":[],\"operators\":{}}`)
-	}
-
 	processing, err := s.store.ProcessingPreferences(r.Context(), userID)
 	if err != nil {
 		http.Error(w, "failed to load processing preferences", 500)
@@ -795,13 +780,11 @@ func (s *Server) Settings(w http.ResponseWriter, r *http.Request) {
 			Title:      "Settings",
 			Page:       "settings",
 			Message:    r.URL.Query().Get("msg"),
-			FooterText: "Rules and fact preferences are stored locally and applied when Weirdstats updates activities.",
+			FooterText: "Preferences are stored locally and applied when Weirdstats updates activities.",
 			Strava:     s.getStravaInfo(r.Context(), userID),
 			UserCount:  s.userCount(r.Context()),
 		},
-		Facts:         buildSettingsFacts(factSettings),
-		Rules:         viewRules,
-		RulesMetaJSON: template.JS(string(metaJSON)),
+		Facts: buildSettingsFacts(factSettings),
 	}
 	if err := s.templates["settings"].ExecuteTemplate(w, "base", data); err != nil {
 		http.Error(w, "template render failed", http.StatusInternalServerError)
@@ -1154,70 +1137,8 @@ func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request, user
 			return
 		}
 		http.Redirect(w, r, "/activities/settings?msg=facts+updated", http.StatusFound)
-	case "add-rule":
-		name := strings.TrimSpace(r.FormValue("name"))
-		condition := strings.TrimSpace(r.FormValue("condition"))
-		enabled := r.FormValue("enabled") == "on"
-		if name == "" || condition == "" {
-			http.Redirect(w, r, "/activities/settings?msg=missing+rule+fields", http.StatusFound)
-			return
-		}
-		parsedRule, err := rules.ParseRuleJSON(condition)
-		if err != nil {
-			detail := compactErrMessage(err)
-			log.Printf("settings add-rule parse failed: name=%q enabled=%t err=%v json=%q", name, enabled, err, compactForLog(condition, 500))
-			http.Redirect(w, r, "/activities/settings?msg="+url.QueryEscape("invalid rule json: "+detail), http.StatusFound)
-			return
-		}
-		if err := rules.ValidateRule(parsedRule, rules.DefaultRegistry()); err != nil {
-			detail := compactErrMessage(err)
-			log.Printf("settings add-rule validation failed: name=%q enabled=%t err=%v json=%q", name, enabled, err, compactForLog(condition, 500))
-			http.Redirect(w, r, "/activities/settings?msg="+url.QueryEscape("invalid rule definition: "+detail), http.StatusFound)
-			return
-		}
-		normalized, err := json.Marshal(parsedRule)
-		if err != nil {
-			log.Printf("settings add-rule normalize failed: name=%q enabled=%t err=%v", name, enabled, err)
-			http.Redirect(w, r, "/activities/settings?msg=rule+save+failed", http.StatusFound)
-			return
-		}
-		condition = string(normalized)
-		if _, err := s.store.CreateHideRule(r.Context(), storage.HideRule{
-			UserID:    userID,
-			Name:      name,
-			Condition: condition,
-			Enabled:   enabled,
-		}); err != nil {
-			log.Printf("settings add-rule store failed: name=%q enabled=%t err=%v", name, enabled, err)
-			http.Redirect(w, r, "/activities/settings?msg=rule+save+failed", http.StatusFound)
-			return
-		}
-		http.Redirect(w, r, "/activities/settings?msg=rule+added", http.StatusFound)
-	case "toggle-rule":
-		idValue := r.FormValue("rule_id")
-		enabled := r.FormValue("enabled") == "on"
-		ruleID, err := strconv.ParseInt(idValue, 10, 64)
-		if err != nil || ruleID == 0 {
-			http.Redirect(w, r, "/activities/settings?msg=invalid+rule", http.StatusFound)
-			return
-		}
-		if err := s.store.UpdateHideRuleEnabledForUser(r.Context(), userID, ruleID, enabled); err != nil {
-			http.Redirect(w, r, "/activities/settings?msg=rule+update+failed", http.StatusFound)
-			return
-		}
-		http.Redirect(w, r, "/activities/settings?msg=rule+updated", http.StatusFound)
-	case "delete-rule":
-		idValue := r.FormValue("rule_id")
-		ruleID, err := strconv.ParseInt(idValue, 10, 64)
-		if err != nil || ruleID == 0 {
-			http.Redirect(w, r, "/activities/settings?msg=invalid+rule", http.StatusFound)
-			return
-		}
-		if err := s.store.DeleteHideRuleForUser(r.Context(), userID, ruleID); err != nil {
-			http.Redirect(w, r, "/activities/settings?msg=rule+delete+failed", http.StatusFound)
-			return
-		}
-		http.Redirect(w, r, "/activities/settings?msg=rule+deleted", http.StatusFound)
+	case "add-rule", "update-rule", "toggle-rule", "delete-rule":
+		s.handleAutomationPost(w, r, userID)
 	case "log-out":
 		s.clearSession(w, r)
 		http.Redirect(w, r, "/?msg=signed+out", http.StatusFound)

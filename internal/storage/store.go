@@ -1227,6 +1227,31 @@ WHERE id = ? AND user_id = ?
 	return err
 }
 
+func (s *Store) UpdateHideRuleForUser(ctx context.Context, userID, ruleID int64, name, condition string) error {
+	if userID == 0 {
+		return errors.New("user id required")
+	}
+	if ruleID <= 0 {
+		return errors.New("rule id required")
+	}
+	res, err := s.db.ExecContext(ctx, `
+UPDATE hide_rules
+SET name = ?, condition = ?, updated_at = ?
+WHERE id = ? AND user_id = ?
+`, name, condition, time.Now().Unix(), ruleID, userID)
+	if err != nil {
+		return err
+	}
+	count, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 func (s *Store) DeleteHideRule(ctx context.Context, ruleID int64) error {
 	if ruleID == 0 {
 		return errors.New("rule id required")

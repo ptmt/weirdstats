@@ -1318,6 +1318,33 @@ a {
   min-width: 0;
 }
 
+.saved-rule-row {
+  flex-wrap: wrap;
+}
+
+.saved-rule-editor {
+  flex-basis: 100%;
+  min-width: 0;
+}
+
+.saved-rule-editor summary,
+.rule-spec-details summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.saved-rule-editor .rule-builder {
+  margin-top: 12px;
+}
+
+.rule-spec-details {
+  display: block;
+}
+
+.rule-spec-details[open] > :not(summary) {
+  margin-top: 10px;
+}
+
 .rule-title {
   display: flex;
   align-items: center;
@@ -1531,7 +1558,7 @@ a {
   width: auto;
 }
 
-#rule-submit[disabled] {
+[data-rule-submit][disabled] {
   opacity: 0.55;
   cursor: not-allowed;
 }

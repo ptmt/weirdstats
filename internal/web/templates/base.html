@@ -40,6 +40,7 @@
           {{if not .Strava.Connected}}<a href="/"{{if eq .Page "home"}} class="active"{{end}}>Home</a>{{end}}
           {{if .Strava.Connected}}
             <a href="/activities/"{{if or (eq .Page "activities") (eq .Page "activity")}} class="active"{{if eq .Page "activities"}} aria-current="page"{{end}}{{end}}>Activities</a>
+            <a href="/activities/automation"{{if eq .Page "automation"}} class="active" aria-current="page"{{end}}>Automation</a>
             <a href="/activities/settings"{{if eq .Page "settings"}} class="active" aria-current="page"{{end}}>Settings</a>
             <a href="/admin/"{{if eq .Page "admin"}} class="active" aria-current="page"{{end}}>Admin</a>
             <span class="nav-athlete">{{if .Strava.AthleteName}}{{.Strava.AthleteName}}{{else}}Strava #{{.Strava.AthleteID}}{{end}}</span>

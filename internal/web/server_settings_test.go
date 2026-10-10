@@ -79,6 +79,9 @@ func TestSettings_ShowsFactPreferences(t *testing.T) {
 	if strings.Contains(body, "Traffic-light stops") {
 		t.Fatalf("did not expect separate traffic-light stops setting")
 	}
+	if strings.Contains(body, "Hide activity rules") || strings.Contains(body, `id="rule-json-form"`) {
+		t.Fatal("expected automation editors to be moved out of Settings")
+	}
 	if strings.Contains(body, `name="fact_coffee_stop" checked`) {
 		t.Fatalf("expected coffee stop toggle to be disabled")
 	}
@@ -172,55 +175,5 @@ func TestSettings_UpdateFacts(t *testing.T) {
 	}
 	if settings[weirdStatsFactRoadCrossings].Enabled {
 		t.Fatalf("expected road crossings disabled")
-	}
-}
-
-func TestSettings_ShowsPaceRuleTemplate(t *testing.T) {
-	ctx := context.Background()
-	store, err := storage.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	defer store.Close()
-
-	if err := store.InitSchema(ctx); err != nil {
-		t.Fatalf("init schema: %v", err)
-	}
-	if err := store.UpsertStravaToken(ctx, storage.StravaToken{
-		UserID:      404,
-		AccessToken: "token",
-	}); err != nil {
-		t.Fatalf("upsert token: %v", err)
-	}
-
-	server, err := NewServer(store, nil, nil, nil, gps.StopOptions{}, StravaConfig{})
-	if err != nil {
-		t.Fatalf("new server: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/activities/settings", nil)
-	sessionRec := httptest.NewRecorder()
-	if err := server.setSession(sessionRec, req, 404); err != nil {
-		t.Fatalf("set session: %v", err)
-	}
-	for _, cookie := range sessionRec.Result().Cookies() {
-		req.AddCookie(cookie)
-	}
-	rec := httptest.NewRecorder()
-
-	server.Settings(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
-	}
-	body := rec.Body.String()
-	for _, text := range []string{
-		"pace_sec_per_km",
-		"Hide slow rides or runs",
-		"6:00/km",
-	} {
-		if !strings.Contains(body, text) {
-			t.Fatalf("expected %q in settings page", text)
-		}
 	}
 }
