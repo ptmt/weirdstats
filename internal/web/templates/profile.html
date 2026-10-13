@@ -7,7 +7,6 @@
     {{end}}
     <div class="page-heading">
       <h2 class="section-title">Activities</h2>
-      <p class="muted">Your latest efforts. A few extra details.</p>
     </div>
   </section>
 
@@ -15,8 +14,15 @@
     {{range .Contributions}}
       <section class="card contrib-card">
         <div class="contrib-header">
-          <div>
-            <h3>Activity history <span class="contrib-year">{{.Year}}</span></h3>
+          <div class="contrib-heading">
+            <h3>Activity history</h3>
+            {{$selectedYear := .Year}}
+            <form method="get" action="/activities/" class="contrib-year-switcher">
+              <select name="year" aria-label="Activity history year" onchange="this.form.requestSubmit()">
+                {{range $.ContributionYears}}<option value="{{.}}"{{if eq . $selectedYear}} selected{{end}}>{{.}}</option>{{end}}
+              </select>
+              <noscript><button class="btn secondary small" type="submit">Show year</button></noscript>
+            </form>
           </div>
           <div class="contrib-legend">
             <span class="legend-label">Less</span>
@@ -54,7 +60,7 @@
         <span class="activity-filter-label">Showing</span>
         <strong>{{.SelectedDayLabel}}</strong>
       </div>
-      <a class="btn secondary small" href="/activities/">All activities</a>
+      <a class="btn secondary small" href="{{.AllActivitiesURL}}">All activities</a>
     </section>
   {{end}}
 
@@ -212,7 +218,7 @@
       {{if .DayFilterActive}}
         <h2 class="section-title">No activities on {{.SelectedDayLabel}}</h2>
         <p class="muted">No activities started on this day.</p>
-        <a class="btn secondary" href="/activities/">All activities</a>
+        <a class="btn secondary" href="{{.AllActivitiesURL}}">All activities</a>
       {{else}}
         <h2 class="section-title">No activities yet</h2>
         {{if .Strava.Connected}}

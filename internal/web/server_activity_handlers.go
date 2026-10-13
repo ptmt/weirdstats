@@ -9,6 +9,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -47,6 +48,18 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 	dayFilterActive := selectedDay != ""
 	if dayFilterActive {
 		trace.AddField("day_filter", selectedDay)
+	}
+	now := time.Now()
+	selectedYear := now.Year()
+	if dayFilterActive && selectedDayDate.Year() <= now.Year() {
+		selectedYear = selectedDayDate.Year()
+	}
+	if raw := r.URL.Query().Get("year"); raw != "" {
+		selectedYear, err = strconv.Atoi(raw)
+		if err != nil || selectedYear < 1 || selectedYear > now.Year() {
+			http.Error(w, "invalid activity history year", http.StatusBadRequest)
+			return
+		}
 	}
 
 	stepStart := time.Now()
@@ -151,7 +164,6 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 	}
 	trace.AddStep("build_views", stepStart)
 
-	now := time.Now()
 	stepStart = time.Now()
 	years, err := s.store.ListActivityYears(r.Context(), userID)
 	trace.AddStep("list_activity_years", stepStart)
@@ -163,16 +175,17 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 	seenYears := map[int]bool{currentYear: true}
 	orderedYears := []int{currentYear}
 	for _, year := range years {
-		if !seenYears[year] {
+		if year > 0 && year <= currentYear && !seenYears[year] {
 			orderedYears = append(orderedYears, year)
 			seenYears[year] = true
 		}
 	}
-	var contribs []ContributionData
-	stepStart = time.Now()
-	for _, year := range orderedYears {
-		contribs = append(contribs, s.buildContributionDataForYearWithSelection(r.Context(), userID, year, now, selectedDay))
+	if !seenYears[selectedYear] {
+		orderedYears = append(orderedYears, selectedYear)
 	}
+	sort.Slice(orderedYears, func(i, j int) bool { return orderedYears[i] > orderedYears[j] })
+	stepStart = time.Now()
+	contribs := []ContributionData{s.buildContributionDataForYearWithSelection(r.Context(), userID, selectedYear, now, selectedDay)}
 	trace.AddStep("build_contributions", stepStart)
 	trace.AddField("contribution_years", len(contribs))
 
@@ -196,11 +209,13 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 			Strava:     s.getStravaInfo(r.Context(), userID),
 			UserCount:  s.userCount(r.Context()),
 		},
-		Activities:       views,
-		Contributions:    contribs,
-		DayFilterActive:  dayFilterActive,
-		SelectedDay:      selectedDay,
-		SelectedDayLabel: selectedDayLabel,
+		Activities:        views,
+		Contributions:     contribs,
+		ContributionYears: orderedYears,
+		AllActivitiesURL:  fmt.Sprintf("/activities/?year=%d", selectedYear),
+		DayFilterActive:   dayFilterActive,
+		SelectedDay:       selectedDay,
+		SelectedDayLabel:  selectedDayLabel,
 	}
 	stepStart = time.Now()
 	if err := s.templates["profile"].ExecuteTemplate(w, "base", data); err != nil {

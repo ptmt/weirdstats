@@ -187,11 +187,13 @@ type LandingPageData struct {
 type ProfilePageData struct {
 	NextPageURL string
 	PageData
-	Activities       []ActivityView
-	Contributions    []ContributionData
-	DayFilterActive  bool
-	SelectedDay      string
-	SelectedDayLabel string
+	Activities        []ActivityView
+	Contributions     []ContributionData
+	ContributionYears []int
+	AllActivitiesURL  string
+	DayFilterActive   bool
+	SelectedDay       string
+	SelectedDayLabel  string
 }
 
 type AutomationRule struct {

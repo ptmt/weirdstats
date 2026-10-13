@@ -697,7 +697,7 @@ a {
 /* Contribution wall */
 .contrib-card {
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 
 .contrib-card h3 {
@@ -712,9 +712,13 @@ a {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
+  align-items: center;
+  gap: 12px;
 }
+
+.contrib-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.contrib-year-switcher { display: flex; align-items: center; gap: 8px; }
+.contrib-year-switcher select { width: auto; padding: 4px 8px; font-size: 12px; }
 
 .contrib-legend {
   display: flex;
@@ -878,7 +882,7 @@ a {
 }
 
 .contrib-day.is-outside {
-  opacity: 1;
+  opacity: 0.15;
 }
 
 .contrib-day.is-selected {
