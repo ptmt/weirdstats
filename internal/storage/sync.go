@@ -40,12 +40,27 @@ CREATE TABLE IF NOT EXISTS processing_preferences (user_id INTEGER PRIMARY KEY, 
 CREATE TABLE IF NOT EXISTS activity_route_previews (activity_id INTEGER PRIMARY KEY, points TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS api_cooldowns (provider TEXT PRIMARY KEY, until_unix INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS activity_tombstones (user_id INTEGER NOT NULL, activity_id INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 1, deleted INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(user_id, activity_id));
+CREATE TABLE IF NOT EXISTS automation_events (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ user_id INTEGER NOT NULL,
+ activity_id INTEGER NOT NULL,
+ rule_id INTEGER NOT NULL DEFAULT 0,
+ name TEXT NOT NULL,
+ action TEXT NOT NULL,
+ source TEXT NOT NULL,
+ status TEXT NOT NULL,
+ detail TEXT NOT NULL,
+ triggered INTEGER NOT NULL DEFAULT 0,
+ created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_automation_user ON automation_events(user_id,id DESC);
+CREATE INDEX IF NOT EXISTS idx_automation_activity ON automation_events(user_id,activity_id,id DESC);
 `)
 	if err != nil {
 		return err
 	}
 	// Old workers must not recreate orphaned GPS-derived records after deletion.
-	for _, table := range []string{"activity_route_previews", "activity_points", "activity_stops", "activity_stats", "activity_detected_facts", "activity_fact_metrics"} {
+	for _, table := range []string{"activity_route_previews", "activity_points", "activity_stops", "activity_stats", "activity_detected_facts", "activity_fact_metrics", "automation_events"} {
 		_, err := s.db.ExecContext(ctx, `CREATE TRIGGER IF NOT EXISTS guard_`+table+` BEFORE INSERT ON `+table+`
 WHEN NOT EXISTS(SELECT 1 FROM activities WHERE id=NEW.activity_id)
 BEGIN SELECT RAISE(ABORT, 'activity was removed'); END;`)

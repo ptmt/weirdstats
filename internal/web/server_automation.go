@@ -15,7 +15,15 @@ import (
 )
 
 func (s *Server) Automation(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/activities/automation" {
+	if r.URL.Path == "/activities/automation" || r.URL.Path == "/automation/" {
+		target := "/automation"
+		if r.URL.RawQuery != "" {
+			target += "?" + r.URL.RawQuery
+		}
+		http.Redirect(w, r, target, http.StatusPermanentRedirect)
+		return
+	}
+	if r.URL.Path != "/automation" {
 		http.NotFound(w, r)
 		return
 	}
@@ -64,6 +72,7 @@ func (s *Server) Automation(w http.ResponseWriter, r *http.Request) {
 	}
 	data := AutomationPageData{
 		PageData: PageData{
+			Sync:       s.pageSync(r.Context(), userID),
 			Title:      "Automation",
 			Page:       "automation",
 			Message:    r.URL.Query().Get("msg"),
@@ -74,6 +83,14 @@ func (s *Server) Automation(w http.ResponseWriter, r *http.Request) {
 		Rules:         viewRules,
 		RulesMetaJSON: template.JS(string(metaJSON)),
 	}
+	data.Processing, err = s.store.ProcessingPreferences(r.Context(), userID)
+	if err != nil {
+		http.Error(w, "failed to load processing preferences", 500)
+		return
+	}
+	if !s.loadAutomationHistory(w, r, userID, &data) {
+		return
+	}
 	if err := s.templates["automation"].ExecuteTemplate(w, "base", data); err != nil {
 		http.Error(w, "template render failed", http.StatusInternalServerError)
 	}
@@ -81,7 +98,7 @@ func (s *Server) Automation(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAutomationPost(w http.ResponseWriter, r *http.Request, userID int64) {
 	if err := r.ParseForm(); err != nil {
-		http.Redirect(w, r, "/activities/automation?msg=invalid+form", http.StatusFound)
+		http.Redirect(w, r, "/automation?msg=invalid+form", http.StatusFound)
 		return
 	}
 	action := strings.TrimSpace(r.FormValue("action"))
@@ -92,7 +109,7 @@ func (s *Server) handleAutomationPost(w http.ResponseWriter, r *http.Request, us
 			var err error
 			ruleID, err = strconv.ParseInt(r.FormValue("rule_id"), 10, 64)
 			if err != nil || ruleID <= 0 {
-				http.Redirect(w, r, "/activities/automation?msg=invalid+rule", http.StatusFound)
+				http.Redirect(w, r, "/automation?msg=invalid+rule", http.StatusFound)
 				return
 			}
 		}
@@ -100,36 +117,36 @@ func (s *Server) handleAutomationPost(w http.ResponseWriter, r *http.Request, us
 		condition := strings.TrimSpace(r.FormValue("condition"))
 		enabled := r.FormValue("enabled") == "on"
 		if name == "" || condition == "" {
-			http.Redirect(w, r, "/activities/automation?msg=missing+rule+fields", http.StatusFound)
+			http.Redirect(w, r, "/automation?msg=missing+rule+fields", http.StatusFound)
 			return
 		}
 		parsedRule, err := rules.ParseRuleJSON(condition)
 		if err != nil {
 			detail := compactErrMessage(err)
 			log.Printf("automation %s parse failed: name=%q err=%v json=%q", action, name, err, compactForLog(condition, 500))
-			http.Redirect(w, r, "/activities/automation?msg="+url.QueryEscape("invalid rule json: "+detail), http.StatusFound)
+			http.Redirect(w, r, "/automation?msg="+url.QueryEscape("invalid rule json: "+detail), http.StatusFound)
 			return
 		}
 		if err := rules.ValidateRule(parsedRule, rules.DefaultRegistry()); err != nil {
 			detail := compactErrMessage(err)
 			log.Printf("automation %s validation failed: name=%q err=%v json=%q", action, name, err, compactForLog(condition, 500))
-			http.Redirect(w, r, "/activities/automation?msg="+url.QueryEscape("invalid rule definition: "+detail), http.StatusFound)
+			http.Redirect(w, r, "/automation?msg="+url.QueryEscape("invalid rule definition: "+detail), http.StatusFound)
 			return
 		}
 		normalized, err := json.Marshal(parsedRule)
 		if err != nil {
 			log.Printf("automation %s normalize failed: name=%q err=%v", action, name, err)
-			http.Redirect(w, r, "/activities/automation?msg=rule+save+failed", http.StatusFound)
+			http.Redirect(w, r, "/automation?msg=rule+save+failed", http.StatusFound)
 			return
 		}
 		condition = string(normalized)
 		if action == "update-rule" {
 			if err := s.store.UpdateHideRuleForUser(r.Context(), userID, ruleID, name, condition); err != nil {
 				log.Printf("automation update-rule store failed: rule_id=%d err=%v", ruleID, err)
-				http.Redirect(w, r, "/activities/automation?msg=rule+update+failed", http.StatusFound)
+				http.Redirect(w, r, "/automation?msg=rule+update+failed", http.StatusFound)
 				return
 			}
-			http.Redirect(w, r, "/activities/automation?msg=rule+updated", http.StatusFound)
+			http.Redirect(w, r, "/automation?msg=rule+updated", http.StatusFound)
 			return
 		}
 		if _, err := s.store.CreateHideRule(r.Context(), storage.HideRule{
@@ -139,36 +156,36 @@ func (s *Server) handleAutomationPost(w http.ResponseWriter, r *http.Request, us
 			Enabled:   enabled,
 		}); err != nil {
 			log.Printf("automation add-rule store failed: name=%q enabled=%t err=%v", name, enabled, err)
-			http.Redirect(w, r, "/activities/automation?msg=rule+save+failed", http.StatusFound)
+			http.Redirect(w, r, "/automation?msg=rule+save+failed", http.StatusFound)
 			return
 		}
-		http.Redirect(w, r, "/activities/automation?msg=rule+added", http.StatusFound)
+		http.Redirect(w, r, "/automation?msg=rule+added", http.StatusFound)
 	case "toggle-rule":
 		idValue := r.FormValue("rule_id")
 		enabled := r.FormValue("enabled") == "on"
 		ruleID, err := strconv.ParseInt(idValue, 10, 64)
 		if err != nil || ruleID == 0 {
-			http.Redirect(w, r, "/activities/automation?msg=invalid+rule", http.StatusFound)
+			http.Redirect(w, r, "/automation?msg=invalid+rule", http.StatusFound)
 			return
 		}
 		if err := s.store.UpdateHideRuleEnabledForUser(r.Context(), userID, ruleID, enabled); err != nil {
-			http.Redirect(w, r, "/activities/automation?msg=rule+update+failed", http.StatusFound)
+			http.Redirect(w, r, "/automation?msg=rule+update+failed", http.StatusFound)
 			return
 		}
-		http.Redirect(w, r, "/activities/automation?msg=rule+updated", http.StatusFound)
+		http.Redirect(w, r, "/automation?msg=rule+updated", http.StatusFound)
 	case "delete-rule":
 		idValue := r.FormValue("rule_id")
 		ruleID, err := strconv.ParseInt(idValue, 10, 64)
 		if err != nil || ruleID == 0 {
-			http.Redirect(w, r, "/activities/automation?msg=invalid+rule", http.StatusFound)
+			http.Redirect(w, r, "/automation?msg=invalid+rule", http.StatusFound)
 			return
 		}
 		if err := s.store.DeleteHideRuleForUser(r.Context(), userID, ruleID); err != nil {
-			http.Redirect(w, r, "/activities/automation?msg=rule+delete+failed", http.StatusFound)
+			http.Redirect(w, r, "/automation?msg=rule+delete+failed", http.StatusFound)
 			return
 		}
-		http.Redirect(w, r, "/activities/automation?msg=rule+deleted", http.StatusFound)
+		http.Redirect(w, r, "/automation?msg=rule+deleted", http.StatusFound)
 	default:
-		http.Redirect(w, r, "/activities/automation?msg=unknown+action", http.StatusFound)
+		http.Redirect(w, r, "/automation?msg=unknown+action", http.StatusFound)
 	}
 }

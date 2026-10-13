@@ -80,6 +80,11 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 	for _, activity := range activities {
 		activityIDs = append(activityIDs, activity.ID)
 	}
+	automationCounts, err := s.store.CountTriggeredAutomations(r.Context(), userID, activityIDs)
+	if err != nil {
+		http.Error(w, "failed to load automation counts", 500)
+		return
+	}
 
 	stepStart = time.Now()
 	routePointsByActivity, err := s.store.ListActivityRoutePreviewPoints(r.Context(), activityIDs, 48)
@@ -113,6 +118,7 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 			LightStops:        activity.TrafficLightStopCount,
 			RoadCrossings:     activity.RoadCrossingCount,
 			DetectedFactCount: detectedFactCount,
+			AutomationCount:   automationCounts[activity.ID],
 			PhotoURL:          activity.PhotoURL,
 		}
 		enrichActivityView(&view, activity.Activity)
@@ -180,9 +186,9 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data := ProfilePageData{
-		Sync:        syncView,
 		NextPageURL: nextPageURL,
 		PageData: PageData{
+			Sync:       syncView,
 			Title:      "Activities",
 			Page:       "activities",
 			Message:    r.URL.Query().Get("msg"),
@@ -252,6 +258,21 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		trace.AddField("error", "get_activity")
 		http.Error(w, "activity not found", http.StatusNotFound)
+		return
+	}
+	automationEvents, err := s.store.ListAutomationEvents(r.Context(), userID, activityID, 0, 31)
+	if err != nil {
+		http.Error(w, "failed to load automation history", 500)
+		return
+	}
+	moreAutomationHistoryURL := ""
+	if len(automationEvents) > 30 {
+		automationEvents = automationEvents[:30]
+		moreAutomationHistoryURL = fmt.Sprintf("/automation?activity=%d#history", activityID)
+	}
+	automationCounts, err := s.store.CountTriggeredAutomations(r.Context(), userID, []int64{activityID})
+	if err != nil {
+		http.Error(w, "failed to load automation counts", 500)
 		return
 	}
 
@@ -393,6 +414,7 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 		StopTotal:         formatDuration(stopTotalSeconds),
 		LightStops:        lightStops,
 		DetectedFactCount: len(detectedFacts),
+		AutomationCount:   automationCounts[activityID],
 		RoadCrossings:     roadCrossings,
 		RecalculatedAt:    recalculatedAt,
 		FetchedAt:         formatTimestamp(activity.UpdatedAt),
@@ -427,6 +449,7 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 
 	data := ActivityDetailData{
 		PageData: PageData{
+			Sync:       s.pageSync(r.Context(), userID),
 			Title:      activity.Name,
 			Page:       "activity",
 			Message:    r.URL.Query().Get("msg"),
@@ -434,23 +457,25 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 			Strava:     s.getStravaInfo(r.Context(), userID),
 			UserCount:  s.userCount(r.Context()),
 		},
-		Activity:          view,
-		RidePacing:        buildRidePacingView(activity, points),
-		Drafting:          buildDraftingView(activity, points),
-		Stops:             stopViews,
-		DetectedFacts:     detectedFacts,
-		DataItems:         dataItems,
-		RoutePointsJSON:   template.JS(pointsJSON),
-		StopsJSON:         template.JS(stopsJSON),
-		DetectedFactsJSON: template.JS(detectedFactsJSON),
-		SpeedSeriesJSON:   template.JS(speedJSON),
-		SpeedThreshold:    s.stopOpts.SpeedThreshold,
-		StopMinDuration:   formatDuration(int(s.stopOpts.MinDuration.Seconds())),
-		HasRoutePoints:    len(routePoints) > 0,
-		HasSpeedSeries:    len(speeds) > 0,
-		HasMapSpeed:       speedStyle.Available,
-		MapSpeedSlowKmh:   speedStyle.SlowKmh,
-		MapSpeedFastKmh:   speedStyle.FastKmh,
+		Activity:                 view,
+		AutomationHistory:        automationHistoryViews(automationEvents),
+		MoreAutomationHistoryURL: moreAutomationHistoryURL,
+		RidePacing:               buildRidePacingView(activity, points),
+		Drafting:                 buildDraftingView(activity, points),
+		Stops:                    stopViews,
+		DetectedFacts:            detectedFacts,
+		DataItems:                dataItems,
+		RoutePointsJSON:          template.JS(pointsJSON),
+		StopsJSON:                template.JS(stopsJSON),
+		DetectedFactsJSON:        template.JS(detectedFactsJSON),
+		SpeedSeriesJSON:          template.JS(speedJSON),
+		SpeedThreshold:           s.stopOpts.SpeedThreshold,
+		StopMinDuration:          formatDuration(int(s.stopOpts.MinDuration.Seconds())),
+		HasRoutePoints:           len(routePoints) > 0,
+		HasSpeedSeries:           len(speeds) > 0,
+		HasMapSpeed:              speedStyle.Available,
+		MapSpeedSlowKmh:          speedStyle.SlowKmh,
+		MapSpeedFastKmh:          speedStyle.FastKmh,
 	}
 
 	stepStart = time.Now()

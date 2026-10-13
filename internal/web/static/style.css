@@ -1273,6 +1273,19 @@ a {
 }
 
 /* Settings page */
+.automation-history-list { display: grid; gap: 0; list-style: none; padding: 0; margin: 0; }
+.automation-history-row { display: grid; gap: 8px; padding: 16px 0; border-bottom: 1px solid var(--border); }
+.automation-history-row:last-child { border-bottom: 0; }
+.automation-history-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.automation-history-meta { color: var(--ink-muted); font-size: 12px; }
+.automation-history-meta a, .activity-automation-link { color: var(--accent-ink); }
+.automation-history-row p { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.automation-status[data-status="failed"], .automation-status[data-status="invalid"] { color: #c57570; }
+.automation-status[data-status="applied"] { color: #4b8870; }
+.activity-automation-link { font-size: 12px; font-weight: 600; }
+.activity-card-links { float: right; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px 16px; padding: 4px 0; margin-left: 12px; max-width: 100%; }
+.activity-card-links .activity-details-link { float: none; padding: 0; }
+#automations, #history { scroll-margin-top: 110px; }
 .rule {
   display: grid;
   gap: 14px;

@@ -38,7 +38,7 @@ func newAutomationTestServer(t *testing.T) (*Server, *storage.Store) {
 
 func automationRequest(t *testing.T, server *Server, method string, form url.Values) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(method, "/activities/automation", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(method, "/automation", strings.NewReader(form.Encode()))
 	if method == http.MethodPost {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
@@ -58,8 +58,8 @@ func TestAutomation_RequiresAuthentication(t *testing.T) {
 	server, _ := newAutomationTestServer(t)
 	for _, method := range []string{http.MethodGet, http.MethodPost} {
 		rec := httptest.NewRecorder()
-		server.Automation(rec, httptest.NewRequest(method, "/activities/automation", nil))
-		if rec.Code != http.StatusFound || !strings.Contains(rec.Header().Get("Location"), "next=%2Factivities%2Fautomation") {
+		server.Automation(rec, httptest.NewRequest(method, "/automation", nil))
+		if rec.Code != http.StatusFound || !strings.Contains(rec.Header().Get("Location"), "next=%2Fautomation") {
 			t.Fatalf("expected sign-in redirect for %s, got %d %s", method, rec.Code, rec.Header().Get("Location"))
 		}
 	}
@@ -85,7 +85,7 @@ func TestAutomation_ShowsSavedJSON(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, text := range []string{
-		`href="/activities/automation" class="active" aria-current="page"`,
+		`href="/automation" class="active" aria-current="page"`,
 		"View and edit JSON",
 		"Save changes",
 		`name="action" value="update-rule"`,
@@ -122,7 +122,7 @@ func TestAutomation_UpdateRule(t *testing.T) {
 				"name":      {"  More activities  "},
 				"condition": {updatedJSON},
 			})
-			if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/activities/automation?msg=rule+updated" {
+			if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/automation?msg=rule+updated" {
 				t.Fatalf("unexpected response: %d %s", rec.Code, rec.Header().Get("Location"))
 			}
 			rows, err := store.ListHideRules(ctx, 202)
@@ -168,7 +168,7 @@ func TestAutomation_RejectsInvalidUpdates(t *testing.T) {
 			rec := automationRequest(t, server, http.MethodPost, url.Values{
 				"action": {"update-rule"}, "rule_id": {id}, "name": {"Changed"}, "condition": {test.condition},
 			})
-			if rec.Code != http.StatusFound || rec.Header().Get("Location") == "/activities/automation?msg=rule+updated" {
+			if rec.Code != http.StatusFound || rec.Header().Get("Location") == "/automation?msg=rule+updated" {
 				t.Fatalf("expected rejected update, got %d %s", rec.Code, rec.Header().Get("Location"))
 			}
 			rows, err := store.ListHideRules(ctx, test.userID)
@@ -188,7 +188,7 @@ func TestAutomation_RuleLifecycle(t *testing.T) {
 	rec := automationRequest(t, server, http.MethodPost, url.Values{
 		"action": {"add-rule"}, "name": {"Rides"}, "condition": {automationRideRule}, "enabled": {"on"},
 	})
-	if rec.Header().Get("Location") != "/activities/automation?msg=rule+added" {
+	if rec.Header().Get("Location") != "/automation?msg=rule+added" {
 		t.Fatalf("unexpected add response: %s", rec.Header().Get("Location"))
 	}
 	rows, err := store.ListHideRules(ctx, 202)

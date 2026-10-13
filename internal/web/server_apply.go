@@ -55,7 +55,7 @@ func (s *Server) Apply(ctx context.Context, activityID int64) error {
 	return s.applyActivityRules(ctx, activityID)
 }
 
-func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error {
+func (s *Server) applyActivityRules(ctx context.Context, activityID int64) (resultErr error) {
 	var guardErr error
 	ctx, guardErr = s.store.GuardActivityContext(ctx, activityID)
 	if guardErr != nil {
@@ -66,11 +66,63 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 		return err
 	}
 
+	source := "manual"
+	if storage.IsAutomaticPublish(ctx) {
+		source = "automatic"
+	}
+	events := []storage.AutomationEvent{{Name: "Update activity description", Action: "description", Source: source, Status: "checking", Detail: "Checking whether the description needs an update."}}
+	published := false
+	var eventIDs []int64
+	defer func() {
+		for i := range events {
+			events[i].Source = source
+			if resultErr != nil && (events[i].Status == "matched" || events[i].Status == "pending" || events[i].Status == "checking") {
+				events[i].Status = "failed"
+				_, events[i].Detail = strava.SafeError(resultErr)
+				if errors.Is(resultErr, storage.ErrProcessingDisabled) {
+					events[i].Status, events[i].Detail, events[i].Triggered = "disabled", "Automatic Strava updates are off.", false
+				}
+			} else if events[i].Status == "matched" || events[i].Status == "pending" {
+				if published {
+					events[i].Status = "applied"
+					if events[i].Action == "description" {
+						events[i].Detail = "Updated the Weirdstats facts in the Strava description."
+					}
+				} else {
+					events[i].Status = "already_hidden"
+					events[i].Detail += ". The activity is already muted on Strava."
+				}
+			}
+		}
+		historyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+		defer cancel()
+		var historyErr error
+		if eventIDs == nil {
+			historyErr = s.store.RecordAutomationEvents(historyCtx, activity.UserID, activityID, events)
+		} else {
+			historyErr = s.store.FinishAutomationEvents(historyCtx, activity.UserID, activityID, eventIDs, events)
+		}
+		if historyErr != nil {
+			resultErr = errors.Join(resultErr, fmt.Errorf("record automation history: %w", historyErr))
+		}
+	}()
+
 	s, err = s.forUser(ctx, activity.UserID)
 	if err != nil {
 		return err
 	}
-	hide, statsSnapshot, err := s.evaluateHideRules(ctx, activity)
+	hide, statsSnapshot, ruleEvents, err := s.evaluateHideRulesWithHistory(ctx, activity)
+	events = append(events, ruleEvents...)
+	if err != nil {
+		return err
+	}
+	for i := range events {
+		events[i].Source = source
+		if events[i].Status == "matched" {
+			events[i].Status = "pending"
+		}
+	}
+	eventIDs, err = s.store.StartAutomationEvents(ctx, activity.UserID, activityID, events)
 	if err != nil {
 		return err
 	}
@@ -189,14 +241,24 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 		descriptionLine = buildStravaWeirdStatsLineWithHeartRate(filteredSnapshot, rideFact, speedFacts, heartRateFact, coffeeFact, routeFact, roadFact, factSettings, histories)
 	}
 	newDesc, descChanged := applyWeirdStatsDescriptionLine(baseDescription, descriptionLine)
+	events[0].Status, events[0].Detail = "unchanged", "No description update was needed."
 	if descChanged {
 		descPtr = &newDesc
+		events[0].Status, events[0].Triggered = "pending", true
+		events[0].Detail = "Publish the updated Weirdstats facts to the Strava description."
 	}
 
 	var hidePtr *bool
 	if hide && !baseHideFromHome {
 		val := true
 		hidePtr = &val
+	} else if hide {
+		for i := range events {
+			if events[i].Status == "pending" && events[i].Action == "hide" {
+				events[i].Status = "already_hidden"
+				events[i].Detail += ". The activity is already muted on Strava."
+			}
+		}
 	}
 
 	cachePoints, cacheErr := s.store.LoadActivityPoints(ctx, activityID)
@@ -237,6 +299,7 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 		return err
 	}
 
+	published = true
 	descToStore := baseDescription
 	if descPtr != nil {
 		descToStore = *descPtr
@@ -381,14 +444,14 @@ func (s *Server) updateActivityDetectedFactsCache(
 	return nil
 }
 
-func (s *Server) evaluateHideRules(ctx context.Context, activity storage.Activity) (bool, stats.StopStats, error) {
+func (s *Server) evaluateHideRulesWithHistory(ctx context.Context, activity storage.Activity) (bool, stats.StopStats, []storage.AutomationEvent, error) {
 	statsSnapshot, err := s.loadStatsSnapshot(ctx, activity.ID)
 	if err != nil {
-		return false, stats.StopStats{}, err
+		return false, stats.StopStats{}, nil, err
 	}
 	ruleRows, err := s.store.ListHideRules(ctx, activity.UserID)
 	if err != nil {
-		return false, stats.StopStats{}, err
+		return false, stats.StopStats{}, nil, err
 	}
 
 	reg := rules.DefaultRegistry()
@@ -413,29 +476,19 @@ func (s *Server) evaluateHideRules(ctx context.Context, activity storage.Activit
 		},
 	}
 
-	hide := false
-	for _, ruleRow := range ruleRows {
-		if !ruleRow.Enabled {
-			continue
-		}
-		ruleDef, err := rules.ParseRuleJSON(ruleRow.Condition)
-		if err != nil {
-			continue
-		}
-		if err := rules.ValidateRule(ruleDef, reg); err != nil {
-			continue
-		}
-		matched, shouldHide, err := rules.Evaluate(ruleDef, reg, ctxData, ruleRow.ID)
-		if err != nil {
-			continue
-		}
-		if matched && shouldHide {
-			hide = true
-			break
-		}
+	definitions := make([]rules.Definition, 0, len(ruleRows))
+	for _, row := range ruleRows {
+		definitions = append(definitions, rules.Definition{ID: row.ID, Name: row.Name, Condition: row.Condition, Enabled: row.Enabled})
 	}
-
-	return hide, statsSnapshot, nil
+	hide, evaluations := rules.EvaluateDefinitions(definitions, reg, ctxData)
+	events := make([]storage.AutomationEvent, 0, len(evaluations))
+	for _, evaluation := range evaluations {
+		events = append(events, storage.AutomationEvent{
+			RuleID: evaluation.RuleID, Name: evaluation.Name, Action: "hide", Status: evaluation.Status,
+			Detail: evaluation.Detail, Triggered: evaluation.Matched,
+		})
+	}
+	return hide, statsSnapshot, events, nil
 }
 
 func (s *Server) loadStatsSnapshot(ctx context.Context, activityID int64) (stats.StopStats, error) {

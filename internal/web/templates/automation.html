@@ -8,6 +8,22 @@
   </section>
 
   <section class="settings-stack">
+    <article class="card settings-section" id="history">
+      <div class="section-head">
+        <div>
+          <h3>Automation history{{if .HistoryActivityID}} · {{.HistoryActivityName}}{{end}}</h3>
+          <p class="muted">Recorded runs include matched rules, skipped actions, and failed Strava updates.</p>
+        </div>
+        {{if .HistoryActivityID}}<a class="btn secondary small" href="/automation#history">All activities</a>{{end}}
+      </div>
+      <p class="muted">Automatic Strava updates are {{if .Processing.AutoPublish}}on{{else}}off{{end}}. <a href="/activities/settings">Manage in Settings</a>.</p>
+      {{if .History}}
+        {{template "automation-history" .History}}
+      {{else}}
+        <p class="muted">No runs recorded yet. History starts when an activity is next processed or re-applied; earlier rule decisions cannot be reconstructed.</p>
+      {{end}}
+      {{if .HistoryNextURL}}<a class="btn secondary small" href="{{.HistoryNextURL}}">Older runs</a>{{end}}
+    </article>
     <article class="card settings-section">
       <div class="section-head">
         <div>
@@ -28,7 +44,7 @@
                 <span class="muted">{{.Description}}</span>
               </div>
               <div class="rule-actions">
-                <form method="post" action="/activities/automation" class="rule-action">
+                <form method="post" action="/automation" class="rule-action">
                   <input type="hidden" name="action" value="toggle-rule" />
                   <input type="hidden" name="rule_id" value="{{.ID}}" />
                   <label class="toggle">
@@ -37,7 +53,7 @@
                   </label>
                   <button class="btn secondary small" type="submit">Update</button>
                 </form>
-                <form method="post" action="/activities/automation" class="rule-action">
+                <form method="post" action="/automation" class="rule-action">
                   <input type="hidden" name="action" value="delete-rule" />
                   <input type="hidden" name="rule_id" value="{{.ID}}" />
                   <button class="btn secondary small" type="submit">Delete rule</button>
@@ -45,7 +61,7 @@
               </div>
               <details class="saved-rule-editor">
                 <summary>View and edit JSON</summary>
-                <form method="post" action="/activities/automation" class="rule-builder" data-rule-json-form>
+                <form method="post" action="/automation" class="rule-builder" data-rule-json-form>
                   <input type="hidden" name="action" value="update-rule" />
                   <input type="hidden" name="rule_id" value="{{.ID}}" />
                   <label for="rule-name-{{.ID}}">Rule name</label>
@@ -79,7 +95,7 @@
           <p class="muted">Write or paste rule JSON below. The optional spec can help you generate a rule with an LLM.</p>
         </div>
       </div>
-      <form method="post" action="/activities/automation" class="rule-builder" id="rule-json-form" data-rule-json-form data-derive-name="true">
+      <form method="post" action="/automation" class="rule-builder" id="rule-json-form" data-rule-json-form data-derive-name="true">
         <input type="hidden" name="action" value="add-rule" />
         <input type="hidden" name="name" id="rule-name" value="Custom JSON rule" />
         <div class="builder-stack">

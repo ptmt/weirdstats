@@ -1,0 +1,14 @@
+{{define "automation-history"}}
+  <ol class="automation-history-list">
+    {{range .}}
+      <li class="automation-history-row">
+        <div class="automation-history-head">
+          <strong>{{.Name}}</strong>
+          <span class="pill automation-status" data-status="{{.Status}}">{{.StatusLabel}}</span>
+        </div>
+        <div class="automation-history-meta"><time datetime="{{.DateTime}}">{{.Time}}</time> · {{.Source}} · <a href="/activity/{{.ActivityID}}#automations">{{.ActivityName}}</a></div>
+        <p>{{.Detail}}</p>
+      </li>
+    {{end}}
+  </ol>
+{{end}}

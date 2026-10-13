@@ -906,6 +906,21 @@
         </div>
       {{end}}
     </article>
+    <article class="card" id="automations">
+      <div class="section-head">
+        <div>
+          <h3>Automation history</h3>
+          <p class="muted">{{.Activity.AutomationCount}} automation{{if ne .Activity.AutomationCount 1}}s{{end}} triggered. Rule checks, skipped actions, and update results appear below.</p>
+        </div>
+        <a class="btn secondary small" href="/automation">Manage automations</a>
+      </div>
+      {{if .AutomationHistory}}
+        {{template "automation-history" .AutomationHistory}}
+      {{else}}
+        <p class="muted">No automation history was recorded for this activity yet. Older processing has no detailed history; re-apply the activity to record a new run.</p>
+      {{end}}
+      {{if .MoreAutomationHistoryURL}}<a class="btn secondary small" href="{{.MoreAutomationHistoryURL}}">All runs for this activity</a>{{end}}
+    </article>
     <article class="card">
       <div class="activity-stage-head">
         <div>

@@ -130,6 +130,11 @@ ON CONFLICT(user_id,activity_id) DO UPDATE SET version=version+1,deleted=exclude
 	if _, err = tx.ExecContext(ctx, `DELETE FROM jobs WHERE user_id=? AND activity_id=?`, userID, activityID); err != nil {
 		return err
 	}
+	if deleted {
+		if _, err = tx.ExecContext(ctx, `DELETE FROM automation_events WHERE user_id=? AND activity_id=?`, userID, activityID); err != nil {
+			return err
+		}
+	}
 	if _, err = tx.ExecContext(ctx, `DELETE FROM activities WHERE id=? AND user_id=?`, activityID, userID); err != nil {
 		return err
 	}
@@ -155,7 +160,7 @@ func purgeImportedData(ctx context.Context, tx *sql.Tx, userID int64) error {
 			return err
 		}
 	}
-	for _, table := range []string{"activities", "jobs"} {
+	for _, table := range []string{"automation_events", "activities", "jobs"} {
 		if _, err = tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE user_id=?`, userID); err != nil {
 			return err
 		}

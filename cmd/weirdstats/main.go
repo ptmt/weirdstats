@@ -125,6 +125,8 @@ func main() {
 	mux.HandleFunc("/activities/", webServer.Activities)
 	mux.HandleFunc("/activities/settings", webServer.Settings)
 	mux.HandleFunc("/activities/automation", webServer.Automation)
+	mux.HandleFunc("/automation", webServer.Automation)
+	mux.HandleFunc("/automation/", webServer.Automation)
 	mux.HandleFunc("/api/rules/metadata", webServer.RulesMetadata)
 	mux.HandleFunc("/api/mobile/session/exchange", webServer.MobileSessionExchange)
 	mux.HandleFunc("/api/mobile/me", webServer.MobileMe)

@@ -83,6 +83,7 @@ type ActivityView struct {
 	StopTotal         string
 	LightStops        int
 	DetectedFactCount int
+	AutomationCount   int
 	RoadCrossings     int
 	RecalculatedAt    string
 	FetchedAt         string
@@ -141,23 +142,25 @@ type routePreviewPoint struct {
 
 type ActivityDetailData struct {
 	PageData
-	Activity          ActivityView
-	RidePacing        *RidePacingView
-	Drafting          *DraftingView
-	Stops             []StopView
-	DetectedFacts     []ActivityMapFactView
-	DataItems         []ActivityDataItem
-	RoutePointsJSON   template.JS
-	StopsJSON         template.JS
-	DetectedFactsJSON template.JS
-	SpeedSeriesJSON   template.JS
-	SpeedThreshold    float64
-	StopMinDuration   string
-	HasRoutePoints    bool
-	HasSpeedSeries    bool
-	HasMapSpeed       bool
-	MapSpeedSlowKmh   int
-	MapSpeedFastKmh   int
+	Activity                 ActivityView
+	AutomationHistory        []AutomationEventView
+	MoreAutomationHistoryURL string
+	RidePacing               *RidePacingView
+	Drafting                 *DraftingView
+	Stops                    []StopView
+	DetectedFacts            []ActivityMapFactView
+	DataItems                []ActivityDataItem
+	RoutePointsJSON          template.JS
+	StopsJSON                template.JS
+	DetectedFactsJSON        template.JS
+	SpeedSeriesJSON          template.JS
+	SpeedThreshold           float64
+	StopMinDuration          string
+	HasRoutePoints           bool
+	HasSpeedSeries           bool
+	HasMapSpeed              bool
+	MapSpeedSlowKmh          int
+	MapSpeedFastKmh          int
 }
 
 type StravaInfo struct {
@@ -167,6 +170,7 @@ type StravaInfo struct {
 }
 
 type PageData struct {
+	Sync       SyncView
 	Title      string
 	Page       string
 	Message    string
@@ -181,7 +185,6 @@ type LandingPageData struct {
 }
 
 type ProfilePageData struct {
-	Sync        SyncView
 	NextPageURL string
 	PageData
 	Activities       []ActivityView
@@ -208,8 +211,13 @@ type SettingsPageData struct {
 
 type AutomationPageData struct {
 	PageData
-	Rules         []AutomationRule
-	RulesMetaJSON template.JS
+	Rules               []AutomationRule
+	RulesMetaJSON       template.JS
+	History             []AutomationEventView
+	HistoryNextURL      string
+	HistoryActivityID   int64
+	HistoryActivityName string
+	Processing          storage.ProcessingPreferences
 }
 
 type AdminPageData struct {
@@ -310,6 +318,8 @@ func NewServer(store *storage.Store, ingestor *ingest.Ingestor, mapAPI maps.API,
 		templatesFS,
 		"templates/base.html",
 		"templates/footer.html",
+		"templates/sync_status.html",
+		"templates/automation_history.html",
 		"templates/landing.html",
 	)
 	if err != nil {
@@ -319,6 +329,8 @@ func NewServer(store *storage.Store, ingestor *ingest.Ingestor, mapAPI maps.API,
 		templatesFS,
 		"templates/base.html",
 		"templates/footer.html",
+		"templates/sync_status.html",
+		"templates/automation_history.html",
 		"templates/profile.html",
 	)
 	if err != nil {
@@ -328,6 +340,8 @@ func NewServer(store *storage.Store, ingestor *ingest.Ingestor, mapAPI maps.API,
 		templatesFS,
 		"templates/base.html",
 		"templates/footer.html",
+		"templates/sync_status.html",
+		"templates/automation_history.html",
 		"templates/settings.html",
 	)
 	if err != nil {
@@ -337,6 +351,8 @@ func NewServer(store *storage.Store, ingestor *ingest.Ingestor, mapAPI maps.API,
 		templatesFS,
 		"templates/base.html",
 		"templates/footer.html",
+		"templates/sync_status.html",
+		"templates/automation_history.html",
 		"templates/automation.html",
 	)
 	if err != nil {
@@ -346,6 +362,8 @@ func NewServer(store *storage.Store, ingestor *ingest.Ingestor, mapAPI maps.API,
 		templatesFS,
 		"templates/base.html",
 		"templates/footer.html",
+		"templates/sync_status.html",
+		"templates/automation_history.html",
 		"templates/admin.html",
 	)
 	if err != nil {
@@ -355,6 +373,8 @@ func NewServer(store *storage.Store, ingestor *ingest.Ingestor, mapAPI maps.API,
 		templatesFS,
 		"templates/base.html",
 		"templates/footer.html",
+		"templates/sync_status.html",
+		"templates/automation_history.html",
 		"templates/activity.html",
 	)
 	if err != nil {
@@ -777,6 +797,7 @@ func (s *Server) Settings(w http.ResponseWriter, r *http.Request) {
 	data := SettingsPageData{
 		Processing: processing,
 		PageData: PageData{
+			Sync:       s.pageSync(r.Context(), userID),
 			Title:      "Settings",
 			Page:       "settings",
 			Message:    r.URL.Query().Get("msg"),
@@ -816,6 +837,7 @@ func (s *Server) Admin(w http.ResponseWriter, r *http.Request) {
 
 	data := AdminPageData{
 		PageData: PageData{
+			Sync:       s.pageSync(r.Context(), userID),
 			Title:      "Admin",
 			Page:       "admin",
 			Message:    r.URL.Query().Get("msg"),

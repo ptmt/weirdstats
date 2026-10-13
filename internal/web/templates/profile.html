@@ -184,10 +184,13 @@
           {{end}}
           {{if .StravaDescription}}<p class="muted activity-description">{{.StravaDescription}}</p>{{end}}
           <div class="activity-card-footer">
-            <a href="/activity/{{.ID}}" class="activity-details-link">
-              {{if .DetectedFactCount}}{{.DetectedFactCount}} detected fact{{if ne .DetectedFactCount 1}}s{{end}}{{else}}View activity{{end}}
-              <span aria-hidden="true">→</span>
-            </a>
+            <div class="activity-card-links">
+              <a href="/activity/{{.ID}}#automations" class="activity-automation-link" title="See recorded automation runs">{{.AutomationCount}} automation{{if ne .AutomationCount 1}}s{{end}}</a>
+              <a href="/activity/{{.ID}}" class="activity-details-link">
+                {{if .DetectedFactCount}}{{.DetectedFactCount}} detected fact{{if ne .DetectedFactCount 1}}s{{end}}{{else}}View activity{{end}}
+                <span aria-hidden="true">→</span>
+              </a>
+            </div>
             {{if .GPSStatus}}<p class="muted">{{.GPSStatus}}</p>{{end}}
             {{if or .HasPower .StopCount .LightStops .RoadCrossings}}
             <details class="activity-extra">
@@ -330,32 +333,4 @@
       });
     });
   </script>
-{{end}}
-
-{{define "sync-status"}}
-  <details class="sync-status" id="sync-status" data-state="{{.Sync.State}}" data-completed="{{.Sync.Completed}}">
-    <summary aria-label="Activity import status: {{.Sync.Label}}" aria-controls="sync-panel">
-      <span class="sync-indicator" aria-hidden="true"></span>
-      <span id="sync-label" aria-live="polite" aria-atomic="true">{{.Sync.Label}}</span>
-      <svg class="sync-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>
-    </summary>
-    <section class="sync-panel" id="sync-panel" aria-label="Activity import details">
-      <div class="sync-heading">
-        <strong>Activity import</strong>
-        <button type="button" id="sync-close" aria-label="Close import details"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button>
-      </div>
-      <p id="sync-message">{{.Sync.Message}}</p>
-      <p class="muted" id="sync-counts">{{.Sync.Completed}} processed · {{.Sync.Pending}} waiting{{if .Sync.Failed}} · {{.Sync.Failed}} failed attempts{{end}}</p>
-      <p class="muted" id="sync-discovering" {{if not .Sync.Discovering}}hidden{{end}}>Still finding activities in Strava.</p>
-      <p class="muted" id="sync-next" {{if not .Sync.NextRunAt}}hidden{{end}}>Next attempt: <time data-unix="{{.Sync.NextRunAt}}">{{.Sync.NextRunAt}}</time></p>
-      <div class="sync-errors" id="sync-errors">{{range .Sync.Errors}}<p>{{if gt .Count 1}}<strong>{{.Count}} attempts: </strong>{{end}}{{.Message}} <small>Reference #{{.JobID}}</small></p>{{end}}</div>
-      <div class="sync-actions">
-        <a class="btn secondary small" id="sync-new-activities" href="" hidden>Refresh activities</a>
-        <a class="btn secondary small" id="sync-reconnect" href="/connect/strava?force=1" {{if not .Sync.Blocked}}hidden{{end}}>Reconnect Strava</a>
-        <button class="btn secondary small" type="button" id="retry-import" {{if not .Sync.Failed}}hidden{{end}}>Retry failed work</button>
-      </div>
-      <a class="sync-settings" href="/activities/settings">Processing preferences <span aria-hidden="true">→</span></a>
-    </section>
-  </details>
-  <script src="/static/sync-status.js" defer></script>
 {{end}}

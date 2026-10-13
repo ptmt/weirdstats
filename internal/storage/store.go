@@ -1374,6 +1374,7 @@ func (s *Store) DeleteUserData(ctx context.Context, userID int64) error {
 }
 func deleteUserData(ctx context.Context, tx *sql.Tx, userID int64) error {
 	for _, query := range []string{
+		"DELETE FROM automation_events WHERE user_id=?",
 		"DELETE FROM jobs WHERE user_id=?",
 		"DELETE FROM activity_tombstones WHERE user_id=?",
 		"DELETE FROM processing_preferences WHERE user_id=?",

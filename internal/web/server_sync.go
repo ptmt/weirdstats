@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -64,6 +65,15 @@ type SyncErrorView struct {
 	Stage   string `json:"stage"`
 	Message string `json:"message"`
 	Count   int    `json:"count"`
+}
+
+func (s *Server) pageSync(ctx context.Context, userID int64) SyncView {
+	view, err := s.syncView(ctx, userID)
+	if err != nil {
+		log.Printf("page sync status unavailable: user_id=%d err=%v", userID, err)
+		return SyncView{Label: "Status unavailable", State: "attention", Message: "Processing status could not be loaded. Try refreshing this page."}
+	}
+	return view
 }
 
 func (s *Server) syncView(ctx context.Context, userID int64) (SyncView, error) {
