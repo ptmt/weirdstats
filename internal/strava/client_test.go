@@ -14,7 +14,7 @@ func TestClientGetsActivityAndStreams(t *testing.T) {
 			if r.Header.Get("Authorization") != "Bearer token" {
 				t.Fatalf("missing auth header")
 			}
-			_, _ = w.Write([]byte(`{"id":123,"name":"Test Ride","type":"Ride","start_date":"2024-01-01T10:00:00Z","description":"desc"}`))
+			_, _ = w.Write([]byte(`{"id":123,"name":"Test Ride","type":"Ride","start_date":"2024-01-01T10:00:00Z","description":"desc","device_watts":true,"athlete_count":4}`))
 		case "/api/activities/123/streams":
 			_, _ = w.Write([]byte(`{
   "latlng":{"data":[[1.0,2.0],[3.0,4.0]]},
@@ -38,6 +38,9 @@ func TestClientGetsActivityAndStreams(t *testing.T) {
 	}
 	if activity.Name != "Test Ride" {
 		t.Fatalf("unexpected activity name: %s", activity.Name)
+	}
+	if activity.DeviceWatts == nil || !*activity.DeviceWatts || activity.AthleteCount != 4 {
+		t.Fatalf("unexpected power source or group count: %+v", activity)
 	}
 
 	streams, err := client.GetStreams(context.Background(), 123)

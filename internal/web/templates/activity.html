@@ -11,7 +11,7 @@
         transition: color 0.2s;
       }
       .back-link:hover {
-        color: var(--cyan);
+        color: var(--accent-ink);
       }
       .hero-copy {
         display: grid;
@@ -53,7 +53,7 @@
         align-items: center;
         gap: 6px;
         padding: 10px 14px;
-        border-radius: 10px;
+        border-radius: 4px;
         border: 1px solid var(--border);
         background: var(--surface);
         color: var(--ink);
@@ -65,8 +65,8 @@
         transition: all 0.2s ease;
       }
       .activity-action-btn:hover {
-        border-color: var(--purple);
-        background: rgba(168, 85, 247, 0.1);
+        border-color: var(--accent-ink);
+        background: var(--accent-soft);
       }
       .activity-action-btn svg {
         width: 16px;
@@ -77,6 +77,59 @@
         display: grid;
         gap: 20px;
       }
+      .pacing-highlights {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin: 18px 0;
+      }
+      .pacing-highlight {
+        display: grid;
+        align-content: start;
+        gap: 6px;
+        padding: 16px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: var(--bg-subtle);
+      }
+      .pacing-highlight-label {
+        color: var(--ink-muted);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .pacing-highlight strong {
+        color: var(--ink);
+        font-size: 24px;
+        font-variant-numeric: tabular-nums;
+      }
+      .pacing-highlight-detail {
+        color: var(--ink-muted);
+        font-size: 12px;
+      }
+      .pacing-table-wrap { overflow-x: auto; }
+      .pacing-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-variant-numeric: tabular-nums;
+      }
+      .pacing-table th,
+      .pacing-table td {
+        padding: 11px 10px;
+        border-bottom: 1px solid var(--border);
+        text-align: left;
+        white-space: nowrap;
+      }
+      .pacing-table th {
+        color: var(--ink-muted);
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .pacing-table td { color: var(--ink); font-size: 13px; }
+      .pacing-table tr:last-child td { border-bottom: 0; }
+      .pacing-fastest { color: var(--accent-ink); font-size: 11px; font-weight: 700; }
       .activity-stage-head {
         display: flex;
         align-items: flex-start;
@@ -93,6 +146,65 @@
         flex-wrap: wrap;
         gap: 8px;
       }
+      .draft-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px 28px;
+        margin: 0 0 18px;
+        padding: 16px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+      }
+      .draft-control {
+        display: grid;
+        gap: 8px;
+        min-width: 190px;
+        flex: 1 1 190px;
+        color: var(--ink-muted);
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .draft-control-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .draft-control output { color: var(--ink); font-variant-numeric: tabular-nums; }
+      .draft-control input { width: 100%; accent-color: var(--accent-ink); }
+      .draft-controls-note { width: 100%; color: var(--ink-muted); font-size: 12px; }
+      .draft-settings { margin: 0 0 18px; }
+      .draft-settings summary { color: var(--accent-ink); cursor: pointer; font-size: 13px; font-weight: 700; }
+      .draft-settings[open] summary { margin-bottom: 10px; }
+      .draft-settings .draft-controls { margin-bottom: 0; }
+      .draft-rotation-hint { margin: 0 0 18px; }
+      .draft-rotation-hint[hidden] { display: none; }
+      #draft-summary[hidden], #draft-status[hidden], #draft-list-note[hidden] { display: none; }
+      .draft-visual {
+        display: grid;
+        gap: 12px;
+        margin: 0 0 18px;
+        padding: 18px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: var(--bg-subtle);
+      }
+      .draft-visual[hidden], .draft-focus[hidden] { display: none; }
+      .draft-visual-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; }
+      .draft-visual-head strong { color: var(--ink); font-size: 14px; }
+      .draft-visual-head span, .draft-axis, .draft-legend, .draft-focus-context { color: var(--ink-muted); font-size: 12px; }
+      .draft-track { position: relative; height: 25px; border-radius: 4px; background: var(--bg-subtle); }
+      .draft-marker { position: absolute; top: 0; height: 100%; min-width: 7px; padding: 0; border: 2px solid var(--surface); border-radius: 4px; background: var(--accent); cursor: pointer; }
+      .draft-marker:hover, .draft-marker.selected { outline: 2px solid var(--ink); z-index: 1; }
+      .draft-axis { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
+      .draft-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+      .draft-legend span { display: inline-flex; align-items: center; gap: 6px; }
+      .draft-swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+      .draft-focus { display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid var(--border); }
+      .draft-focus strong { color: var(--ink); font-size: 14px; }
+      .draft-focus-chart { height: 250px; position: relative; }
+      .draft-event-row { width: 100%; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+      .draft-event-row:hover, .draft-event-row.selected { border-color: var(--accent-ink); background: var(--accent-soft); }
+      .draft-effort-pattern { color: var(--ink-muted); font-size: 12px; }
       .activity-route-grid {
         display: grid;
         grid-template-columns: minmax(0, 2fr) minmax(300px, 0.95fr);
@@ -104,10 +216,36 @@
         gap: 10px;
       }
       .activity-route-map-wrap #map {
-        height: min(74vh, 760px);
-        min-height: 560px;
+        height: min(60vh, 560px);
+        min-height: 400px;
         width: 100%;
+        background: var(--bg-subtle);
       }
+      .map-lens-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .map-lens-group { display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); }
+      .map-lens-group button {
+        border: 0;
+        border-radius: 999px;
+        padding: 8px 13px;
+        background: transparent;
+        color: var(--ink-muted);
+        font: inherit;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .map-lens-group button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+      .map-lens-group button:disabled { opacity: 0.4; cursor: not-allowed; }
+      .map-lens-group button:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
+      .map-speed-legend { display: flex; align-items: center; gap: 10px; color: var(--ink-muted); font-size: 12px; font-weight: 700; }
+      .map-speed-legend[hidden] { display: none; }
+      .map-speed-legend-bar { width: 126px; height: 9px; border-radius: 99px; background: linear-gradient(90deg, #377cfb, #19b9d2, #76c866, #f4b544, #f06b3f, #df3974); }
       .activity-route-events {
         display: grid;
         gap: 14px;
@@ -118,8 +256,8 @@
         display: grid;
         gap: 10px;
         padding: 14px;
-        border-radius: 18px;
-        background: rgba(255, 255, 255, 0.03);
+        border-radius: 4px;
+        background: var(--bg-subtle);
         border: 1px solid var(--border);
         min-height: 0;
       }
@@ -131,9 +269,10 @@
       }
       .activity-route-events h4 {
         margin: 0;
-        font-family: "Bebas Neue", sans-serif;
-        font-size: 20px;
-        letter-spacing: 1px;
+        font-family: inherit;
+        font-size: 16px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
         color: var(--ink);
       }
       .activity-panel-count {
@@ -156,7 +295,7 @@
         gap: 10px;
         width: 100%;
         padding: 14px 15px;
-        border-radius: 14px;
+        border-radius: 4px;
         border: 1px solid var(--border);
         background: var(--surface);
         color: inherit;
@@ -167,11 +306,11 @@
       }
       .fact-row:hover {
         border-color: var(--border-bright);
-        transform: translateY(-1px);
+        background: var(--bg-subtle);
       }
       .fact-row:focus-visible,
       .stop-row:focus-visible {
-        outline: 2px solid var(--cyan);
+        outline: 2px solid var(--accent-ink);
         outline-offset: 2px;
       }
       .fact-row-head {
@@ -257,9 +396,9 @@
         justify-content: space-between;
         gap: 16px;
         padding: 14px 16px;
-        border-radius: 16px;
+        border-radius: 4px;
         border: 1px solid var(--border);
-        background: rgba(255, 255, 255, 0.03);
+        background: var(--bg-subtle);
       }
       .activity-data-row-ok {
         border-color: rgba(34, 197, 94, 0.28);
@@ -304,9 +443,9 @@
         min-height: 220px;
         padding: 22px;
         text-align: center;
-        border-radius: 18px;
+        border-radius: 4px;
         border: 1px dashed var(--border);
-        background: rgba(255, 255, 255, 0.02);
+        background: var(--bg-subtle);
         color: var(--ink-muted);
       }
       .stop-row {
@@ -317,12 +456,13 @@
         cursor: pointer;
       }
       @media (max-width: 980px) {
+        .pacing-highlights { grid-template-columns: 1fr; }
         .activity-route-grid {
           grid-template-columns: 1fr;
         }
         .activity-route-map-wrap #map {
           height: min(56vh, 520px);
-          min-height: 420px;
+          min-height: 300px;
         }
         .activity-data-row {
           flex-direction: column;
@@ -332,9 +472,10 @@
         }
       }
       .card h3 {
-        font-family: "Bebas Neue", sans-serif;
-        font-size: 20px;
-        letter-spacing: 1px;
+        font-family: inherit;
+        font-size: 16px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
         margin: 0 0 16px;
         color: var(--ink);
       }
@@ -366,7 +507,7 @@
         border-radius: 999px;
         font-size: 12px;
         font-weight: 700;
-        background: rgba(255, 255, 255, 0.04);
+        background: var(--bg-subtle);
         border: 1px solid var(--border);
         color: var(--ink-muted);
         cursor: pointer;
@@ -377,13 +518,13 @@
         color: var(--ink);
       }
       .layer-toggle:focus-visible {
-        outline: 2px solid var(--cyan);
+        outline: 2px solid var(--accent-ink);
         outline-offset: 2px;
       }
       .layer-toggle.active {
-        background: rgba(34, 197, 94, 0.12);
-        border-color: rgba(34, 197, 94, 0.28);
-        color: var(--ink);
+        background: var(--accent-soft);
+        border-color: var(--border-bright);
+        color: var(--accent-ink);
       }
       .layer-toggle-count {
         display: inline-flex;
@@ -392,8 +533,8 @@
         min-width: 20px;
         padding: 1px 6px;
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: var(--bg-subtle);
+        border: 1px solid var(--border);
         font-size: 11px;
         line-height: 1.2;
         color: var(--ink);
@@ -424,7 +565,7 @@
               Refresh
             </button>
           </form>
-          <a class="activity-action-btn" href="/activity/{{.Activity.ID}}/poster" target="_blank" rel="noopener">
+          <a class="activity-action-btn" href="/activity/{{.Activity.ID}}/poster" data-poster-link target="_blank" rel="noopener">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="18" cy="5" r="3"/>
               <circle cx="6" cy="12" r="3"/>
@@ -488,7 +629,7 @@
               </svg>
               Open in Strava
             </a>
-            <a href="/activity/{{.Activity.ID}}/poster" class="dropdown-link" target="_blank" rel="noopener">
+            <a href="/activity/{{.Activity.ID}}/poster" class="dropdown-link" data-poster-link target="_blank" rel="noopener">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="18" cy="5" r="3"/>
                 <circle cx="6" cy="12" r="3"/>
@@ -510,21 +651,37 @@
         </div>
       </div>
     </div>
-    <div class="badge-row">
-      {{if .Activity.Distance}}<span class="pill primary">{{.Activity.Distance}}</span>{{end}}
-      {{if .Activity.Duration}}<span class="pill primary">{{.Activity.Duration}}</span>{{end}}
-      {{if .Activity.DetectedFactCount}}<span class="pill secondary">{{.Activity.DetectedFactCount}} map-linked facts</span>{{end}}
-      {{if .Activity.StopCount}}<span class="pill secondary">{{.Activity.StopCount}} events · {{.Activity.StopTotal}}</span>{{end}}
-      {{if .Activity.LightStops}}<span class="pill secondary">🚦 {{.Activity.LightStops}} at lights</span>{{end}}
-      {{if .Activity.RoadCrossings}}<span class="pill secondary">🚶 {{.Activity.RoadCrossings}} crossings</span>{{end}}
-    </div>
+    <dl class="activity-metrics activity-summary">
+      {{if .Activity.DistanceUnit}}
+        <div class="metric">
+          <dt class="metric-label">Distance</dt>
+          <dd class="metric-value"><span class="metric-number">{{.Activity.DistanceValue}}</span><span class="metric-unit">{{.Activity.DistanceUnit}}</span></dd>
+        </div>
+      {{end}}
+      <div class="metric">
+        <dt class="metric-label">Moving time</dt>
+        <dd class="metric-value"><span class="metric-number">{{.Activity.Duration}}</span></dd>
+      </div>
+      {{if .Activity.PaceUnit}}
+        <div class="metric">
+          <dt class="metric-label">{{.Activity.PaceLabel}}</dt>
+          <dd class="metric-value"><span class="metric-number">{{.Activity.PaceValue}}</span><span class="metric-unit">{{.Activity.PaceUnit}}</span></dd>
+        </div>
+      {{end}}
+      {{if .Activity.HasPower}}
+        <div class="metric">
+          <dt class="metric-label">Avg power</dt>
+          <dd class="metric-value"><span class="metric-number">{{.Activity.PowerValue}}</span><span class="metric-unit">{{.Activity.PowerUnit}}</span></dd>
+        </div>
+      {{end}}
+    </dl>
   </section>
 
   <section class="activity-detail-grid">
     <article class="card">
       <div class="activity-stage-head">
         <div>
-          <div class="map-note">The map is the primary view. Click a fact or stop event to focus its coordinates on the route.</div>
+          <div class="map-note">Explore the route and the moments along the way.</div>
         </div>
         <div class="activity-stage-meta">
           {{if .DetectedFacts}}<span class="activity-panel-count">{{len .DetectedFacts}} facts</span>{{end}}
@@ -534,8 +691,19 @@
       <div class="activity-route-grid">
         <div class="activity-route-map-wrap">
           {{if .HasRoutePoints}}
+            <div class="map-lens-toolbar">
+              <div class="map-lens-group" role="group" aria-label="Map lens">
+                <button type="button" data-map-lens="clean" aria-pressed="true">Clean</button>
+                <button type="button" data-map-lens="speed" aria-pressed="false" {{if not .HasMapSpeed}}disabled title="No usable speed data for this route"{{end}}>Speed</button>
+              </div>
+              <div class="map-lens-group" role="group" aria-label="Map detail">
+                <button type="button" data-map-detail="minimal" aria-pressed="true">Minimal</button>
+                <button type="button" data-map-detail="streets" aria-pressed="false">Streets</button>
+              </div>
+            </div>
             <div id="map"></div>
-            <div class="map-note">Magenta: route line · Red: traffic lights · Blue: road crossings · Amber: stops · Overlay colors match the fact list.</div>
+            <div class="map-speed-legend" id="map-speed-legend" hidden><span>Slower · {{.MapSpeedSlowKmh}} km/h</span><span class="map-speed-legend-bar"></span><span>Faster · {{.MapSpeedFastKmh}} km/h</span></div>
+            <div class="map-note">Select a fact or stop to reveal it on the route. Green marks the start; dark marks the finish.</div>
             <div class="map-note" id="map-error" style="display:none; color:#c00;">Map tiles failed to load. Configure an alternative tile URL if needed.</div>
           {{else}}
             <div class="activity-empty-state">
@@ -602,6 +770,119 @@
         </aside>
       </div>
     </article>
+    {{with .RidePacing}}
+      <article class="card">
+        <div class="activity-stage-head">
+          <div>
+            <h3 class="section-title">Race pace</h3>
+            <div class="map-note">Four equal-distance splits from {{.Distance}} of stored GPS. Times are elapsed and include pauses; power and heart rate appear where recorded.</div>
+          </div>
+        </div>
+        <div class="pacing-highlights">
+          {{if .FastestFiveKM}}
+            <div class="pacing-highlight">
+              <span class="pacing-highlight-label">Quickest 5 km</span>
+              <strong>{{.FastestFiveKM}}</strong>
+              <span class="pacing-highlight-detail">{{.FastestFiveFrom}}</span>
+            </div>
+          {{end}}
+          <div class="pacing-highlight">
+            <span class="pacing-highlight-label">Fastest quarter</span>
+            <strong>{{.FastestSplit}}</strong>
+            <span class="pacing-highlight-detail">Best average speed across the four splits</span>
+          </div>
+          <div class="pacing-highlight">
+            <span class="pacing-highlight-label">Finish vs start</span>
+            <strong>{{.FinishChange}}</strong>
+            <span class="pacing-highlight-detail">{{.FinishDetail}}</span>
+          </div>
+        </div>
+        <div class="pacing-table-wrap">
+          <table class="pacing-table">
+            <thead><tr><th scope="col">Split</th><th scope="col">Route</th><th scope="col">Time</th><th scope="col">Avg speed</th><th scope="col">Avg power</th><th scope="col">Avg HR</th></tr></thead>
+            <tbody>
+              {{range .Splits}}
+                <tr>
+                  <td>{{.Label}} {{if .Fastest}}<span class="pacing-fastest">★ fastest</span>{{end}}</td>
+                  <td>{{.Distance}}</td>
+                  <td>{{.Duration}}</td>
+                  <td>{{.Speed}}</td>
+                  <td>{{if .HasPower}}{{.Power}}{{else}}—{{end}}</td>
+                  <td>{{if .HasHeartRate}}{{.HeartRate}}{{else}}—{{end}}</td>
+                </tr>
+              {{end}}
+            </tbody>
+          </table>
+        </div>
+      </article>
+    {{end}}
+    {{with .Drafting}}
+      <article class="card" id="draft-analysis" data-activity-id="{{$.Activity.ID}}">
+        <div class="activity-stage-head">
+          <div>
+            <h3 class="section-title">Drafting shifts</h3>
+            <div class="map-note" id="draft-detail">{{.Detail}}</div>
+          </div>
+        </div>
+        {{if .CanTune}}
+          <p class="map-note draft-rotation-hint" id="draft-rotation-hint" {{if not .RotationHint}}hidden{{end}}>{{.RotationHint}}</p>
+          <div class="draft-visual" id="draft-visual" hidden>
+            <div class="draft-visual-head"><strong>Power drops along the ride</strong><span>Elapsed time from start · select a drop to inspect.</span></div>
+            <div class="draft-track" id="draft-track" role="group" aria-label="Power drops across the ride"></div>
+            <div class="draft-axis" id="draft-axis"></div>
+            <div class="draft-focus" id="draft-focus" hidden>
+              <strong id="draft-focus-title"></strong>
+              <div class="draft-focus-chart"><canvas id="draft-focus-chart"></canvas></div>
+              <div class="draft-focus-context" id="draft-focus-context"></div>
+              <div class="draft-legend">
+                <span><i class="draft-swatch" style="background:#fc4c02"></i>Power</span>
+                <span><i class="draft-swatch" style="background:#06b6d4"></i>Speed</span>
+                <span><i class="draft-swatch" style="background:#b9e9f1"></i>Higher-power window</span>
+                <span><i class="draft-swatch" style="background:#ffe3d4"></i>Lower-power window</span>
+              </div>
+            </div>
+          </div>
+          <div class="badge-row" id="draft-summary" style="margin-bottom: 16px;" {{if not .Candidates}}hidden{{end}}>
+            <span class="pill secondary" id="draft-count">{{.Count}} steady-speed power drops</span>
+            <span class="pill secondary" id="draft-time">{{.CandidateTime}} across detected stretches</span>
+          </div>
+          <div class="activity-data-grid" id="draft-list">
+            {{range .Candidates}}
+              <button type="button" class="activity-data-row draft-event-row" data-start="{{.StartSec}}" data-end="{{.EndSec}}">
+                <span class="activity-data-copy">
+                  <span class="activity-data-label">Lower-power stretch · {{.Interval}} · {{.Duration}}</span>
+                  <span class="activity-data-detail">{{.PowerDrop}} while speed stayed similar ({{.SpeedChange}})</span>
+                  {{if .EffortPattern}}<span class="draft-effort-pattern">{{.EffortPattern}}</span>{{end}}
+                </span>
+              </button>
+            {{end}}
+          </div>
+          <div class="map-note" id="draft-list-note" {{if le .Count 5}}hidden{{end}}>Showing the five strongest matches in ride order.</div>
+          <p class="muted" id="draft-status" {{if .Candidates}}hidden{{end}}>{{.Status}}</p>
+          <details class="draft-settings">
+            <summary>Adjust detection</summary>
+            <div class="draft-controls">
+              <label class="draft-control" for="draft-window">
+                <span class="draft-control-head"><span>Comparison window</span><output id="draft-window-value">{{.WindowSeconds}}s</output></span>
+                <input id="draft-window" type="range" min="10" max="30" step="5" value="{{.WindowSeconds}}">
+              </label>
+              <label class="draft-control" for="draft-drop">
+                <span class="draft-control-head"><span>Minimum power drop</span><output id="draft-drop-value">{{.MinDropPercent}}%</output></span>
+                <input id="draft-drop" type="range" min="8" max="25" step="1" value="{{.MinDropPercent}}">
+              </label>
+              <div class="draft-controls-note">Shorter windows find quicker changes. A 20 W drop is always required. Changes use saved ride data. <span id="draft-update" aria-live="polite"></span></div>
+            </div>
+          </details>
+        {{else}}
+          <p class="muted">{{.Status}}</p>
+          {{if .NeedsRefresh}}
+            <form method="post" action="/activity/{{$.Activity.ID}}/verify-power">
+              <button type="submit" class="activity-action-btn">Check power source</button>
+            </form>
+          {{end}}
+        {{end}}
+      </article>
+    {{end}}
     <article class="card chart-card">
       <div class="chart-head">
         <h3>Speed timeline</h3>
@@ -624,6 +905,21 @@
           <div>The detail view does not have per-point speed samples to chart for this activity.</div>
         </div>
       {{end}}
+    </article>
+    <article class="card" id="automations">
+      <div class="section-head">
+        <div>
+          <h3>Automation history</h3>
+          <p class="muted">{{.Activity.AutomationCount}} automation{{if ne .Activity.AutomationCount 1}}s{{end}} triggered. Rule checks, skipped actions, and update results appear below.</p>
+        </div>
+        <a class="btn secondary small" href="/automation">Manage automations</a>
+      </div>
+      {{if .AutomationHistory}}
+        {{template "automation-history" .AutomationHistory}}
+      {{else}}
+        <p class="muted">No automation history was recorded for this activity yet. Older processing has no detailed history; re-apply the activity to record a new run.</p>
+      {{end}}
+      {{if .MoreAutomationHistoryURL}}<a class="btn secondary small" href="{{.MoreAutomationHistoryURL}}">All runs for this activity</a>{{end}}
     </article>
     <article class="card">
       <div class="activity-stage-head">
@@ -648,6 +944,7 @@
   <link rel="stylesheet" href="/static/leaflet/leaflet.css" />
   <script src="/static/leaflet/leaflet.js"></script>
   <script src="/static/chartjs/chart.umd.js"></script>
+  <script src="/static/chart-theme.js"></script>
   <script>
     document.addEventListener('click', function(e) {
       document.querySelectorAll('.activity-menu.open').forEach(function(menu) {
@@ -658,6 +955,222 @@
     });
 
     (function() {
+      const panel = document.getElementById('draft-analysis');
+      const windowInput = document.getElementById('draft-window');
+      const dropInput = document.getElementById('draft-drop');
+      if (!panel || !windowInput || !dropInput) return;
+
+      const initialView = {{with .Drafting}}{{.InitialJSON}}{{else}}null{{end}};
+      const rideSeries = {{with .Drafting}}{{.TimelineJSON}}{{else}}[]{{end}};
+
+      const windowValue = document.getElementById('draft-window-value');
+      const dropValue = document.getElementById('draft-drop-value');
+      const update = document.getElementById('draft-update');
+      const detail = document.getElementById('draft-detail');
+      const rotationHint = document.getElementById('draft-rotation-hint');
+      const summary = document.getElementById('draft-summary');
+      const count = document.getElementById('draft-count');
+      const time = document.getElementById('draft-time');
+      const list = document.getElementById('draft-list');
+      const listNote = document.getElementById('draft-list-note');
+      const status = document.getElementById('draft-status');
+      const visual = document.getElementById('draft-visual');
+      const track = document.getElementById('draft-track');
+      const axis = document.getElementById('draft-axis');
+      const focus = document.getElementById('draft-focus');
+      const focusTitle = document.getElementById('draft-focus-title');
+      const focusContext = document.getElementById('draft-focus-context');
+      const focusCanvas = document.getElementById('draft-focus-chart');
+      let timer;
+      let request;
+      let revision = 0;
+      let chart;
+      let selectedEvent;
+      let currentView = initialView;
+
+      function elapsedLabel(seconds) {
+        seconds = Math.max(0, Math.round(seconds));
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor(seconds / 60) % 60;
+        const remainder = seconds % 60;
+        return hours ? `${hours}h ${String(minutes).padStart(2, '0')}m ${String(remainder).padStart(2, '0')}s` :
+          `${minutes}m ${String(remainder).padStart(2, '0')}s`;
+      }
+
+      function axisLabel(seconds) {
+        seconds = Math.round(seconds);
+        return seconds >= 3600 ? `${Math.floor(seconds / 3600)}h ${Math.floor(seconds / 60) % 60}m` : `${Math.floor(seconds / 60)}m`;
+      }
+
+      function selectEvent(event) {
+        selectedEvent = event;
+        focus.hidden = false;
+        focusTitle.textContent = `Lower-power stretch · ${event.Interval}`;
+        const pattern = event.EffortPattern ? `${event.EffortPattern}. ` : '';
+        focusContext.textContent = `${pattern}Power ${event.PowerDrop} while speed stayed similar (${event.SpeedChange}). Shaded areas show the compared windows.`;
+        panel.querySelectorAll('.draft-marker, .draft-event-row').forEach(element => {
+          element.classList.toggle('selected', Number(element.dataset.start) === event.StartSec && Number(element.dataset.end) === event.EndSec);
+        });
+        if (!window.Chart || !rideSeries.length) return;
+        const from = Math.max(0, event.StartSec - 60);
+        const to = Math.min(currentView.RideDurationSec, event.EndSec + 60);
+        const samples = rideSeries.filter(point => point.t >= from && point.t <= to);
+        const speedValues = samples.map(point => point.s).filter(value => Number.isFinite(value));
+        const speedMin = speedValues.length ? Math.min(...speedValues) : 0;
+        const speedMax = speedValues.length ? Math.max(...speedValues) : 40;
+        if (chart) chart.destroy();
+        const highlight = {
+          id: 'draftWindowHighlight',
+          beforeDatasetsDraw(c) {
+            const x = c.scales.x;
+            const area = c.chartArea;
+            const shade = (start, end, color) => {
+              const left = Math.max(area.left, x.getPixelForValue(start));
+              const right = Math.min(area.right, x.getPixelForValue(end));
+              if (right <= left) return;
+              c.ctx.fillStyle = color;
+              c.ctx.fillRect(left, area.top, right - left, area.bottom - area.top);
+            };
+            c.ctx.save();
+            shade(event.BaselineStartSec, event.BaselineStartSec + currentView.WindowSeconds, 'rgba(6,182,212,0.14)');
+            shade(event.LowStartSec, event.LowStartSec + currentView.WindowSeconds, 'rgba(252,76,2,0.12)');
+            c.ctx.restore();
+          }
+        };
+        chart = new Chart(focusCanvas, {
+          type: 'line',
+          data: { datasets: [
+            { label: 'Power (W)', data: samples.map(point => ({ x: point.t, y: point.p })), yAxisID: 'power', borderColor: '#fc4c02', borderWidth: 2, pointRadius: 0, tension: 0.2, spanGaps: false },
+            { label: 'Speed (km/h)', data: samples.map(point => ({ x: point.t, y: point.s })), yAxisID: 'speed', borderColor: '#06b6d4', borderWidth: 2, pointRadius: 0, tension: 0.2, spanGaps: false }
+          ] },
+          options: {
+            responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+              x: { type: 'linear', min: from, max: to, title: { display: true, text: 'Time after ride start' }, ticks: { maxTicksLimit: 6, callback: value => elapsedLabel(value) } },
+              power: { type: 'linear', position: 'left', title: { display: true, text: 'Power (W)' }, beginAtZero: false },
+              speed: { type: 'linear', position: 'right', min: Math.max(0, speedMin - 5), max: speedMax + 5, title: { display: true, text: 'Speed (km/h)' }, grid: { drawOnChartArea: false } }
+            },
+            plugins: { legend: { display: false }, tooltip: { callbacks: { title: items => elapsedLabel(items[0].parsed.x) } } }
+          },
+          plugins: [highlight]
+        });
+      }
+
+      function renderTimeline(view) {
+        visual.hidden = false;
+        const duration = Math.max(1, view.RideDurationSec);
+        const events = Array.isArray(view.Events) ? view.Events : [];
+        const markers = events.map(event => {
+          const marker = document.createElement('button');
+          marker.type = 'button';
+          marker.className = 'draft-marker';
+          marker.dataset.start = event.StartSec;
+          marker.dataset.end = event.EndSec;
+          marker.title = `Lower-power stretch · ${event.Interval}`;
+          marker.setAttribute('aria-label', marker.title);
+          const left = Math.min(99, Math.max(0, event.StartSec / duration * 100));
+          marker.style.left = `${left}%`;
+          marker.style.width = `${Math.min(100 - left, Math.max(0.4, (event.EndSec - event.StartSec) / duration * 100))}%`;
+          marker.addEventListener('click', () => selectEvent(event));
+          return marker;
+        });
+        track.replaceChildren(...markers);
+        axis.replaceChildren(...[0, 0.25, 0.5, 0.75, 1].map(fraction => {
+          const label = document.createElement('span');
+          label.textContent = axisLabel(duration * fraction);
+          return label;
+        }));
+        if (!events.length) {
+          focus.hidden = true;
+          selectedEvent = null;
+          if (chart) { chart.destroy(); chart = null; }
+          return;
+        }
+        const keep = selectedEvent && events.find(event => event.StartSec === selectedEvent.StartSec && event.EndSec === selectedEvent.EndSec);
+        const strongest = view.Candidates.reduce((best, event) => !best || event.Confidence > best.Confidence ? event : best, null);
+        selectEvent(keep || strongest || events[0]);
+      }
+
+      function render(view) {
+        currentView = view;
+        detail.textContent = view.Detail;
+        rotationHint.textContent = view.RotationHint || '';
+        rotationHint.hidden = !view.RotationHint;
+        const hasCandidates = Array.isArray(view.Candidates) && view.Candidates.length > 0;
+        summary.hidden = !hasCandidates;
+        status.hidden = hasCandidates;
+        status.textContent = view.Status;
+        listNote.hidden = view.Count <= 5;
+        if (!hasCandidates) {
+          list.replaceChildren();
+          renderTimeline(view);
+          return;
+        }
+        count.textContent = `${view.Count} steady-speed power drops`;
+        time.textContent = `${view.CandidateTime} across detected stretches`;
+        const rows = view.Candidates.map(candidate => {
+          const row = document.createElement('button');
+          row.type = 'button';
+          row.className = 'activity-data-row draft-event-row';
+          row.dataset.start = candidate.StartSec;
+          row.dataset.end = candidate.EndSec;
+          row.addEventListener('click', () => selectEvent(candidate));
+          const copy = document.createElement('span');
+          copy.className = 'activity-data-copy';
+          const label = document.createElement('span');
+          label.className = 'activity-data-label';
+          label.textContent = `Lower-power stretch · ${candidate.Interval} · ${candidate.Duration}`;
+          const explanation = document.createElement('span');
+          explanation.className = 'activity-data-detail';
+          explanation.textContent = `${candidate.PowerDrop} while speed stayed similar (${candidate.SpeedChange})`;
+          copy.append(label, explanation);
+          if (candidate.EffortPattern) {
+            const pattern = document.createElement('span');
+            pattern.className = 'draft-effort-pattern';
+            pattern.textContent = candidate.EffortPattern;
+            copy.append(pattern);
+          }
+          row.append(copy);
+          return row;
+        });
+        list.replaceChildren(...rows);
+        renderTimeline(view);
+      }
+
+      function onChange() {
+        windowValue.textContent = `${windowInput.value}s`;
+        dropValue.textContent = `${dropInput.value}%`;
+        clearTimeout(timer);
+        if (request) request.abort();
+        const current = ++revision;
+        update.textContent = 'Recalculating…';
+        timer = setTimeout(async () => {
+          request = new AbortController();
+          try {
+            const params = new URLSearchParams({ window: windowInput.value, drop: dropInput.value });
+            const response = await fetch(`/activity/${panel.dataset.activityId}/drafting?${params}`, {
+              signal: request.signal, credentials: 'same-origin'
+            });
+            if (!response.ok) throw new Error('recalculation failed');
+            const view = await response.json();
+            if (current !== revision) return;
+            render(view);
+            update.textContent = '';
+          } catch (error) {
+            if (current === revision && error.name !== 'AbortError') {
+              update.textContent = 'Could not recalculate. Try again.';
+            }
+          }
+        }, 180);
+      }
+
+      windowInput.addEventListener('input', onChange);
+      dropInput.addEventListener('input', onChange);
+      if (initialView) render(initialView);
+    })();
+
+    (function() {
       const points = {{.RoutePointsJSON}};
       const stops = {{.StopsJSON}};
       const detectedFacts = {{.DetectedFactsJSON}};
@@ -665,16 +1178,75 @@
 
       const map = L.map('map', { zoomControl: true, scrollWheelZoom: false });
       const coords = points.map(p => [p.lat, p.lon]);
-      const polyline = L.polyline(coords, { color: '#a855f7', weight: 4, opacity: 0.9 }).addTo(map);
-      map.fitBounds(polyline.getBounds(), { padding: [12, 12] });
+      L.polyline(coords, { color: '#fff', weight: 10, opacity: 0.94, interactive: false }).addTo(map);
+      const routeLine = L.polyline(coords, { color: '#fc4c02', weight: 6, opacity: 0.96, interactive: false }).addTo(map);
+      map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
+      const speedLayer = L.layerGroup();
+      for (let start = 1; start < points.length;) {
+        const color = points[start].speedColor || '#9ca3af';
+        let end = start + 1;
+        while (end < points.length && points[end].speedColor === color) end++;
+        L.polyline(coords.slice(start - 1, end), { color, weight: 6, opacity: 0.98, interactive: false }).addTo(speedLayer);
+        start = end;
+      }
       const tile = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         attribution: '&copy; OpenStreetMap contributors'
-      }).addTo(map);
+      });
       tile.on('tileerror', function() {
         const err = document.getElementById('map-error');
         if (err) err.style.display = 'block';
       });
+
+      const startMarker = L.circleMarker(coords[0], { radius: 6, color: '#fff', weight: 2, fillColor: '#4bba73', fillOpacity: 1 }).addTo(map);
+      const endMarker = L.circleMarker(coords[coords.length - 1], { radius: 6, color: '#fff', weight: 2, fillColor: '#263047', fillOpacity: 1 }).addTo(map);
+
+      let activeLens = 'clean';
+      let activeDetail = 'minimal';
+      function updatePosterLinks() {
+        document.querySelectorAll('[data-poster-link]').forEach(link => {
+          const url = new URL(link.href, window.location.href);
+          url.searchParams.set('lens', activeLens);
+          url.searchParams.set('context', activeDetail === 'streets' ? '1' : '0');
+          link.href = url.pathname + url.search;
+        });
+      }
+      document.querySelectorAll('[data-map-lens]').forEach(button => {
+        button.addEventListener('click', () => {
+          if (button.disabled || button.dataset.mapLens === activeLens) return;
+          activeLens = button.dataset.mapLens;
+          if (activeLens === 'speed') {
+            map.removeLayer(routeLine);
+            speedLayer.addTo(map);
+          } else {
+            map.removeLayer(speedLayer);
+            routeLine.addTo(map);
+          }
+          startMarker.bringToFront();
+          endMarker.bringToFront();
+          if (focusedLayer) {
+            map.removeLayer(focusedLayer);
+            focusedLayer.addTo(map);
+          }
+          document.querySelectorAll('[data-map-lens]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+          document.getElementById('map-speed-legend').hidden = activeLens !== 'speed';
+          updatePosterLinks();
+        });
+      });
+      document.querySelectorAll('[data-map-detail]').forEach(button => {
+        button.addEventListener('click', () => {
+          if (button.dataset.mapDetail === activeDetail) return;
+          activeDetail = button.dataset.mapDetail;
+          if (activeDetail === 'streets') tile.addTo(map);
+          else {
+            map.removeLayer(tile);
+            document.getElementById('map-error').style.display = 'none';
+          }
+          document.querySelectorAll('[data-map-detail]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+          updatePosterLinks();
+        });
+      });
+      updatePosterLinks();
 
       const stopMarkers = new Map();
       stops.forEach(stop => {
@@ -685,7 +1257,7 @@
           fillColor: color,
           fillOpacity: 0.85,
           weight: 2
-        }).addTo(map);
+        });
         let label = stop.duration;
         if (stop.has_traffic_light) label += ' · traffic light';
         else if (stop.has_road_crossing) label += ' · road crossing' + (stop.crossing_road ? ` (${stop.crossing_road})` : '');
@@ -719,10 +1291,23 @@
         });
 
         if (layer.getLayers().length > 0) {
-          layer.addTo(map);
           factLayers.set(fact.id, layer);
         }
       });
+
+      let focusedLayer = null;
+      function showFocusLayer(layer) {
+        if (!layer) return;
+        if (focusedLayer === layer) {
+          map.removeLayer(layer);
+          focusedLayer = null;
+          return;
+        }
+        if (focusedLayer && focusedLayer !== layer) map.removeLayer(focusedLayer);
+        focusedLayer = layer;
+        if (!map.hasLayer(layer)) layer.addTo(map);
+        focusLayer(layer);
+      }
 
       function openLayerPopup(layer) {
         if (!layer) return;
@@ -768,7 +1353,7 @@
 
       document.querySelectorAll('[data-focus-fact]').forEach(button => {
         button.addEventListener('click', () => {
-          focusLayer(factLayers.get(button.dataset.focusFact));
+          showFocusLayer(factLayers.get(button.dataset.focusFact));
         });
       });
 
@@ -780,7 +1365,7 @@
           const key = `${lat.toFixed(6)},${lon.toFixed(6)}`;
           const marker = stopMarkers.get(key);
           if (marker) {
-            focusLayer(marker);
+            showFocusLayer(marker);
             return;
           }
           map.flyTo([lat, lon], Math.max(map.getZoom(), 16), { animate: true, duration: 0.6 });
@@ -916,8 +1501,8 @@
             {
               label: isRun ? 'Pace (min/km)' : 'Speed (km/h)',
               data: chartData,
-              borderColor: '#a855f7',
-              backgroundColor: 'rgba(168,85,247,0.15)',
+              borderColor: '#fc4c02',
+              backgroundColor: 'rgba(252,76,2,0.12)',
               borderWidth: 2,
               pointRadius: 0,
               tension: 0.1,
@@ -974,7 +1559,7 @@
 
             // Layer: Stop regions
             if (layers.stops) {
-              ctx.fillStyle = 'rgba(236,72,153,0.15)';
+              ctx.fillStyle = 'rgba(252,76,2,0.12)';
               segments.forEach(([start, end]) => {
                 const xMin = x.getPixelForValue(start);
                 const xMax = x.getPixelForValue(end);

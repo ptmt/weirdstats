@@ -55,13 +55,74 @@ func (s *Server) Apply(ctx context.Context, activityID int64) error {
 	return s.applyActivityRules(ctx, activityID)
 }
 
-func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error {
+func (s *Server) applyActivityRules(ctx context.Context, activityID int64) (resultErr error) {
+	var guardErr error
+	ctx, guardErr = s.store.GuardActivityContext(ctx, activityID)
+	if guardErr != nil {
+		return guardErr
+	}
 	activity, err := s.store.GetActivity(ctx, activityID)
 	if err != nil {
 		return err
 	}
 
-	hide, statsSnapshot, err := s.evaluateHideRules(ctx, activity)
+	source := "manual"
+	if storage.IsAutomaticPublish(ctx) {
+		source = "automatic"
+	}
+	events := []storage.AutomationEvent{{Name: "Update activity description", Action: "description", Source: source, Status: "checking", Detail: "Checking whether the description needs an update."}}
+	published := false
+	var eventIDs []int64
+	defer func() {
+		for i := range events {
+			events[i].Source = source
+			if resultErr != nil && (events[i].Status == "matched" || events[i].Status == "pending" || events[i].Status == "checking") {
+				events[i].Status = "failed"
+				_, events[i].Detail = strava.SafeError(resultErr)
+				if errors.Is(resultErr, storage.ErrProcessingDisabled) {
+					events[i].Status, events[i].Detail, events[i].Triggered = "disabled", "Automatic Strava updates are off.", false
+				}
+			} else if events[i].Status == "matched" || events[i].Status == "pending" {
+				if published {
+					events[i].Status = "applied"
+					if events[i].Action == "description" {
+						events[i].Detail = "Updated the Weirdstats facts in the Strava description."
+					}
+				} else {
+					events[i].Status = "already_hidden"
+					events[i].Detail += ". The activity is already muted on Strava."
+				}
+			}
+		}
+		historyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+		defer cancel()
+		var historyErr error
+		if eventIDs == nil {
+			historyErr = s.store.RecordAutomationEvents(historyCtx, activity.UserID, activityID, events)
+		} else {
+			historyErr = s.store.FinishAutomationEvents(historyCtx, activity.UserID, activityID, eventIDs, events)
+		}
+		if historyErr != nil {
+			resultErr = errors.Join(resultErr, fmt.Errorf("record automation history: %w", historyErr))
+		}
+	}()
+
+	s, err = s.forUser(ctx, activity.UserID)
+	if err != nil {
+		return err
+	}
+	hide, statsSnapshot, ruleEvents, err := s.evaluateHideRulesWithHistory(ctx, activity)
+	events = append(events, ruleEvents...)
+	if err != nil {
+		return err
+	}
+	for i := range events {
+		events[i].Source = source
+		if events[i].Status == "matched" {
+			events[i].Status = "pending"
+		}
+	}
+	eventIDs, err = s.store.StartAutomationEvents(ctx, activity.UserID, activityID, events)
 	if err != nil {
 		return err
 	}
@@ -122,7 +183,7 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 			if needsRideFacts && isRideType(activity.Type) && routeFactEnabled {
 				routeFact, err = detectRouteHighlightFact(ctx, points, s.overpass)
 				if err != nil {
-					log.Printf("local route highlight detection failed (skipping route highlights): %v", err)
+					log.Printf("route highlight detection failed: activity=%d", activityID)
 					routeFact = routeHighlightFact{}
 				}
 			}
@@ -135,7 +196,7 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 			if needsRideFacts && isRideType(activity.Type) && coffeeFactEnabled {
 				detectedCoffeeFact, err := detectCoffeeStopFact(ctx, activity.Type, points, s.overpass)
 				if err != nil {
-					log.Printf("local coffee stop detection failed (skipping coffee fact): %v", err)
+					log.Printf("coffee stop detection failed: activity=%d", activityID)
 				} else if detectedCoffeeFact.Name != "" {
 					coffeeFact = detectedCoffeeFact
 				}
@@ -147,47 +208,13 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 	if clientErr == nil {
 		latest, err := client.GetActivity(ctx, activityID)
 		if err != nil {
-			log.Printf("strava activity fetch failed (using cached description): %v", err)
+			return err
 		} else {
 			baseDescription = latest.Description
 			baseHideFromHome = latest.HideFromHome
 			descriptionActivityType = latest.Type
 			descriptionDistance = latest.Distance
-			needsLatestStreams := (needsRideFacts && isRideType(latest.Type)) ||
-				(heartRateFactEnabled && latest.AverageHeartRate > 0)
-			if needsLatestStreams {
-				streams, err := client.GetStreams(ctx, activityID)
-				if err != nil {
-					log.Printf("strava streams fetch failed (using cached route-linked facts): %v", err)
-				} else {
-					points := buildPointsFromStreams(latest.StartDate, streams)
-					if heartRateFactEnabled {
-						if detected := detectHeartRateChangeFact(points); detected.Duration > 0 || heartRateFact.Duration <= 0 {
-							heartRateFact = detected
-						}
-					}
-					if needsRideFacts && isRideType(latest.Type) && routeFactEnabled {
-						routeFact, err = detectRouteHighlightFact(ctx, points, s.overpass)
-						if err != nil {
-							log.Printf("strava route highlight detection failed (using cached route highlights): %v", err)
-						}
-					}
-					if needsRideFacts && isRideType(latest.Type) && rideFactEnabled {
-						rideFact = longestRideSegmentFact(latest.Type, points, s.stopOpts)
-					}
-					if needsRideFacts && isRideType(latest.Type) && speedFactEnabled {
-						speedFacts = filterSpeedMilestoneFactsBySettings(detectSpeedMilestoneFacts(latest.Type, points), factSettings)
-					}
-					if needsRideFacts && isRideType(latest.Type) && coffeeFactEnabled {
-						detectedCoffeeFact, err := detectCoffeeStopFact(ctx, latest.Type, points, s.overpass)
-						if err != nil {
-							log.Printf("strava coffee stop detection failed (using cached coffee fact): %v", err)
-						} else if detectedCoffeeFact.Name != "" {
-							coffeeFact = detectedCoffeeFact
-						}
-					}
-				}
-			}
+
 			if needsRideFacts && !isRideType(latest.Type) {
 				rideFact = rideSegmentFact{}
 				speedFacts = nil
@@ -214,14 +241,24 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 		descriptionLine = buildStravaWeirdStatsLineWithHeartRate(filteredSnapshot, rideFact, speedFacts, heartRateFact, coffeeFact, routeFact, roadFact, factSettings, histories)
 	}
 	newDesc, descChanged := applyWeirdStatsDescriptionLine(baseDescription, descriptionLine)
+	events[0].Status, events[0].Detail = "unchanged", "No description update was needed."
 	if descChanged {
 		descPtr = &newDesc
+		events[0].Status, events[0].Triggered = "pending", true
+		events[0].Detail = "Publish the updated Weirdstats facts to the Strava description."
 	}
 
 	var hidePtr *bool
 	if hide && !baseHideFromHome {
 		val := true
 		hidePtr = &val
+	} else if hide {
+		for i := range events {
+			if events[i].Status == "pending" && events[i].Action == "hide" {
+				events[i].Status = "already_hidden"
+				events[i].Detail += ". The activity is already muted on Strava."
+			}
+		}
 	}
 
 	cachePoints, cacheErr := s.store.LoadActivityPoints(ctx, activityID)
@@ -243,6 +280,18 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 		return fmt.Errorf("strava client not configured: %w", clientErr)
 	}
 
+	if err := s.store.CheckActivityContext(ctx); err != nil {
+		return err
+	}
+	if storage.IsAutomaticPublish(ctx) {
+		prefs, err := s.store.ProcessingPreferences(ctx, activity.UserID)
+		if err != nil {
+			return err
+		}
+		if !prefs.AutoPublish {
+			return storage.ErrProcessingDisabled
+		}
+	}
 	if _, err := client.UpdateActivity(ctx, activityID, strava.UpdateActivityRequest{
 		Description:  descPtr,
 		HideFromHome: hidePtr,
@@ -250,6 +299,7 @@ func (s *Server) applyActivityRules(ctx context.Context, activityID int64) error
 		return err
 	}
 
+	published = true
 	descToStore := baseDescription
 	if descPtr != nil {
 		descToStore = *descPtr
@@ -341,7 +391,10 @@ func (s *Server) updateActivityDetectedFactsCache(
 	coffeeFact coffeeStopFact,
 	routeFact routeHighlightFact,
 	roadFact roadCrossingFact,
-) {
+) error {
+	if err := s.store.CheckActivityContext(ctx); err != nil {
+		return err
+	}
 	if roadFact.Count == 0 && len(storedStops) > 0 {
 		roadFact = buildRoadCrossingFact(storedStops)
 	}
@@ -359,7 +412,7 @@ func (s *Server) updateActivityDetectedFactsCache(
 			if coffeeFact.Name == "" {
 				fact, err := detectCoffeeStopFact(ctx, activity.Type, points, s.overpass)
 				if err != nil {
-					log.Printf("detected facts cache coffee stop failed for activity %d: %v", activity.ID, err)
+					return err
 				} else {
 					coffeeFact = fact
 				}
@@ -367,7 +420,7 @@ func (s *Server) updateActivityDetectedFactsCache(
 			if len(routeFact.Names) == 0 {
 				fact, err := detectRouteHighlightFact(ctx, points, s.overpass)
 				if err != nil {
-					log.Printf("detected facts cache route highlights failed for activity %d: %v", activity.ID, err)
+					return err
 				} else {
 					routeFact = fact
 				}
@@ -377,28 +430,28 @@ func (s *Server) updateActivityDetectedFactsCache(
 
 	stopViews := buildStopViews(storedStops)
 	if err := s.store.ReplaceActivityFactMetrics(ctx, activity, buildActivityFactMetricsWithHeartRate(statsSnapshot, rideFact, speedFacts, heartRateFact, coffeeFact, routeFact, roadFact)); err != nil {
-		log.Printf("activity fact metrics store failed for activity %d: %v", activity.ID, err)
+		return err
 	}
 
 	detectedFacts := buildActivityMapFactsWithHeartRate(stopViews, points, rideFact, speedFacts, heartRateFact, coffeeFact, routeFact, roadFact)
 	payload, err := json.Marshal(detectedFacts)
 	if err != nil {
-		log.Printf("detected facts cache marshal failed for activity %d: %v", activity.ID, err)
-		return
+		return err
 	}
 	if err := s.store.UpsertActivityDetectedFacts(ctx, activity.ID, string(payload), time.Time{}); err != nil {
-		log.Printf("detected facts cache store failed for activity %d: %v", activity.ID, err)
+		return err
 	}
+	return nil
 }
 
-func (s *Server) evaluateHideRules(ctx context.Context, activity storage.Activity) (bool, stats.StopStats, error) {
+func (s *Server) evaluateHideRulesWithHistory(ctx context.Context, activity storage.Activity) (bool, stats.StopStats, []storage.AutomationEvent, error) {
 	statsSnapshot, err := s.loadStatsSnapshot(ctx, activity.ID)
 	if err != nil {
-		return false, stats.StopStats{}, err
+		return false, stats.StopStats{}, nil, err
 	}
 	ruleRows, err := s.store.ListHideRules(ctx, activity.UserID)
 	if err != nil {
-		return false, stats.StopStats{}, err
+		return false, stats.StopStats{}, nil, err
 	}
 
 	reg := rules.DefaultRegistry()
@@ -423,29 +476,19 @@ func (s *Server) evaluateHideRules(ctx context.Context, activity storage.Activit
 		},
 	}
 
-	hide := false
-	for _, ruleRow := range ruleRows {
-		if !ruleRow.Enabled {
-			continue
-		}
-		ruleDef, err := rules.ParseRuleJSON(ruleRow.Condition)
-		if err != nil {
-			continue
-		}
-		if err := rules.ValidateRule(ruleDef, reg); err != nil {
-			continue
-		}
-		matched, shouldHide, err := rules.Evaluate(ruleDef, reg, ctxData, ruleRow.ID)
-		if err != nil {
-			continue
-		}
-		if matched && shouldHide {
-			hide = true
-			break
-		}
+	definitions := make([]rules.Definition, 0, len(ruleRows))
+	for _, row := range ruleRows {
+		definitions = append(definitions, rules.Definition{ID: row.ID, Name: row.Name, Condition: row.Condition, Enabled: row.Enabled})
 	}
-
-	return hide, statsSnapshot, nil
+	hide, evaluations := rules.EvaluateDefinitions(definitions, reg, ctxData)
+	events := make([]storage.AutomationEvent, 0, len(evaluations))
+	for _, evaluation := range evaluations {
+		events = append(events, storage.AutomationEvent{
+			RuleID: evaluation.RuleID, Name: evaluation.Name, Action: "hide", Status: evaluation.Status,
+			Detail: evaluation.Detail, Triggered: evaluation.Matched,
+		})
+	}
+	return hide, statsSnapshot, events, nil
 }
 
 func (s *Server) loadStatsSnapshot(ctx context.Context, activityID int64) (stats.StopStats, error) {
@@ -538,10 +581,10 @@ func shouldPostWeirdStatsDescription(activityType string, distanceMeters float64
 }
 
 func buildRideSegmentPart(fact rideSegmentFact) string {
-	if fact.DistanceMeters <= 0 || fact.AvgSpeedMPS <= 0 {
+	if fact.DistanceMeters <= 0 || fact.Duration <= 0 || fact.AvgSpeedMPS <= 0 {
 		return ""
 	}
-	parts := []string{formatCompactNumber(fact.DistanceMeters/1000, 1) + "km"}
+	parts := []string{formatDuration(int(fact.Duration.Seconds()))}
 	if fact.AvgPower > 0 {
 		parts = append(parts, formatCompactNumber(fact.AvgPower, 0)+"w")
 	}

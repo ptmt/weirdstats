@@ -103,6 +103,12 @@ func TestActivities_ShowsOnlyCurrentUserActivities(t *testing.T) {
 	if !strings.Contains(body, "Bob Visible Ride") {
 		t.Fatalf("expected Bob activity in response")
 	}
+	if strings.Contains(body, `>Home</a>`) {
+		t.Fatalf("did not expect Home link for signed-in users")
+	}
+	if !strings.Contains(body, `<a href="/activities/" class="brand"`) {
+		t.Fatalf("expected brand to link to Activities for signed-in users")
+	}
 }
 
 func TestActivities_FiltersFeedByDay(t *testing.T) {
@@ -455,7 +461,11 @@ func TestActivityDetail_ShowsMapLinkedFacts(t *testing.T) {
 		"data-focus-fact=\"traffic_light_stops\"",
 		"2026 best",
 		"All-time best",
-		"The map is the primary view.",
+		"Explore the route and the moments along the way.",
+		`data-map-lens="clean"`,
+		`data-map-lens="speed"`,
+		`data-map-detail="minimal"`,
+		`"speedColor":"`,
 		"Speed timeline",
 		"/activity/" + strconv.FormatInt(activityID, 10) + "/poster",
 	} {

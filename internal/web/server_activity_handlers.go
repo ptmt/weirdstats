@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -8,10 +9,12 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"weirdstats/internal/ingest"
 	"weirdstats/internal/jobs"
 	"weirdstats/internal/stats"
 	"weirdstats/internal/storage"
@@ -46,13 +49,36 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 	if dayFilterActive {
 		trace.AddField("day_filter", selectedDay)
 	}
+	now := time.Now()
+	selectedYear := now.Year()
+	if dayFilterActive && selectedDayDate.Year() <= now.Year() {
+		selectedYear = selectedDayDate.Year()
+	}
+	if raw := r.URL.Query().Get("year"); raw != "" {
+		selectedYear, err = strconv.Atoi(raw)
+		if err != nil || selectedYear < 1 || selectedYear > now.Year() {
+			http.Error(w, "invalid activity history year", http.StatusBadRequest)
+			return
+		}
+	}
 
 	stepStart := time.Now()
-	var activities []storage.ActivityWithStats
+	cursor, err := parseActivityCursor(r.URL.Query().Get("before"))
+	if err != nil {
+		http.Error(w, "invalid activity cursor", 400)
+		return
+	}
+	start, end := time.Time{}, time.Time{}
 	if dayFilterActive {
-		activities, err = s.store.ListActivitiesWithStatsInRange(r.Context(), userID, selectedDayDate, selectedDayDate.AddDate(0, 0, 1), 100)
-	} else {
-		activities, err = s.store.ListActivitiesWithStats(r.Context(), userID, 100)
+		start, end = selectedDayDate, selectedDayDate.AddDate(0, 0, 1)
+	}
+	activities, err := s.store.ListActivitiesPage(r.Context(), userID, 101, start, end, cursor)
+	nextPageURL := ""
+	if len(activities) > 100 {
+		activities = activities[:100]
+		query := r.URL.Query()
+		query.Set("before", nextActivityCursor(activities[99].Activity))
+		nextPageURL = "/activities/?" + query.Encode()
 	}
 	trace.AddStep("list_activities", stepStart)
 	if err != nil {
@@ -66,6 +92,11 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 	activityIDs := make([]int64, 0, len(activities))
 	for _, activity := range activities {
 		activityIDs = append(activityIDs, activity.ID)
+	}
+	automationCounts, err := s.store.CountTriggeredAutomations(r.Context(), userID, activityIDs)
+	if err != nil {
+		http.Error(w, "failed to load automation counts", 500)
+		return
 	}
 
 	stepStart = time.Now()
@@ -94,11 +125,13 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 			Distance:          formatDistance(activity.Distance),
 			Duration:          formatDuration(activity.MovingTime),
 			HasStats:          activity.HasStats,
+			GPSStatus:         activity.GPSStatus,
 			StopCount:         activity.StopCount,
 			StopTotal:         formatDuration(activity.StopTotalSeconds),
 			LightStops:        activity.TrafficLightStopCount,
 			RoadCrossings:     activity.RoadCrossingCount,
 			DetectedFactCount: detectedFactCount,
+			AutomationCount:   automationCounts[activity.ID],
 			PhotoURL:          activity.PhotoURL,
 		}
 		enrichActivityView(&view, activity.Activity)
@@ -131,7 +164,6 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 	}
 	trace.AddStep("build_views", stepStart)
 
-	now := time.Now()
 	stepStart = time.Now()
 	years, err := s.store.ListActivityYears(r.Context(), userID)
 	trace.AddStep("list_activity_years", stepStart)
@@ -143,16 +175,17 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 	seenYears := map[int]bool{currentYear: true}
 	orderedYears := []int{currentYear}
 	for _, year := range years {
-		if !seenYears[year] {
+		if year > 0 && year <= currentYear && !seenYears[year] {
 			orderedYears = append(orderedYears, year)
 			seenYears[year] = true
 		}
 	}
-	var contribs []ContributionData
-	stepStart = time.Now()
-	for _, year := range orderedYears {
-		contribs = append(contribs, s.buildContributionDataForYearWithSelection(r.Context(), userID, year, now, selectedDay))
+	if !seenYears[selectedYear] {
+		orderedYears = append(orderedYears, selectedYear)
 	}
+	sort.Slice(orderedYears, func(i, j int) bool { return orderedYears[i] > orderedYears[j] })
+	stepStart = time.Now()
+	contribs := []ContributionData{s.buildContributionDataForYearWithSelection(r.Context(), userID, selectedYear, now, selectedDay)}
 	trace.AddStep("build_contributions", stepStart)
 	trace.AddField("contribution_years", len(contribs))
 
@@ -160,8 +193,15 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 	if dayFilterActive {
 		selectedDayLabel = selectedDayDate.Format("Mon, Jan 2, 2006")
 	}
+	syncView, err := s.syncView(r.Context(), userID)
+	if err != nil {
+		http.Error(w, "failed to load import status", 500)
+		return
+	}
 	data := ProfilePageData{
+		NextPageURL: nextPageURL,
 		PageData: PageData{
+			Sync:       syncView,
 			Title:      "Activities",
 			Page:       "activities",
 			Message:    r.URL.Query().Get("msg"),
@@ -169,11 +209,13 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 			Strava:     s.getStravaInfo(r.Context(), userID),
 			UserCount:  s.userCount(r.Context()),
 		},
-		Activities:       views,
-		Contributions:    contribs,
-		DayFilterActive:  dayFilterActive,
-		SelectedDay:      selectedDay,
-		SelectedDayLabel: selectedDayLabel,
+		Activities:        views,
+		Contributions:     contribs,
+		ContributionYears: orderedYears,
+		AllActivitiesURL:  fmt.Sprintf("/activities/?year=%d", selectedYear),
+		DayFilterActive:   dayFilterActive,
+		SelectedDay:       selectedDay,
+		SelectedDayLabel:  selectedDayLabel,
 	}
 	stepStart = time.Now()
 	if err := s.templates["profile"].ExecuteTemplate(w, "base", data); err != nil {
@@ -233,6 +275,21 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "activity not found", http.StatusNotFound)
 		return
 	}
+	automationEvents, err := s.store.ListAutomationEvents(r.Context(), userID, activityID, 0, 31)
+	if err != nil {
+		http.Error(w, "failed to load automation history", 500)
+		return
+	}
+	moreAutomationHistoryURL := ""
+	if len(automationEvents) > 30 {
+		automationEvents = automationEvents[:30]
+		moreAutomationHistoryURL = fmt.Sprintf("/automation?activity=%d#history", activityID)
+	}
+	automationCounts, err := s.store.CountTriggeredAutomations(r.Context(), userID, []int64{activityID})
+	if err != nil {
+		http.Error(w, "failed to load automation counts", 500)
+		return
+	}
 
 	stepStart = time.Now()
 	points, err := s.store.LoadActivityPoints(r.Context(), activityID)
@@ -278,6 +335,7 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 	trace.AddStep("load_detected_facts", stepStart)
 	trace.AddField("detected_facts_present", detectedFactsPresent)
 	trace.AddField("detected_facts", len(detectedFacts))
+	refreshRideSegmentFactSummary(detectedFacts, activity.Type, points, s.stopOpts)
 
 	if len(detectedFacts) > 0 {
 		stepStart = time.Now()
@@ -296,12 +354,18 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type mapPoint struct {
-		Lat float64 `json:"lat"`
-		Lon float64 `json:"lon"`
+		Lat        float64 `json:"lat"`
+		Lon        float64 `json:"lon"`
+		SpeedColor string  `json:"speedColor,omitempty"`
 	}
+	speedStyle := buildRouteSpeedStyle(points, s.stopOpts.SpeedThreshold)
 	var routePoints []mapPoint
-	for _, p := range points {
-		routePoints = append(routePoints, mapPoint{Lat: p.Lat, Lon: p.Lon})
+	for i, p := range points {
+		point := mapPoint{Lat: p.Lat, Lon: p.Lon}
+		if i > 0 {
+			point.SpeedColor = speedStyle.Colors[i-1]
+		}
+		routePoints = append(routePoints, point)
 	}
 
 	stepStart = time.Now()
@@ -365,6 +429,7 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 		StopTotal:         formatDuration(stopTotalSeconds),
 		LightStops:        lightStops,
 		DetectedFactCount: len(detectedFacts),
+		AutomationCount:   automationCounts[activityID],
 		RoadCrossings:     roadCrossings,
 		RecalculatedAt:    recalculatedAt,
 		FetchedAt:         formatTimestamp(activity.UpdatedAt),
@@ -399,6 +464,7 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 
 	data := ActivityDetailData{
 		PageData: PageData{
+			Sync:       s.pageSync(r.Context(), userID),
 			Title:      activity.Name,
 			Page:       "activity",
 			Message:    r.URL.Query().Get("msg"),
@@ -406,18 +472,25 @@ func (s *Server) ActivityDetail(w http.ResponseWriter, r *http.Request) {
 			Strava:     s.getStravaInfo(r.Context(), userID),
 			UserCount:  s.userCount(r.Context()),
 		},
-		Activity:          view,
-		Stops:             stopViews,
-		DetectedFacts:     detectedFacts,
-		DataItems:         dataItems,
-		RoutePointsJSON:   template.JS(pointsJSON),
-		StopsJSON:         template.JS(stopsJSON),
-		DetectedFactsJSON: template.JS(detectedFactsJSON),
-		SpeedSeriesJSON:   template.JS(speedJSON),
-		SpeedThreshold:    s.stopOpts.SpeedThreshold,
-		StopMinDuration:   formatDuration(int(s.stopOpts.MinDuration.Seconds())),
-		HasRoutePoints:    len(routePoints) > 0,
-		HasSpeedSeries:    len(speeds) > 0,
+		Activity:                 view,
+		AutomationHistory:        automationHistoryViews(automationEvents),
+		MoreAutomationHistoryURL: moreAutomationHistoryURL,
+		RidePacing:               buildRidePacingView(activity, points),
+		Drafting:                 buildDraftingView(activity, points),
+		Stops:                    stopViews,
+		DetectedFacts:            detectedFacts,
+		DataItems:                dataItems,
+		RoutePointsJSON:          template.JS(pointsJSON),
+		StopsJSON:                template.JS(stopsJSON),
+		DetectedFactsJSON:        template.JS(detectedFactsJSON),
+		SpeedSeriesJSON:          template.JS(speedJSON),
+		SpeedThreshold:           s.stopOpts.SpeedThreshold,
+		StopMinDuration:          formatDuration(int(s.stopOpts.MinDuration.Seconds())),
+		HasRoutePoints:           len(routePoints) > 0,
+		HasSpeedSeries:           len(speeds) > 0,
+		HasMapSpeed:              speedStyle.Available,
+		MapSpeedSlowKmh:          speedStyle.SlowKmh,
+		MapSpeedFastKmh:          speedStyle.FastKmh,
 	}
 
 	stepStart = time.Now()
@@ -446,6 +519,14 @@ func (s *Server) Activity(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasSuffix(r.URL.Path, "/refresh") {
 		s.RefreshActivity(w, r)
+		return
+	}
+	if strings.HasSuffix(r.URL.Path, "/verify-power") {
+		s.VerifyActivityPower(w, r)
+		return
+	}
+	if strings.HasSuffix(r.URL.Path, "/drafting") {
+		s.ActivityDrafting(w, r)
 		return
 	}
 	if strings.HasSuffix(r.URL.Path, "/apply") {
@@ -477,7 +558,7 @@ func (s *Server) RefreshActivity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "activity not found", http.StatusNotFound)
 		return
 	}
-	if err := jobs.EnqueueProcessActivity(r.Context(), s.store, activityID, userID); err != nil {
+	if err := jobs.EnqueueRefreshActivity(r.Context(), s.store, activityID, userID); err != nil {
 		http.Error(w, "failed to enqueue activity", http.StatusInternalServerError)
 		return
 	}
@@ -487,6 +568,90 @@ func (s *Server) RefreshActivity(w http.ResponseWriter, r *http.Request) {
 		redirectURL = fmt.Sprintf("/activity/%d", activityID)
 	}
 	http.Redirect(w, r, redirectURL, http.StatusFound)
+}
+
+func (s *Server) VerifyActivityPower(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.requireUserID(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	idStr := strings.TrimPrefix(r.URL.Path, "/activity/")
+	idStr = strings.TrimSuffix(idStr, "/verify-power")
+	activityID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || activityID == 0 {
+		http.Error(w, "invalid activity id", http.StatusBadRequest)
+		return
+	}
+	if _, err := s.store.GetActivityForUser(r.Context(), userID, activityID); err != nil {
+		http.Error(w, "activity not found", http.StatusNotFound)
+		return
+	}
+	if s.ingestor == nil {
+		http.Error(w, "power source check unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	checkCtx, cancel := context.WithTimeout(ingest.ContextWithUserID(r.Context(), userID), 8*time.Second)
+	defer cancel()
+	if err := s.ingestor.CheckPowerSource(checkCtx, activityID); err != nil {
+		log.Printf("activity %d power source check failed: %v", activityID, err)
+		http.Error(w, "failed to check power source with Strava", http.StatusBadGateway)
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/activity/%d", activityID), http.StatusFound)
+}
+
+func (s *Server) ActivityDrafting(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.requireUserID(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	idStr := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/activity/"), "/drafting")
+	activityID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || activityID <= 0 {
+		http.Error(w, "invalid activity id", http.StatusBadRequest)
+		return
+	}
+	options := defaultDraftingOptions
+	if raw := r.URL.Query().Get("window"); raw != "" {
+		options.windowSeconds, err = strconv.Atoi(raw)
+		if err != nil || options.windowSeconds < 10 || options.windowSeconds > 30 || options.windowSeconds%5 != 0 {
+			http.Error(w, "invalid comparison window", http.StatusBadRequest)
+			return
+		}
+	}
+	if raw := r.URL.Query().Get("drop"); raw != "" {
+		options.minDropPercent, err = strconv.Atoi(raw)
+		if err != nil || options.minDropPercent < 8 || options.minDropPercent > 25 {
+			http.Error(w, "invalid power drop", http.StatusBadRequest)
+			return
+		}
+	}
+	activity, err := s.store.GetActivityForUser(r.Context(), userID, activityID)
+	if err != nil {
+		http.Error(w, "activity not found", http.StatusNotFound)
+		return
+	}
+	points, err := s.store.LoadActivityPoints(r.Context(), activityID)
+	if err != nil {
+		http.Error(w, "failed to load activity points", http.StatusInternalServerError)
+		return
+	}
+	view := buildDraftingViewWithOptions(activity, points, options)
+	if view == nil {
+		http.Error(w, "draft analysis unavailable", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(view)
 }
 
 func (s *Server) DownloadActivity(w http.ResponseWriter, r *http.Request) {

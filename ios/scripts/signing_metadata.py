@@ -6,7 +6,7 @@ import re
 import sys
 from pathlib import Path
 
-BUNDLE_ID = "com.ptmt.weirdstats"
+BUNDLE_ID = "com.potomushto.weirdstats"
 
 
 def export_options(profile, team_id):

@@ -32,6 +32,9 @@ func TestLongestRideSegmentFact(t *testing.T) {
 	if got.DistanceMeters < 1900 || got.DistanceMeters > 2100 {
 		t.Fatalf("expected longest segment around 2km, got %.1fm", got.DistanceMeters)
 	}
+	if got.Duration != 2*time.Minute {
+		t.Fatalf("expected a 2-minute segment, got %s", got.Duration)
+	}
 	if got.AvgPower != 250 {
 		t.Fatalf("expected 250W average power, got %.1f", got.AvgPower)
 	}
@@ -62,11 +65,36 @@ func TestLongestRideSegmentFact_DoesNotSplitBriefSlowdown(t *testing.T) {
 	if got.DistanceMeters < 1450 || got.DistanceMeters > 1550 {
 		t.Fatalf("expected slowdown to remain inside segment, got %.1fm", got.DistanceMeters)
 	}
+	if got.Duration != 7*time.Second {
+		t.Fatalf("expected a 7-second segment, got %s", got.Duration)
+	}
 	if got.AvgPower < 190 || got.AvgPower > 210 {
 		t.Fatalf("expected average power to stay in-range, got %.1f", got.AvgPower)
 	}
 	if got.AvgSpeedMPS < 9.5 || got.AvgSpeedMPS > 10.5 {
 		t.Fatalf("expected average speed near 10 m/s, got %.2f", got.AvgSpeedMPS)
+	}
+}
+
+func TestRefreshRideSegmentFactSummary_UpdatesCachedDistance(t *testing.T) {
+	start := time.Date(2026, time.March, 1, 8, 0, 0, 0, time.UTC)
+	points := []gps.Point{
+		{Lat: 52.52, Lon: 13.404, Time: start, Speed: 10, Power: 210},
+		{Lat: 52.52, Lon: 13.410, Time: start.Add(time.Minute), Speed: 10, Power: 210},
+		{Lat: 52.52, Lon: 13.416, Time: start.Add(2 * time.Minute), Speed: 10, Power: 210},
+	}
+	facts := []ActivityMapFactView{
+		{ID: weirdStatsFactLongestSegment, Summary: "1.2km - 210w - 36kmh"},
+		{ID: weirdStatsFactCoffeeStop, Summary: "Bean Machine"},
+	}
+
+	refreshRideSegmentFactSummary(facts, "Ride", points, gps.StopOptions{})
+
+	if facts[0].Summary != "2m 0s - 210w - 36kmh" {
+		t.Fatalf("expected cached distance to be replaced with elapsed time, got %q", facts[0].Summary)
+	}
+	if facts[1].Summary != "Bean Machine" {
+		t.Fatalf("expected other fact summaries to stay unchanged, got %q", facts[1].Summary)
 	}
 }
 
@@ -419,6 +447,7 @@ func TestBuildActivityMapFacts(t *testing.T) {
 	}
 	rideFact := rideSegmentFact{
 		DistanceMeters: 1200,
+		Duration:       2 * time.Minute,
 		AvgPower:       210,
 		AvgSpeedMPS:    10,
 		StartIndex:     0,
@@ -449,6 +478,9 @@ func TestBuildActivityMapFacts(t *testing.T) {
 	}
 	if got[0].ID != weirdStatsFactLongestSegment || len(got[0].Path) != 3 {
 		t.Fatalf("expected longest segment fact with route path, got %+v", got[0])
+	}
+	if got[0].Summary != "2m 0s - 210w - 36kmh" {
+		t.Fatalf("expected elapsed time in longest segment summary, got %q", got[0].Summary)
 	}
 	if got[1].ID != weirdStatsFactCoffeeStop || len(got[1].Points) != 1 {
 		t.Fatalf("expected coffee stop point fact, got %+v", got[1])

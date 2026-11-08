@@ -20,7 +20,7 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.ptmt.weirdstats.auth</string>
+			<string>com.potomushto.weirdstats.auth</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>weirdstats</string>

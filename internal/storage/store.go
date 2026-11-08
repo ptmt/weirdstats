@@ -22,22 +22,26 @@ type Store struct {
 }
 
 type Activity struct {
-	ID               int64
-	UserID           int64
-	Type             string
-	Name             string
-	StartTime        time.Time
-	Description      string
-	Distance         float64
-	MovingTime       int
-	AveragePower     float64
-	AverageHeartRate float64
-	Visibility       string
-	IsPrivate        bool
-	HideFromHome     bool
-	HiddenByRule     bool
-	PhotoURL         string
-	UpdatedAt        time.Time
+	ID                 int64
+	UserID             int64
+	Type               string
+	Name               string
+	StartTime          time.Time
+	Description        string
+	Distance           float64
+	MovingTime         int
+	AveragePower       float64
+	DeviceWatts        *bool
+	PowerSourceChecked bool
+	AthleteCount       int
+	AverageHeartRate   float64
+	Visibility         string
+	IsPrivate          bool
+	HideFromHome       bool
+	HiddenByRule       bool
+	PhotoURL           string
+	UpdatedAt          time.Time
+	StreamsFetched     bool
 }
 
 type WebhookEvent struct {
@@ -52,6 +56,10 @@ type WebhookEvent struct {
 
 type Job struct {
 	ID          int64
+	UserID      int64
+	ActivityID  int64
+	ParentID    int64
+	ErrorCode   string
 	Type        string
 	Status      string
 	Payload     string
@@ -72,6 +80,8 @@ type StravaToken struct {
 	UpdatedAt    time.Time
 	AthleteID    int64
 	AthleteName  string
+	Scopes       string
+	ConnectionID string
 }
 
 type HideRule struct {
@@ -121,6 +131,7 @@ type UserFactMetricHistory struct {
 }
 
 type ActivityWithStats struct {
+	GPSStatus string
 	Activity
 	StopCount             int
 	StopTotalSeconds      int
@@ -231,6 +242,9 @@ func (s *Store) InitSchema(ctx context.Context) error {
 		`ALTER TABLE activities ADD COLUMN distance REAL NOT NULL DEFAULT 0`,
 		`ALTER TABLE activities ADD COLUMN moving_time INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE activities ADD COLUMN average_power REAL NOT NULL DEFAULT 0`,
+		`ALTER TABLE activities ADD COLUMN device_watts INTEGER`,
+		`ALTER TABLE activities ADD COLUMN power_source_checked INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE activities ADD COLUMN athlete_count INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE activities ADD COLUMN average_heartrate REAL NOT NULL DEFAULT 0`,
 		`ALTER TABLE activities ADD COLUMN visibility TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE activities ADD COLUMN is_private INTEGER NOT NULL DEFAULT 0`,
@@ -260,6 +274,9 @@ CREATE TABLE IF NOT EXISTS activities (
 	distance REAL NOT NULL DEFAULT 0,
 	moving_time INTEGER NOT NULL DEFAULT 0,
 	average_power REAL NOT NULL DEFAULT 0,
+	device_watts INTEGER,
+	power_source_checked INTEGER NOT NULL DEFAULT 0,
+	athlete_count INTEGER NOT NULL DEFAULT 0,
 	average_heartrate REAL NOT NULL DEFAULT 0,
 	visibility TEXT NOT NULL DEFAULT '',
 	is_private INTEGER NOT NULL DEFAULT 0,
@@ -383,7 +400,7 @@ CREATE TABLE IF NOT EXISTS user_fact_preferences (
 	}
 	// Legacy queue is no longer used; clear it to avoid stale backlog.
 	_, _ = s.db.ExecContext(ctx, `DELETE FROM activity_queue`)
-	return nil
+	return s.initSyncSchema(ctx)
 }
 
 func (s *Store) InsertActivity(ctx context.Context, activity Activity, points []gps.Point) (int64, error) {
@@ -414,6 +431,30 @@ func (s *Store) UpsertActivity(ctx context.Context, activity Activity, points []
 	return s.upsertActivityWithPoints(ctx, activity, points, true)
 }
 
+func (s *Store) UpdateActivityPowerSource(ctx context.Context, userID, activityID int64, deviceWatts *bool) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := validateActivityWrite(ctx, tx, userID, activityID); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE activities SET device_watts=?, power_source_checked=1, updated_at=? WHERE id=? AND user_id=?`,
+		deviceWatts, time.Now().Unix(), activityID, userID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return sql.ErrNoRows
+	}
+	return tx.Commit()
+}
+
 func (s *Store) upsertActivityWithPoints(ctx context.Context, activity Activity, points []gps.Point, allowUpsert bool) (int64, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -423,11 +464,14 @@ func (s *Store) upsertActivityWithPoints(ctx context.Context, activity Activity,
 		_ = tx.Rollback()
 	}()
 
+	if err := validateActivityWrite(ctx, tx, activity.UserID, activity.ID); err != nil {
+		return 0, err
+	}
 	var res sql.Result
 	if allowUpsert && activity.ID != 0 {
 		res, err = tx.ExecContext(ctx, `
-INSERT INTO activities (id, user_id, type, name, start_time, description, distance, moving_time, average_power, average_heartrate, visibility, is_private, hide_from_home, photo_url, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO activities (id, user_id, type, name, start_time, description, distance, moving_time, average_power, device_watts, power_source_checked, athlete_count, average_heartrate, visibility, is_private, hide_from_home, photo_url, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
 	user_id = excluded.user_id,
 	type = excluded.type,
@@ -437,23 +481,26 @@ ON CONFLICT(id) DO UPDATE SET
 	distance = excluded.distance,
 	moving_time = excluded.moving_time,
 	average_power = excluded.average_power,
+	device_watts = excluded.device_watts,
+	power_source_checked = excluded.power_source_checked,
+	athlete_count = excluded.athlete_count,
 	average_heartrate = excluded.average_heartrate,
 	visibility = excluded.visibility,
 	is_private = excluded.is_private,
 	hide_from_home = excluded.hide_from_home,
 	photo_url = excluded.photo_url,
 	updated_at = excluded.updated_at
-`, activity.ID, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, activity.AveragePower, activity.AverageHeartRate, activity.Visibility, boolToInt(activity.IsPrivate), boolToInt(activity.HideFromHome), activity.PhotoURL, time.Now().Unix())
+`, activity.ID, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, activity.AveragePower, activity.DeviceWatts, boolToInt(activity.PowerSourceChecked), activity.AthleteCount, activity.AverageHeartRate, activity.Visibility, boolToInt(activity.IsPrivate), boolToInt(activity.HideFromHome), activity.PhotoURL, time.Now().Unix())
 	} else if activity.ID != 0 {
 		res, err = tx.ExecContext(ctx, `
-INSERT INTO activities (id, user_id, type, name, start_time, description, distance, moving_time, average_power, average_heartrate, visibility, is_private, hide_from_home, photo_url, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, activity.ID, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, activity.AveragePower, activity.AverageHeartRate, activity.Visibility, boolToInt(activity.IsPrivate), boolToInt(activity.HideFromHome), activity.PhotoURL, time.Now().Unix())
+INSERT INTO activities (id, user_id, type, name, start_time, description, distance, moving_time, average_power, device_watts, power_source_checked, athlete_count, average_heartrate, visibility, is_private, hide_from_home, photo_url, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, activity.ID, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, activity.AveragePower, activity.DeviceWatts, boolToInt(activity.PowerSourceChecked), activity.AthleteCount, activity.AverageHeartRate, activity.Visibility, boolToInt(activity.IsPrivate), boolToInt(activity.HideFromHome), activity.PhotoURL, time.Now().Unix())
 	} else {
 		res, err = tx.ExecContext(ctx, `
-INSERT INTO activities (user_id, type, name, start_time, description, distance, moving_time, average_power, average_heartrate, visibility, is_private, hide_from_home, photo_url, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, activity.AveragePower, activity.AverageHeartRate, activity.Visibility, boolToInt(activity.IsPrivate), boolToInt(activity.HideFromHome), activity.PhotoURL, time.Now().Unix())
+INSERT INTO activities (user_id, type, name, start_time, description, distance, moving_time, average_power, device_watts, power_source_checked, athlete_count, average_heartrate, visibility, is_private, hide_from_home, photo_url, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`, activity.UserID, activity.Type, activity.Name, activity.StartTime.Unix(), activity.Description, activity.Distance, activity.MovingTime, activity.AveragePower, activity.DeviceWatts, boolToInt(activity.PowerSourceChecked), activity.AthleteCount, activity.AverageHeartRate, activity.Visibility, boolToInt(activity.IsPrivate), boolToInt(activity.HideFromHome), activity.PhotoURL, time.Now().Unix())
 	}
 	if err != nil {
 		return 0, err
@@ -465,6 +512,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		if err != nil {
 			return 0, err
 		}
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE activities SET streams_fetched=? WHERE id=?", activity.StreamsFetched, activityID); err != nil {
+		return 0, err
 	}
 	if allowUpsert {
 		if _, err := tx.ExecContext(ctx, `
@@ -503,6 +553,19 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		}
 	}
 
+	preview := make([]ActivityRoutePoint, 0, len(points))
+	for _, point := range points {
+		preview = append(preview, ActivityRoutePoint{Lat: point.Lat, Lon: point.Lon})
+	}
+	previewJSON, err := json.Marshal(sampleActivityRoutePoints(preview, 48))
+	if err != nil {
+		return 0, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO activity_route_previews(activity_id,points) VALUES(?,?)
+ON CONFLICT(activity_id) DO UPDATE SET points=excluded.points`, activityID, string(previewJSON)); err != nil {
+		return 0, err
+	}
+
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
@@ -522,6 +585,8 @@ func (s *Store) EnqueueActivity(ctx context.Context, activityID, userID int64) e
 		return err
 	}
 	_, err = s.CreateJob(ctx, Job{
+		UserID:      userID,
+		ActivityID:  activityID,
 		Type:        "process_activity",
 		Payload:     string(payload),
 		Cursor:      "{}",
@@ -565,7 +630,7 @@ func (s *Store) CountQueue(ctx context.Context) (int, error) {
 SELECT COUNT(*)
 FROM jobs
 WHERE type = 'process_activity'
-	AND status IN ('queued', 'retry', 'running')
+	AND status IN ('queued', 'retry', 'running', 'waiting')
 `)
 	var count int
 	if err := row.Scan(&count); err != nil {
@@ -697,7 +762,7 @@ func (s *Store) ListJobs(ctx context.Context, limit int) ([]Job, error) {
 		limit = 20
 	}
 	return s.listJobs(ctx, `
-SELECT id, type, status, payload, cursor, attempts, max_attempts, last_error, next_run_at, created_at, updated_at
+SELECT id, type, status, payload, cursor, attempts, max_attempts, last_error, next_run_at, created_at, updated_at, user_id, activity_id, parent_id, error_code
 FROM jobs
 ORDER BY updated_at DESC, id DESC
 LIMIT ?
@@ -712,7 +777,7 @@ func (s *Store) ListJobsByType(ctx context.Context, jobType string, limit int) (
 		limit = 20
 	}
 	return s.listJobs(ctx, `
-SELECT id, type, status, payload, cursor, attempts, max_attempts, last_error, next_run_at, created_at, updated_at
+SELECT id, type, status, payload, cursor, attempts, max_attempts, last_error, next_run_at, created_at, updated_at, user_id, activity_id, parent_id, error_code
 FROM jobs
 WHERE type = ?
 ORDER BY updated_at DESC, id DESC
@@ -728,7 +793,7 @@ func (s *Store) ListJobsExcludingType(ctx context.Context, jobType string, limit
 		limit = 20
 	}
 	return s.listJobs(ctx, `
-SELECT id, type, status, payload, cursor, attempts, max_attempts, last_error, next_run_at, created_at, updated_at
+SELECT id, type, status, payload, cursor, attempts, max_attempts, last_error, next_run_at, created_at, updated_at, user_id, activity_id, parent_id, error_code
 FROM jobs
 WHERE type != ?
 ORDER BY updated_at DESC, id DESC
@@ -750,7 +815,7 @@ func (s *Store) listJobs(ctx context.Context, query string, args ...interface{})
 		var createdAt int64
 		var updatedAt int64
 		if err := rows.Scan(&job.ID, &job.Type, &job.Status, &job.Payload, &job.Cursor, &job.Attempts, &job.MaxAttempts, &job.LastError,
-			&nextRunAt, &createdAt, &updatedAt); err != nil {
+			&nextRunAt, &createdAt, &updatedAt, &job.UserID, &job.ActivityID, &job.ParentID, &job.ErrorCode); err != nil {
 			return nil, err
 		}
 		job.NextRunAt = time.Unix(nextRunAt, 0)
@@ -769,7 +834,15 @@ func (s *Store) DeleteJobs(ctx context.Context) error {
 	return err
 }
 
+type jobDB interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
 func (s *Store) CreateJob(ctx context.Context, job Job) (int64, error) {
+	return createJob(ctx, s.db, job)
+}
+func createJob(ctx context.Context, db jobDB, job Job) (int64, error) {
 	if job.Type == "" {
 		return 0, errors.New("job type required")
 	}
@@ -795,13 +868,38 @@ func (s *Store) CreateJob(ctx context.Context, job Job) (int64, error) {
 	if job.UpdatedAt.IsZero() {
 		job.UpdatedAt = now
 	}
-	res, err := s.db.ExecContext(ctx, `
-INSERT INTO jobs (type, status, payload, cursor, attempts, max_attempts, last_error, next_run_at, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	var owner struct {
+		UserID     int64 `json:"user_id"`
+		ActivityID int64 `json:"activity_id"`
+	}
+	_ = json.Unmarshal([]byte(job.Payload), &owner)
+	if job.UserID == 0 {
+		job.UserID = owner.UserID
+	}
+	if job.ActivityID == 0 {
+		job.ActivityID = owner.ActivityID
+	}
+	if job.UserID == 0 && job.ActivityID != 0 {
+		_ = db.QueryRowContext(ctx, "SELECT user_id FROM activities WHERE id=?", job.ActivityID).Scan(&job.UserID)
+	}
+	claimID, _ := ctx.Value(jobContextKey{}).(int64)
+	res, err := db.ExecContext(ctx, `
+INSERT INTO jobs (type,status,payload,cursor,attempts,max_attempts,last_error,next_run_at,created_at,updated_at,user_id,activity_id,parent_id,error_code)
+SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE (?=0 OR EXISTS(SELECT 1 FROM jobs WHERE id=?)) AND NOT EXISTS (
+ SELECT 1 FROM jobs WHERE user_id=? AND activity_id=? AND type=? AND status IN ('queued','running','retry','waiting','blocked') AND (?!=0 OR payload=?)
+)
 `, job.Type, job.Status, job.Payload, job.Cursor, job.Attempts, job.MaxAttempts, job.LastError,
-		job.NextRunAt.Unix(), job.CreatedAt.Unix(), job.UpdatedAt.Unix())
+		job.NextRunAt.Unix(), job.CreatedAt.Unix(), job.UpdatedAt.Unix(), job.UserID, job.ActivityID, job.ParentID, job.ErrorCode,
+		claimID, claimID, job.UserID, job.ActivityID, job.Type, job.ActivityID, job.Payload)
 	if err != nil {
 		return 0, err
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return 0, err
+	} else if n == 0 {
+		var id int64
+		err := db.QueryRowContext(ctx, "SELECT id FROM jobs WHERE user_id=? AND activity_id=? AND type=? AND status IN ('queued','running','retry','waiting','blocked') AND (?!=0 OR payload=?) ORDER BY id LIMIT 1", job.UserID, job.ActivityID, job.Type, job.ActivityID, job.Payload).Scan(&id)
+		return id, err
 	}
 	return res.LastInsertId()
 }
@@ -819,22 +917,25 @@ func (s *Store) ClaimJob(ctx context.Context, now time.Time, staleAfter time.Dur
 
 	staleCutoff := now.Add(-staleAfter).Unix()
 	row := tx.QueryRowContext(ctx, `
-SELECT id, type, status, payload, cursor, attempts, max_attempts, last_error, next_run_at, created_at, updated_at
+SELECT id, type, status, payload, cursor, attempts, max_attempts, last_error, next_run_at, created_at, updated_at, user_id, activity_id, parent_id, error_code
 FROM jobs
 WHERE (
-	(status IN ('queued', 'retry') AND next_run_at <= ?)
+	(status IN ('queued', 'retry', 'waiting') AND next_run_at <= ?)
 	OR (status = 'running' AND updated_at <= ?)
 )
-ORDER BY next_run_at, id
+AND (type='enrich_activity' OR NOT EXISTS(SELECT 1 FROM api_cooldowns WHERE provider='strava' AND until_unix>?))
+AND (type='enrich_activity' OR (parent_id=0 AND type!='sync_activities_since') OR NOT EXISTS(SELECT 1 FROM api_cooldowns WHERE provider='strava_backfill' AND until_unix>?))
+ORDER BY CASE WHEN type IN ('sync_latest','apply_activity_rules') THEN 0 ELSE 1 END,
+ COALESCE((SELECT sequence FROM job_dispatch WHERE user_id=jobs.user_id),0), next_run_at, id
 LIMIT 1
-`, now.Unix(), staleCutoff)
+`, now.Unix(), staleCutoff, now.Unix(), now.Unix())
 
 	var job Job
 	var nextRunAt int64
 	var createdAt int64
 	var updatedAt int64
 	if err = row.Scan(&job.ID, &job.Type, &job.Status, &job.Payload, &job.Cursor, &job.Attempts, &job.MaxAttempts, &job.LastError,
-		&nextRunAt, &createdAt, &updatedAt); err != nil {
+		&nextRunAt, &createdAt, &updatedAt, &job.UserID, &job.ActivityID, &job.ParentID, &job.ErrorCode); err != nil {
 		_ = tx.Rollback()
 		return Job{}, err
 	}
@@ -842,6 +943,10 @@ LIMIT 1
 	job.CreatedAt = time.Unix(createdAt, 0)
 	job.UpdatedAt = time.Unix(updatedAt, 0)
 
+	if _, err = tx.ExecContext(ctx, `INSERT INTO job_dispatch(user_id,sequence) VALUES(?,(SELECT COALESCE(MAX(sequence),0)+1 FROM job_dispatch))
+ON CONFLICT(user_id) DO UPDATE SET sequence=excluded.sequence`, job.UserID); err != nil {
+		return Job{}, err
+	}
 	job.Status = "running"
 	job.UpdatedAt = now
 	if _, err = tx.ExecContext(ctx, `
@@ -883,7 +988,7 @@ func (s *Store) MarkJobRetry(ctx context.Context, jobID int64, cursor string, la
 UPDATE jobs
 SET status = 'retry',
 	cursor = ?,
-	last_error = ?,
+		last_error = ?,
 	next_run_at = ?,
 	updated_at = ?,
 	attempts = attempts + 1
@@ -943,6 +1048,9 @@ FROM webhook_events
 }
 
 func (s *Store) UpsertStravaToken(ctx context.Context, token StravaToken) error {
+	return upsertStravaToken(ctx, s.db, token)
+}
+func upsertStravaToken(ctx context.Context, db jobDB, token StravaToken) error {
 	if token.UserID == 0 {
 		token.UserID = 1
 	}
@@ -953,17 +1061,19 @@ func (s *Store) UpsertStravaToken(ctx context.Context, token StravaToken) error 
 		token.ExpiresAt = time.Now().Add(-time.Minute)
 	}
 
-	_, err := s.db.ExecContext(ctx, `
-INSERT INTO strava_tokens (user_id, access_token, refresh_token, expires_at, updated_at, athlete_id, athlete_name)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+	_, err := db.ExecContext(ctx, `
+INSERT INTO strava_tokens (user_id, access_token, refresh_token, expires_at, updated_at, athlete_id, athlete_name, scopes, connection_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(user_id) DO UPDATE SET
 	access_token = excluded.access_token,
 	refresh_token = excluded.refresh_token,
 	expires_at = excluded.expires_at,
 	updated_at = excluded.updated_at,
 	athlete_id = CASE WHEN excluded.athlete_id != 0 THEN excluded.athlete_id ELSE strava_tokens.athlete_id END,
-	athlete_name = CASE WHEN excluded.athlete_name != '' THEN excluded.athlete_name ELSE strava_tokens.athlete_name END
-`, token.UserID, token.AccessToken, token.RefreshToken, token.ExpiresAt.Unix(), token.UpdatedAt.Unix(), token.AthleteID, token.AthleteName)
+	athlete_name = CASE WHEN excluded.athlete_name != '' THEN excluded.athlete_name ELSE strava_tokens.athlete_name END,
+	scopes = CASE WHEN excluded.scopes != '' THEN excluded.scopes ELSE strava_tokens.scopes END,
+	connection_id = CASE WHEN excluded.connection_id != '' THEN excluded.connection_id ELSE strava_tokens.connection_id END
+`, token.UserID, token.AccessToken, token.RefreshToken, token.ExpiresAt.Unix(), token.UpdatedAt.Unix(), token.AthleteID, token.AthleteName, token.Scopes, token.ConnectionID)
 	return err
 }
 
@@ -972,7 +1082,7 @@ func (s *Store) GetStravaToken(ctx context.Context, userID int64) (StravaToken, 
 		userID = 1
 	}
 	row := s.db.QueryRowContext(ctx, `
-SELECT access_token, refresh_token, expires_at, updated_at, athlete_id, athlete_name
+SELECT access_token, refresh_token, expires_at, updated_at, athlete_id, athlete_name, scopes, connection_id
 FROM strava_tokens
 WHERE user_id = ?
 `, userID)
@@ -980,7 +1090,7 @@ WHERE user_id = ?
 	token.UserID = userID
 	var expiresAt int64
 	var updatedAt int64
-	if err := row.Scan(&token.AccessToken, &token.RefreshToken, &expiresAt, &updatedAt, &token.AthleteID, &token.AthleteName); err != nil {
+	if err := row.Scan(&token.AccessToken, &token.RefreshToken, &expiresAt, &updatedAt, &token.AthleteID, &token.AthleteName, &token.Scopes, &token.ConnectionID); err != nil {
 		return StravaToken{}, err
 	}
 	token.ExpiresAt = time.Unix(expiresAt, 0)
@@ -993,14 +1103,14 @@ func (s *Store) GetStravaTokenByAthleteID(ctx context.Context, athleteID int64) 
 		return StravaToken{}, errors.New("athlete id required")
 	}
 	row := s.db.QueryRowContext(ctx, `
-SELECT user_id, access_token, refresh_token, expires_at, updated_at, athlete_id, athlete_name
+SELECT user_id, access_token, refresh_token, expires_at, updated_at, athlete_id, athlete_name, scopes, connection_id
 FROM strava_tokens
 WHERE athlete_id = ?
 `, athleteID)
 	var token StravaToken
 	var expiresAt int64
 	var updatedAt int64
-	if err := row.Scan(&token.UserID, &token.AccessToken, &token.RefreshToken, &expiresAt, &updatedAt, &token.AthleteID, &token.AthleteName); err != nil {
+	if err := row.Scan(&token.UserID, &token.AccessToken, &token.RefreshToken, &expiresAt, &updatedAt, &token.AthleteID, &token.AthleteName, &token.Scopes, &token.ConnectionID); err != nil {
 		return StravaToken{}, err
 	}
 	token.ExpiresAt = time.Unix(expiresAt, 0)
@@ -1010,10 +1120,20 @@ WHERE athlete_id = ?
 
 func (s *Store) DeleteStravaToken(ctx context.Context, userID int64) error {
 	if userID == 0 {
-		userID = 1
+		return errors.New("user id required")
 	}
-	_, err := s.db.ExecContext(ctx, `DELETE FROM strava_tokens WHERE user_id = ?`, userID)
-	return err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, "DELETE FROM jobs WHERE user_id=?", userID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, "DELETE FROM strava_tokens WHERE user_id=?", userID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) ListHideRules(ctx context.Context, userID int64) ([]HideRule, error) {
@@ -1105,6 +1225,31 @@ SET enabled = ?, updated_at = ?
 WHERE id = ? AND user_id = ?
 `, boolToInt(enabled), time.Now().Unix(), ruleID, userID)
 	return err
+}
+
+func (s *Store) UpdateHideRuleForUser(ctx context.Context, userID, ruleID int64, name, condition string) error {
+	if userID == 0 {
+		return errors.New("user id required")
+	}
+	if ruleID <= 0 {
+		return errors.New("rule id required")
+	}
+	res, err := s.db.ExecContext(ctx, `
+UPDATE hide_rules
+SET name = ?, condition = ?, updated_at = ?
+WHERE id = ? AND user_id = ?
+`, name, condition, time.Now().Unix(), ruleID, userID)
+	if err != nil {
+		return err
+	}
+	count, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 func (s *Store) DeleteHideRule(ctx context.Context, ruleID int64) error {
@@ -1215,15 +1360,32 @@ VALUES (?, ?, ?, ?, ?)
 
 func (s *Store) DeleteUserData(ctx context.Context, userID int64) error {
 	if userID == 0 {
-		userID = 1
+		return errors.New("user id required")
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		_ = tx.Rollback()
-	}()
+	defer tx.Rollback()
+	if err = deleteUserData(ctx, tx, userID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+func deleteUserData(ctx context.Context, tx *sql.Tx, userID int64) error {
+	for _, query := range []string{
+		"DELETE FROM automation_events WHERE user_id=?",
+		"DELETE FROM jobs WHERE user_id=?",
+		"DELETE FROM activity_tombstones WHERE user_id=?",
+		"DELETE FROM processing_preferences WHERE user_id=?",
+		"DELETE FROM job_dispatch WHERE user_id=?",
+		"DELETE FROM activity_stops WHERE activity_id IN (SELECT id FROM activities WHERE user_id=?)",
+		"DELETE FROM activity_route_previews WHERE activity_id IN (SELECT id FROM activities WHERE user_id=?)",
+	} {
+		if _, err := tx.ExecContext(ctx, query, userID); err != nil {
+			return err
+		}
+	}
 
 	if _, err := tx.ExecContext(ctx, `
 DELETE FROM activity_points
@@ -1286,7 +1448,7 @@ WHERE user_id = ?
 		return err
 	}
 
-	return tx.Commit()
+	return nil
 }
 
 func (s *Store) ReassignUserData(ctx context.Context, fromUserID, toUserID int64) error {
@@ -1460,14 +1622,25 @@ func (s *Store) UpsertActivityDetectedFacts(ctx context.Context, activityID int6
 	if updatedAt.IsZero() {
 		updatedAt = time.Now()
 	}
-	_, err := s.db.ExecContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err = validateDerivedWrite(ctx, tx, activityID); err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `
 INSERT INTO activity_detected_facts (activity_id, detected_facts_json, updated_at)
 VALUES (?, ?, ?)
 ON CONFLICT(activity_id) DO UPDATE SET
 	detected_facts_json = excluded.detected_facts_json,
 	updated_at = excluded.updated_at
 `, activityID, detectedFactsJSON, updatedAt.Unix())
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) GetActivityDetectedFacts(ctx context.Context, activityID int64) (string, time.Time, error) {
@@ -1503,6 +1676,10 @@ func (s *Store) ReplaceActivityFactMetrics(ctx context.Context, activity Activit
 	defer func() {
 		_ = tx.Rollback()
 	}()
+
+	if err = validateDerivedWrite(ctx, tx, activity.ID); err != nil {
+		return err
+	}
 
 	if _, err := tx.ExecContext(ctx, `
 DELETE FROM activity_fact_metrics
@@ -1741,7 +1918,7 @@ WHERE user_id = ?
 	return histories, nil
 }
 
-func (s *Store) ListActivityRoutePreviewPoints(ctx context.Context, activityIDs []int64, maxPoints int) (map[int64][]ActivityRoutePoint, error) {
+func (s *Store) loadActivityRoutePreviewPoints(ctx context.Context, activityIDs []int64, maxPoints int) (map[int64][]ActivityRoutePoint, error) {
 	previews := make(map[int64][]ActivityRoutePoint, len(activityIDs))
 	if len(activityIDs) == 0 {
 		return previews, nil
@@ -1855,6 +2032,10 @@ func (s *Store) ReplaceActivityStops(ctx context.Context, activityID int64, stop
 		_ = tx.Rollback()
 	}()
 
+	if err = validateDerivedWrite(ctx, tx, activityID); err != nil {
+		return err
+	}
+
 	if _, err := tx.ExecContext(ctx, `
 DELETE FROM activity_stops
 WHERE activity_id = ?
@@ -1917,7 +2098,7 @@ func (s *Store) ListActivitiesWithStatsInRange(ctx context.Context, userID int64
 	return s.listActivitiesWithStats(ctx, userID, limit, start, end)
 }
 
-func (s *Store) listActivitiesWithStats(ctx context.Context, userID int64, limit int, start, end time.Time) ([]ActivityWithStats, error) {
+func (s *Store) listActivitiesWithStats(ctx context.Context, userID int64, limit int, start, end time.Time, cursor ...ActivityCursor) ([]ActivityWithStats, error) {
 	if userID == 0 {
 		userID = 1
 	}
@@ -1943,7 +2124,8 @@ SELECT a.id,
 	s.stop_count,
 	s.stop_total_seconds,
 	s.traffic_light_stop_count,
-	s.road_crossing_count
+	s.road_crossing_count,
+ CASE WHEN a.streams_fetched=1 AND NOT EXISTS(SELECT 1 FROM activity_points p WHERE p.activity_id=a.id) THEN 'GPS data unavailable; route statistics cannot be calculated.' ELSE '' END
 FROM activities a
 LEFT JOIN activity_stats s ON s.activity_id = a.id
 WHERE a.user_id = ?
@@ -1956,8 +2138,12 @@ WHERE a.user_id = ?
 `
 		args = append(args, start.Unix(), end.Unix())
 	}
+	if len(cursor) > 0 && cursor[0].ID > 0 {
+		query += " AND (a.start_time < ? OR (a.start_time = ? AND a.id < ?))"
+		args = append(args, cursor[0].StartUnix, cursor[0].StartUnix, cursor[0].ID)
+	}
 	query += `
-ORDER BY a.start_time DESC
+ORDER BY a.start_time DESC,a.id DESC
 LIMIT ?
 `
 	args = append(args, limit)
@@ -2003,6 +2189,7 @@ func scanActivityWithStatsRows(rows *sql.Rows) ([]ActivityWithStats, error) {
 			&stopTotalSeconds,
 			&trafficLightStopCount,
 			&roadCrossingCount,
+			&item.GPSStatus,
 		); err != nil {
 			return nil, err
 		}
@@ -2030,7 +2217,15 @@ func (s *Store) UpsertActivityStats(ctx context.Context, activityID int64, stats
 	if !stats.UpdatedAt.IsZero() {
 		updatedAt = stats.UpdatedAt
 	}
-	_, err := s.db.ExecContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err = validateDerivedWrite(ctx, tx, activityID); err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `
 INSERT INTO activity_stats (activity_id, stop_count, stop_total_seconds, traffic_light_stop_count, road_crossing_count, effort_score, effort_version, updated_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(activity_id) DO UPDATE SET
@@ -2042,7 +2237,10 @@ ON CONFLICT(activity_id) DO UPDATE SET
 	effort_version = excluded.effort_version,
 	updated_at = excluded.updated_at
 `, activityID, stats.StopCount, stats.StopTotalSeconds, stats.TrafficLightStopCount, stats.RoadCrossingCount, stats.EffortScore, stats.EffortVersion, updatedAt.Unix())
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) GetActivityStats(ctx context.Context, activityID int64) (stats.StopStats, error) {
@@ -2062,7 +2260,7 @@ WHERE activity_id = ?
 
 func (s *Store) GetActivity(ctx context.Context, activityID int64) (Activity, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT id, user_id, type, name, start_time, description, distance, moving_time, average_power, average_heartrate, visibility, is_private, hide_from_home, hidden_by_rule, photo_url, updated_at
+SELECT id, user_id, type, name, start_time, description, distance, moving_time, average_power, device_watts, power_source_checked, athlete_count, average_heartrate, visibility, is_private, hide_from_home, hidden_by_rule, photo_url, updated_at
 FROM activities
 WHERE id = ?
 `, activityID)
@@ -2072,6 +2270,8 @@ WHERE id = ?
 	var hideFromHome int
 	var hiddenByRule int
 	var updatedAt int64
+	var deviceWatts sql.NullBool
+	var powerSourceChecked int
 	if err := row.Scan(
 		&activity.ID,
 		&activity.UserID,
@@ -2082,6 +2282,9 @@ WHERE id = ?
 		&activity.Distance,
 		&activity.MovingTime,
 		&activity.AveragePower,
+		&deviceWatts,
+		&powerSourceChecked,
+		&activity.AthleteCount,
 		&activity.AverageHeartRate,
 		&activity.Visibility,
 		&isPrivate,
@@ -2093,6 +2296,10 @@ WHERE id = ?
 		return Activity{}, err
 	}
 	activity.StartTime = time.Unix(startTime, 0)
+	if deviceWatts.Valid {
+		activity.DeviceWatts = &deviceWatts.Bool
+	}
+	activity.PowerSourceChecked = powerSourceChecked != 0
 	activity.IsPrivate = isPrivate != 0
 	activity.HideFromHome = hideFromHome != 0
 	activity.HiddenByRule = hiddenByRule != 0
@@ -2105,7 +2312,7 @@ func (s *Store) GetActivityForUser(ctx context.Context, userID, activityID int64
 		return Activity{}, errors.New("user id required")
 	}
 	row := s.db.QueryRowContext(ctx, `
-SELECT id, user_id, type, name, start_time, description, distance, moving_time, average_power, average_heartrate, visibility, is_private, hide_from_home, hidden_by_rule, photo_url, updated_at
+SELECT id, user_id, type, name, start_time, description, distance, moving_time, average_power, device_watts, power_source_checked, athlete_count, average_heartrate, visibility, is_private, hide_from_home, hidden_by_rule, photo_url, updated_at
 FROM activities
 WHERE id = ? AND user_id = ?
 `, activityID, userID)
@@ -2115,6 +2322,8 @@ WHERE id = ? AND user_id = ?
 	var hideFromHome int
 	var hiddenByRule int
 	var updatedAt int64
+	var deviceWatts sql.NullBool
+	var powerSourceChecked int
 	if err := row.Scan(
 		&activity.ID,
 		&activity.UserID,
@@ -2125,6 +2334,9 @@ WHERE id = ? AND user_id = ?
 		&activity.Distance,
 		&activity.MovingTime,
 		&activity.AveragePower,
+		&deviceWatts,
+		&powerSourceChecked,
+		&activity.AthleteCount,
 		&activity.AverageHeartRate,
 		&activity.Visibility,
 		&isPrivate,
@@ -2136,6 +2348,10 @@ WHERE id = ? AND user_id = ?
 		return Activity{}, err
 	}
 	activity.StartTime = time.Unix(startTime, 0)
+	if deviceWatts.Valid {
+		activity.DeviceWatts = &deviceWatts.Bool
+	}
+	activity.PowerSourceChecked = powerSourceChecked != 0
 	activity.IsPrivate = isPrivate != 0
 	activity.HideFromHome = hideFromHome != 0
 	activity.HiddenByRule = hiddenByRule != 0
@@ -2147,12 +2363,11 @@ func (s *Store) UpdateActivityHiddenByRule(ctx context.Context, activityID int64
 	if activityID == 0 {
 		return errors.New("activity id required")
 	}
-	_, err := s.db.ExecContext(ctx, `
+	return s.updateActivityGuarded(ctx, activityID, `
 UPDATE activities
 SET hidden_by_rule = ?
 WHERE id = ?
 `, boolToInt(hidden), activityID)
-	return err
 }
 
 func (s *Store) UpdateActivityHideFromHome(ctx context.Context, activityID int64, hideFromHome bool) error {
@@ -2174,20 +2389,18 @@ func (s *Store) UpdateActivityDescriptionAndHideFromHome(ctx context.Context, ac
 	}
 	updatedAt := time.Now().Unix()
 	if hideFromHome == nil {
-		_, err := s.db.ExecContext(ctx, `
+		return s.updateActivityGuarded(ctx, activityID, `
 UPDATE activities
 SET description = ?,
 	updated_at = ?
 WHERE id = ?
 `, description, updatedAt, activityID)
-		return err
 	}
-	_, err := s.db.ExecContext(ctx, `
+	return s.updateActivityGuarded(ctx, activityID, `
 UPDATE activities
 SET description = ?,
 	hide_from_home = ?,
 	updated_at = ?
 WHERE id = ?
 `, description, boolToInt(*hideFromHome), updatedAt, activityID)
-	return err
 }

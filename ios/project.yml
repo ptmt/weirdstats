@@ -1,6 +1,6 @@
 name: WeirdStats
 options:
-  bundleIdPrefix: com.ptmt
+  bundleIdPrefix: com.potomushto
 configs:
   Debug: debug
   Release: release
@@ -11,6 +11,8 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: WeirdStats
+      - path: ../internal/web/static/weirdstats.png
+        buildPhase: resources
     info:
       path: WeirdStats/Info.plist
       properties:
@@ -18,7 +20,7 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: false
         CFBundleURLTypes:
-          - CFBundleURLName: com.ptmt.weirdstats.auth
+          - CFBundleURLName: com.potomushto.weirdstats.auth
             CFBundleURLSchemes:
               - weirdstats
         LSApplicationQueriesSchemes:
@@ -38,7 +40,7 @@ targets:
           - UIInterfaceOrientationLandscapeRight
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.ptmt.weirdstats
+        PRODUCT_BUNDLE_IDENTIFIER: com.potomushto.weirdstats
         PRODUCT_NAME: WeirdStats
         SWIFT_VERSION: "5.0"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

@@ -2,8 +2,8 @@ package ingest
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	"weirdstats/internal/gps"
@@ -29,6 +29,9 @@ func (i *Ingestor) EnsureActivity(ctx context.Context, activityID int64) error {
 		if err != nil {
 			return err
 		}
+		if userID != 0 && userID != activity.UserID {
+			return fmt.Errorf("activity belongs to another user")
+		}
 		userID = activity.UserID
 	} else if userID == 0 {
 		return fmt.Errorf("activity %d user unknown", activityID)
@@ -38,15 +41,52 @@ func (i *Ingestor) EnsureActivity(ctx context.Context, activityID int64) error {
 		return i.fetchAndUpsert(ctx, userID, activityID)
 	}
 
-	count, err := i.Store.CountActivityPoints(ctx, activityID)
+	fetched, err := i.Store.ActivityStreamsFetched(ctx, activityID)
 	if err != nil {
 		return err
 	}
-	if count == 0 {
+	if !fetched {
 		return i.fetchAndUpsert(ctx, userID, activityID)
 	}
 
 	return nil
+}
+
+// RefreshActivity always retrieves the current activity and streams from Strava.
+// EnsureActivity intentionally skips that work after streams have been fetched.
+func (i *Ingestor) RefreshActivity(ctx context.Context, activityID int64) error {
+	activity, err := i.Store.GetActivity(ctx, activityID)
+	if err != nil {
+		return err
+	}
+	if userID := UserIDFromContext(ctx); userID != 0 && userID != activity.UserID {
+		return fmt.Errorf("activity belongs to another user")
+	}
+	return i.fetchAndUpsert(ctx, activity.UserID, activityID)
+}
+
+// CheckPowerSource fetches just the activity metadata used by draft analysis.
+func (i *Ingestor) CheckPowerSource(ctx context.Context, activityID int64) error {
+	activity, err := i.Store.GetActivity(ctx, activityID)
+	if err != nil {
+		return err
+	}
+	if userID := UserIDFromContext(ctx); userID != 0 && userID != activity.UserID {
+		return fmt.Errorf("activity belongs to another user")
+	}
+	client, err := i.clientForUser(ctx, activity.UserID)
+	if err != nil {
+		return err
+	}
+	ctx, err = i.Store.ActivityFetchContext(ctx, activity.UserID, activityID, client.ConnectionID)
+	if err != nil {
+		return err
+	}
+	fresh, err := client.GetActivity(ctx, activityID)
+	if err != nil {
+		return err
+	}
+	return i.Store.UpdateActivityPowerSource(ctx, activity.UserID, activityID, fresh.DeviceWatts)
 }
 
 func (i *Ingestor) fetchAndUpsert(ctx context.Context, userID, activityID int64) error {
@@ -55,40 +95,42 @@ func (i *Ingestor) fetchAndUpsert(ctx context.Context, userID, activityID int64)
 		return err
 	}
 
+	ctx, err = i.Store.ActivityFetchContext(ctx, userID, activityID, client.ConnectionID)
+	if err != nil {
+		return err
+	}
 	activity, err := client.GetActivity(ctx, activityID)
 	if err != nil {
 		return err
 	}
-
-	streams, err := client.GetStreams(ctx, activityID)
+	row := storage.Activity{ID: activity.ID, UserID: userID, Type: activity.Type, Name: activity.Name,
+		StartTime: activity.StartDate, Description: activity.Description, Distance: activity.Distance, MovingTime: activity.MovingTime,
+		AveragePower: activity.AveragePower, DeviceWatts: activity.DeviceWatts, PowerSourceChecked: true, AthleteCount: activity.AthleteCount, AverageHeartRate: activity.AverageHeartRate, Visibility: activity.Visibility,
+		IsPrivate: activity.Private, HideFromHome: activity.HideFromHome, PhotoURL: activity.PhotoURL}
+	exists, err := i.Store.HasActivity(ctx, activityID)
 	if err != nil {
 		return err
 	}
-
+	// Keep new activity metadata visible when stream retrieval needs another
+	// attempt. Existing points must survive a failed refresh.
+	if !exists {
+		if _, err := i.Store.UpsertActivity(ctx, row, nil); err != nil {
+			return err
+		}
+	}
+	streams, err := client.GetStreams(ctx, activityID)
+	if err != nil {
+		var apiErr *strava.APIError
+		if !(errors.As(err, &apiErr) && apiErr.StatusCode == 404 && (activity.Manual || activity.Trainer)) {
+			return err
+		}
+	}
 	points, err := buildPoints(activity.StartDate, streams)
 	if err != nil {
 		return err
 	}
-	if len(points) == 0 {
-		log.Printf("Activity %d (%s) has no GPS data", activity.ID, activity.Name)
-	}
-
-	_, err = i.Store.UpsertActivity(ctx, storage.Activity{
-		ID:               activity.ID,
-		UserID:           userID,
-		Type:             activity.Type,
-		Name:             activity.Name,
-		StartTime:        activity.StartDate,
-		Description:      activity.Description,
-		Distance:         activity.Distance,
-		MovingTime:       activity.MovingTime,
-		AveragePower:     activity.AveragePower,
-		AverageHeartRate: activity.AverageHeartRate,
-		Visibility:       activity.Visibility,
-		IsPrivate:        activity.Private,
-		HideFromHome:     activity.HideFromHome,
-		PhotoURL:         activity.PhotoURL,
-	}, points)
+	row.StreamsFetched = true
+	_, err = i.Store.UpsertActivity(ctx, row, points)
 	return err
 }
 

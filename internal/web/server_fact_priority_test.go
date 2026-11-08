@@ -18,6 +18,7 @@ func TestBuildPrioritizedWeirdStatsLineUsesHistoryToSortFacts(t *testing.T) {
 	}
 	rideFact := rideSegmentFact{
 		DistanceMeters: 20000,
+		Duration:       40 * time.Minute,
 		AvgPower:       200,
 		AvgSpeedMPS:    30.0 / 3.6,
 	}
@@ -85,7 +86,7 @@ func TestBuildPrioritizedWeirdStatsLineUsesHistoryToSortFacts(t *testing.T) {
 	}
 
 	line := buildPrioritizedWeirdStatsLine(snapshot, rideFact, nil, coffeeFact, routeFact, roadFact, histories)
-	want := "2 road crossings: Unter den Linden, Friedrichstrasse · Route highlights: Victory Column, Memorial Church · Detected Coffee Stop: Bean Machine · Longest segment: 20km - 200w - 30kmh"
+	want := "2 road crossings: Unter den Linden, Friedrichstrasse · Route highlights: Victory Column, Memorial Church · Detected Coffee Stop: Bean Machine · Longest segment: 40m 0s - 200w - 30kmh"
 	if line != want {
 		t.Fatalf("unexpected prioritized line\nwant: %q\n got: %q", want, line)
 	}
@@ -103,7 +104,7 @@ func TestBuildActivityFactMetricsIncludesPOIHistoryKeys(t *testing.T) {
 	}
 	metrics := buildActivityFactMetrics(
 		snapshot,
-		rideSegmentFact{DistanceMeters: 48000, AvgPower: 200, AvgSpeedMPS: 30.0 / 3.6},
+		rideSegmentFact{DistanceMeters: 48000, Duration: time.Hour + 36*time.Minute, AvgPower: 200, AvgSpeedMPS: 30.0 / 3.6},
 		[]speedMilestoneFact{{
 			FactID:   weirdStatsFactAcceleration040,
 			Label:    "0 to 40 km/h",
@@ -217,6 +218,7 @@ func TestBuildStravaWeirdStatsLineHonorsAutoPostSettings(t *testing.T) {
 	}
 	rideFact := rideSegmentFact{
 		DistanceMeters: 20000,
+		Duration:       40 * time.Minute,
 		AvgPower:       200,
 		AvgSpeedMPS:    30.0 / 3.6,
 	}
@@ -262,6 +264,7 @@ func TestBuildStravaWeirdStatsLineHonorsAutoPostSettings(t *testing.T) {
 func TestBuildStravaWeirdStatsLinePostsRemarkableFactsWhenAutoPostIsDisabled(t *testing.T) {
 	rideFact := rideSegmentFact{
 		DistanceMeters: 70000,
+		Duration:       2*time.Hour + 11*time.Minute,
 		AvgPower:       220,
 		AvgSpeedMPS:    32.0 / 3.6,
 	}
@@ -282,7 +285,7 @@ func TestBuildStravaWeirdStatsLinePostsRemarkableFactsWhenAutoPostIsDisabled(t *
 
 	line := buildStravaWeirdStatsLine(stats.StopStats{}, rideFact, nil, coffeeFact, routeHighlightFact{}, roadCrossingFact{}, settings, histories)
 	for _, want := range []string{
-		"Longest segment: 70km - 220w - 32kmh",
+		"Longest segment: 2h 11m - 220w - 32kmh",
 		"Detected Coffee Stop: New Bean",
 	} {
 		if !strings.Contains(line, want) {

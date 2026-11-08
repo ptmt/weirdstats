@@ -5,15 +5,24 @@
         <strong>{{.Message}}</strong>
       </div>
     {{end}}
-    <h2 class="section-title">Your parsed activities</h2>
+    <div class="page-heading">
+      <h2 class="section-title">Activities</h2>
+    </div>
   </section>
 
   {{if .Contributions}}
     {{range .Contributions}}
       <section class="card contrib-card">
         <div class="contrib-header">
-          <div>
-            <h3>{{.Year}}</h3>
+          <div class="contrib-heading">
+            <h3>Activity history</h3>
+            {{$selectedYear := .Year}}
+            <form method="get" action="/activities/" class="contrib-year-switcher">
+              <select name="year" aria-label="Activity history year" onchange="this.form.requestSubmit()">
+                {{range $.ContributionYears}}<option value="{{.}}"{{if eq . $selectedYear}} selected{{end}}>{{.}}</option>{{end}}
+              </select>
+              <noscript><button class="btn secondary small" type="submit">Show year</button></noscript>
+            </form>
           </div>
           <div class="contrib-legend">
             <span class="legend-label">Less</span>
@@ -51,7 +60,7 @@
         <span class="activity-filter-label">Showing</span>
         <strong>{{.SelectedDayLabel}}</strong>
       </div>
-      <a class="btn secondary small" href="/activities/">All activities</a>
+      <a class="btn secondary small" href="{{.AllActivitiesURL}}">All activities</a>
     </section>
   {{end}}
 
@@ -181,10 +190,14 @@
           {{end}}
           {{if .StravaDescription}}<p class="muted activity-description">{{.StravaDescription}}</p>{{end}}
           <div class="activity-card-footer">
-            <a href="/activity/{{.ID}}" class="activity-details-link">
-              {{if .DetectedFactCount}}{{.DetectedFactCount}} detected fact{{if ne .DetectedFactCount 1}}s{{end}}{{else}}View activity{{end}}
-              <span aria-hidden="true">→</span>
-            </a>
+            <div class="activity-card-links">
+              <a href="/activity/{{.ID}}#automations" class="activity-automation-link" title="See recorded automation runs">{{.AutomationCount}} automation{{if ne .AutomationCount 1}}s{{end}}</a>
+              <a href="/activity/{{.ID}}" class="activity-details-link">
+                {{if .DetectedFactCount}}{{.DetectedFactCount}} detected fact{{if ne .DetectedFactCount 1}}s{{end}}{{else}}View activity{{end}}
+                <span aria-hidden="true">→</span>
+              </a>
+            </div>
+            {{if .GPSStatus}}<p class="muted">{{.GPSStatus}}</p>{{end}}
             {{if or .HasPower .StopCount .LightStops .RoadCrossings}}
             <details class="activity-extra">
               <summary>More stats <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
@@ -205,7 +218,7 @@
       {{if .DayFilterActive}}
         <h2 class="section-title">No activities on {{.SelectedDayLabel}}</h2>
         <p class="muted">No activities started on this day.</p>
-        <a class="btn secondary" href="/activities/">All activities</a>
+        <a class="btn secondary" href="{{.AllActivitiesURL}}">All activities</a>
       {{else}}
         <h2 class="section-title">No activities yet</h2>
         {{if .Strava.Connected}}
@@ -217,6 +230,8 @@
       {{end}}
     </section>
   {{end}}
+
+  {{if .NextPageURL}}<div class="feed-pagination"><a class="btn secondary" href="{{.NextPageURL}}">Older activities <span aria-hidden="true">→</span></a></div>{{end}}
 
   <link rel="stylesheet" href="/static/leaflet/leaflet.css" />
   <script src="/static/leaflet/leaflet.js"></script>
@@ -266,7 +281,7 @@
           return;
         }
         const polyline = L.polyline(coords, {
-          color: '#a855f7',
+          color: '#fc4c02',
           weight: 3,
           opacity: 0.95
         }).addTo(map);
@@ -276,14 +291,14 @@
 
         L.circleMarker(coords[0], {
           radius: 4,
-          color: 'rgba(6, 182, 212, 0.95)',
-          fillColor: 'rgba(6, 182, 212, 0.95)',
+          color: '#1b8554',
+          fillColor: '#1b8554',
           fillOpacity: 1
         }).addTo(map);
         L.circleMarker(coords[coords.length - 1], {
           radius: 4,
-          color: 'rgba(236, 72, 153, 0.95)',
-          fillColor: 'rgba(236, 72, 153, 0.95)',
+          color: '#242428',
+          fillColor: '#242428',
           fillOpacity: 1
         }).addTo(map);
 

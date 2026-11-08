@@ -57,7 +57,7 @@ func TestConnectStravaMobile_StartsOAuthFlow(t *testing.T) {
 	if got := query.Get("redirect_uri"); got != "https://weirdstats.example/connect/strava/mobile/callback" {
 		t.Fatalf("unexpected redirect_uri: %q", got)
 	}
-	if got := query.Get("scope"); got != "read,activity:read_all,activity:write" {
+	if got := query.Get("scope"); got != "read,activity:read,activity:read_all,activity:write" {
 		t.Fatalf("unexpected scope: %q", got)
 	}
 	statePayload, ok := server.parseMobileOAuthState(query.Get("state"))
@@ -163,7 +163,7 @@ func TestStravaMobileCallback_RedirectsBackToAppWithGrant(t *testing.T) {
 	if err != nil {
 		t.Fatalf("issue oauth state: %v", err)
 	}
-	req := httptest.NewRequest(http.MethodGet, "/connect/strava/mobile/callback?state="+url.QueryEscape(state)+"&code=mobile-code", nil)
+	req := httptest.NewRequest(http.MethodGet, "/connect/strava/mobile/callback?state="+url.QueryEscape(state)+"&code=mobile-code&scope=activity:read", nil)
 	rec := httptest.NewRecorder()
 
 	server.StravaMobileCallback(rec, req)

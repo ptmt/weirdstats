@@ -27,8 +27,8 @@ const (
 	posterMapWidth             = 1000.0
 	posterMapHeight            = 1120.0
 	posterMapPadding           = 36.0
-	posterExportWidth          = 1170
-	posterExportHeight         = 2532
+	posterExportWidth          = 1080
+	posterExportHeight         = 1920
 	posterContextMinPaddingM   = 280.0
 	posterContextMaxPaddingM   = 900.0
 	posterContextPaddingFactor = 0.35
@@ -92,6 +92,11 @@ type posterMapContextView struct {
 	Peaks     []posterPeakView
 }
 
+type posterSpeedPath struct {
+	Path  string
+	Color string
+}
+
 type posterBasicStatView struct {
 	Label string
 	Value string
@@ -111,6 +116,8 @@ type posterRenderOptions struct {
 	Transparent bool
 	Uppercase   bool
 	Monochrome  bool
+	Lens        string
+	Format      string
 }
 
 type posterPageData struct {
@@ -122,6 +129,13 @@ type posterPageData struct {
 	Distance        string
 	Duration        string
 	RoutePath       string
+	SpeedPaths      []posterSpeedPath
+	HasSpeed        bool
+	SpeedSlowKmh    int
+	SpeedFastKmh    int
+	ExportWidth     int
+	ExportHeight    int
+	ExportScale     float64
 	RouteStartX     float64
 	RouteStartY     float64
 	RouteEndX       float64
@@ -261,7 +275,7 @@ func (s *Server) ActivityPosterPNG(w http.ResponseWriter, r *http.Request) {
 	trace.AddField("html_bytes", len(html))
 
 	stepStart = time.Now()
-	png, err := posterPNGCapture(r.Context(), html)
+	png, err := posterPNGCapture(r.Context(), html, data.ExportWidth, data.ExportHeight)
 	trace.AddStep("capture_png", stepStart)
 	if errors.Is(err, errPosterBrowserUnavailable) {
 		trace.AddField("error", "browser_unavailable")
@@ -301,9 +315,11 @@ func posterDefaultRenderOptions() posterRenderOptions {
 	return posterRenderOptions{
 		ShowHeader:  true,
 		ShowMeta:    true,
-		ShowContext: true,
+		ShowContext: false,
 		ShowBasics:  true,
 		FactsLimit:  -1,
+		Lens:        "clean",
+		Format:      "story",
 	}
 }
 
@@ -318,7 +334,30 @@ func posterRenderOptionsFromRequest(r *http.Request) posterRenderOptions {
 	options.Uppercase = posterQueryBool(values, "uppercase", false)
 	options.Monochrome = posterQueryBool(values, "mono", false)
 	options.FactsLimit = posterFactsLimit(values)
+	switch values.Get("lens") {
+	case "speed":
+		options.Lens = "speed"
+	default:
+		options.Lens = "clean"
+	}
+	switch values.Get("format") {
+	case "square", "portrait":
+		options.Format = values.Get("format")
+	default:
+		options.Format = "story"
+	}
 	return options
+}
+
+func posterExportDimensions(format string) (int, int) {
+	switch format {
+	case "square":
+		return 1080, 1080
+	case "portrait":
+		return 1080, 1350
+	default:
+		return posterExportWidth, posterExportHeight
+	}
 }
 
 func posterQueryBool(values url.Values, key string, fallback bool) bool {
@@ -434,6 +473,19 @@ func (s *Server) posterPageData(ctx context.Context, userID, activityID int64, p
 		trace.AddField("error", "get_activity")
 		return posterPageData{}, errPosterActivityNotFound
 	}
+	s, err = s.forUser(ctx, userID)
+	if err != nil {
+		return posterPageData{}, err
+	}
+	if s.overpass != nil {
+		guarded, guardErr := s.store.GuardActivityContext(ctx, activityID)
+		if guardErr != nil {
+			// Retained data can still render locally after disconnect.
+			s.overpass = nil
+		} else {
+			ctx = guarded
+		}
+	}
 
 	stepStart = time.Now()
 	points, err := s.store.LoadActivityPoints(ctx, activityID)
@@ -460,6 +512,7 @@ func (s *Server) posterPageData(ctx context.Context, userID, activityID int64, p
 		trace.AddField("error", "load_detected_facts")
 		return posterPageData{}, fmt.Errorf("load detected facts: %w", err)
 	}
+	refreshRideSegmentFactSummary(detectedFacts, activity.Type, points, s.stopOpts)
 	trace.AddField("facts", len(detectedFacts))
 
 	visibleFacts := posterLimitFacts(detectedFacts, options.FactsLimit)
@@ -471,7 +524,13 @@ func (s *Server) posterPageData(ctx context.Context, userID, activityID int64, p
 
 	stepStart = time.Now()
 	routePoints := posterRoutePoints(points)
+	speedStyle := buildRouteSpeedStyle(points, s.stopOpts.SpeedThreshold)
+	if options.Lens == "speed" && !speedStyle.Available {
+		options.Lens = "clean"
+	}
+	exportWidth, exportHeight := posterExportDimensions(options.Format)
 	routePath := ""
+	var speedPaths []posterSpeedPath
 	startX := 0.0
 	startY := 0.0
 	endX := 0.0
@@ -504,6 +563,9 @@ func (s *Server) posterPageData(ctx context.Context, userID, activityID int64, p
 			}
 		}
 		routePath, startX, startY, endX, endY, hasRoute = buildPosterRoutePath(routePoints, proj)
+		if options.Lens == "speed" {
+			speedPaths = buildPosterSpeedPaths(routePoints, speedStyle.Colors, proj)
+		}
 	}
 	trace.AddStep("project_poster", stepStart)
 	trace.AddField("has_route", hasRoute)
@@ -521,6 +583,13 @@ func (s *Server) posterPageData(ctx context.Context, userID, activityID int64, p
 		Distance:        formatDistance(activity.Distance),
 		Duration:        formatDuration(activity.MovingTime),
 		RoutePath:       routePath,
+		SpeedPaths:      speedPaths,
+		HasSpeed:        speedStyle.Available,
+		SpeedSlowKmh:    speedStyle.SlowKmh,
+		SpeedFastKmh:    speedStyle.FastKmh,
+		ExportWidth:     exportWidth,
+		ExportHeight:    exportHeight,
+		ExportScale:     float64(exportWidth) / 430,
 		RouteStartX:     startX,
 		RouteStartY:     startY,
 		RouteEndX:       endX,
@@ -702,6 +771,27 @@ func buildPosterRoutePath(points []routePreviewPoint, proj posterProjection) (st
 	return path, start.X, start.Y, end.X, end.Y, true
 }
 
+func buildPosterSpeedPaths(points []routePreviewPoint, colors []string, proj posterProjection) []posterSpeedPath {
+	if len(points) < 2 || len(colors) != len(points)-1 {
+		return nil
+	}
+	paths := make([]posterSpeedPath, 0)
+	for start := 0; start < len(colors); {
+		end := start + 1
+		for end < len(colors) && colors[end] == colors[start] {
+			end++
+		}
+		projected := make([]posterPoint, 0, end-start+1)
+		for _, point := range points[start : end+1] {
+			x, y := proj.project(point.Lat, point.Lon)
+			projected = append(projected, posterPoint{X: x, Y: y})
+		}
+		paths = append(paths, posterSpeedPath{Path: posterPathString(projected), Color: colors[start]})
+		start = end
+	}
+	return paths
+}
+
 func (s *Server) posterMapContext(ctx context.Context, activityID int64, points []gps.Point, bbox maps.BBox, paddingMeters float64, proj posterProjection) (posterMapContextView, error) {
 	trace := newRequestTrace("poster_map_context")
 	trace.AddField("activity_id", activityID)
@@ -712,12 +802,40 @@ func (s *Server) posterMapContext(ctx context.Context, activityID int64, points 
 		trace.AddField("skipped", true)
 		return posterMapContextView{}, nil
 	}
+	activity, err := s.store.GetActivity(ctx, activityID)
+	if err != nil {
+		return posterMapContextView{}, err
+	}
+	prefs, err := s.store.ProcessingPreferences(ctx, activity.UserID)
+	if err != nil {
+		return posterMapContextView{}, err
+	}
+	if !prefs.ExternalMaps {
+		trace.AddField("skipped", true)
+		return posterMapContextView{}, nil
+	}
+	ctx, err = s.store.GuardActivityContext(ctx, activityID)
+	if err != nil {
+		return posterMapContextView{}, err
+	}
+	ctx = maps.WithAccessCheck(ctx, func(checkCtx context.Context) error {
+		if err := s.store.CheckActivityContext(checkCtx); err != nil {
+			return err
+		}
+		current, err := s.store.ProcessingPreferences(checkCtx, activity.UserID)
+		if err != nil {
+			return err
+		}
+		if !current.ExternalMaps {
+			return storage.ErrProcessingDisabled
+		}
+		return nil
+	})
 
 	if bbox == (maps.BBox{}) {
 		trace.AddField("skipped", true)
 		return posterMapContextView{}, nil
 	}
-	trace.AddField("bbox", fmt.Sprintf("%q", bbox.String()))
 	trace.AddField("padding_m", paddingMeters)
 	trace.AddField("timeout", posterContextLoadTimeout)
 
@@ -729,7 +847,6 @@ func (s *Server) posterMapContext(ctx context.Context, activityID int64, points 
 	trace.AddStep("fetch_context", stepStart)
 	if err != nil {
 		trace.AddField("error", "fetch_context")
-		trace.AddField("error_detail", fmt.Sprintf("%q", err.Error()))
 		return posterMapContextView{}, err
 	}
 	trace.AddField("raw_roads", len(contextData.Roads))
@@ -744,10 +861,6 @@ func (s *Server) posterMapContext(ctx context.Context, activityID int64, points 
 	trace.AddField("waterways", len(view.Waterways))
 	trace.AddField("waters", len(view.Waters))
 	trace.AddField("peaks", len(view.Peaks))
-	trace.AddField("road_names", fmt.Sprintf("%q", posterSelectedLineNames(view.Roads)))
-	trace.AddField("waterway_names", fmt.Sprintf("%q", posterSelectedLineNames(view.Waterways)))
-	trace.AddField("water_names", fmt.Sprintf("%q", posterSelectedAreaNames(view.Waters)))
-	trace.AddField("peak_names", fmt.Sprintf("%q", posterSelectedPeakNames(view.Peaks)))
 	return view, nil
 }
 
@@ -1196,7 +1309,7 @@ func posterAreaLabel(points []posterPoint, name string) (float64, float64, bool)
 	return xTotal / float64(len(points)), yTotal / float64(len(points)), true
 }
 
-func capturePosterPNGWithHeadlessBrowser(ctx context.Context, html []byte) ([]byte, error) {
+func capturePosterPNGWithHeadlessBrowser(ctx context.Context, html []byte, width, height int) ([]byte, error) {
 	trace := newRequestTrace("poster_png_capture")
 	trace.AddField("html_bytes", len(html))
 	defer trace.Log()
@@ -1238,7 +1351,7 @@ func capturePosterPNGWithHeadlessBrowser(ctx context.Context, html []byte) ([]by
 		"--disable-gpu",
 		"--hide-scrollbars",
 		"--default-background-color=00000000",
-		fmt.Sprintf("--window-size=%d,%d", posterExportWidth, posterExportHeight),
+		fmt.Sprintf("--window-size=%d,%d", width, height),
 		"--screenshot",
 		targetURL,
 	)

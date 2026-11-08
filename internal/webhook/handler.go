@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -77,24 +78,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) recordEvent(ctx context.Context, event Event, payload string) error {
-	_, err := h.Store.InsertWebhookEvent(ctx, storage.WebhookEvent{
-		ObjectID:   event.ObjectID,
-		ObjectType: event.ObjectType,
-		AspectType: event.AspectType,
-		OwnerID:    event.OwnerID,
-		RawPayload: payload,
-	})
-	if err != nil {
-		return err
-	}
-
+	var job *storage.Job
 	if event.ObjectType == "activity" && (event.AspectType == "create" || event.AspectType == "update") {
-		if err := jobs.EnqueueProcessActivity(ctx, h.Store, event.ObjectID, event.OwnerID); err != nil {
+		body, err := json.Marshal(jobs.ProcessActivityPayload{UserID: event.OwnerID, ActivityID: event.ObjectID, Publish: event.AspectType == "create"})
+		if err != nil {
 			return err
 		}
+		job = &storage.Job{Type: jobs.JobTypeProcessActivity, UserID: event.OwnerID, ActivityID: event.ObjectID, Payload: string(body), MaxAttempts: 10}
 	}
-
-	return nil
+	return h.Store.ApplyStravaWebhook(ctx, storage.WebhookEvent{ObjectID: event.ObjectID, ObjectType: event.ObjectType, AspectType: event.AspectType, OwnerID: event.OwnerID, RawPayload: payload}, event.ObjectType == "athlete" && fmt.Sprint(event.Updates["authorized"]) == "false", job)
 }
 
 func (h *Handler) handleVerification(w http.ResponseWriter, r *http.Request) {

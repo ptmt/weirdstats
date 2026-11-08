@@ -9,6 +9,9 @@ final class AppModel: ObservableObject {
     @Published var isLoading = false
     @Published var isAuthenticating = false
     @Published var errorMessage = ""
+    @Published var syncStatus: MobileSyncStatus?
+    @Published var nextCursor: String?
+    @Published private var hasSession = false
 
     private let apiClient = APIClient()
     private let authBroker = AuthSessionBroker()
@@ -25,10 +28,11 @@ final class AppModel: ObservableObject {
             defaults.set(legacyServerURL, forKey: serverURLKey)
         }
         serverURLText = storedServerURL ?? legacyServerURL ?? "https://weirdstats.com"
+        hasSession = tokenStore.readToken() != nil
     }
 
     var isSignedIn: Bool {
-        !athleteName.isEmpty
+        hasSession
     }
 
     func bootstrap() async {
@@ -55,6 +59,7 @@ final class AppModel: ObservableObject {
             let grant = try await authBroker.start(baseURL: baseURL)
             let session = try await apiClient.exchangeGrant(baseURL: baseURL, grant: grant)
             try tokenStore.save(token: session.accessToken)
+            hasSession = true
             athleteName = session.athlete.name
             await refresh()
         } catch {
@@ -68,6 +73,7 @@ final class AppModel: ObservableObject {
         guard let baseURL = normalizedBaseURL(), let token = tokenStore.readToken() else {
             athleteName = ""
             activities = []
+            hasSession = false
             return
         }
         isLoading = true
@@ -79,11 +85,14 @@ final class AppModel: ObservableObject {
             let (profile, feed) = try await (me, recent)
             athleteName = profile.athlete.name
             activities = feed.activities
+            syncStatus = feed.sync
+            nextCursor = feed.nextCursor
         } catch {
             errorMessage = error.localizedDescription
-            athleteName = ""
-            activities = []
-            tokenStore.clear()
+            if case APIError.server(401, _) = error {
+                signOut()
+                errorMessage = "Your session expired. Please sign in again."
+            }
         }
 
         isLoading = false
@@ -94,6 +103,30 @@ final class AppModel: ObservableObject {
         athleteName = ""
         activities = []
         errorMessage = ""
+        syncStatus = nil
+        nextCursor = nil
+        hasSession = false
+    }
+
+    func loadMore() async {
+        guard !isLoading, let before = nextCursor,
+              let baseURL = normalizedBaseURL(), let token = tokenStore.readToken() else { return }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let feed = try await apiClient.fetchActivities(baseURL: baseURL, accessToken: token, limit: 20, before: before)
+            let existing = Set(activities.map(\.id))
+            activities.append(contentsOf: feed.activities.filter { !existing.contains($0.id) })
+            nextCursor = feed.nextCursor
+            syncStatus = feed.sync
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func retryActivities() async {
+        guard let baseURL = normalizedBaseURL(), let token = tokenStore.readToken() else { return }
+        do {
+            syncStatus = try await apiClient.retryActivities(baseURL: baseURL, accessToken: token)
+        } catch { errorMessage = error.localizedDescription }
     }
 
     func handleOpenURL(_ url: URL) {

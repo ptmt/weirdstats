@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"weirdstats/internal/storage"
+	"weirdstats/internal/strava"
 )
 
 type mobileAthleteView struct {
@@ -38,10 +39,13 @@ type mobileMeResponse struct {
 }
 
 type mobileActivitiesResponse struct {
+	Sync       *SyncView            `json:"sync,omitempty"`
+	NextCursor string               `json:"next_cursor,omitempty"`
 	Activities []mobileActivityView `json:"activities"`
 }
 
 type mobileActivityView struct {
+	GPSStatus         string `json:"gps_status,omitempty"`
 	ID                int64  `json:"id"`
 	Name              string `json:"name"`
 	Type              string `json:"type"`
@@ -57,10 +61,10 @@ type mobileActivityView struct {
 }
 
 type mobileAuthStartResponse struct {
-	AppOAuthURL     string `json:"app_oauth_url"`
-	WebOAuthURL     string `json:"web_oauth_url"`
-	CallbackScheme  string `json:"callback_scheme"`
-	RedirectURI     string `json:"redirect_uri"`
+	AppOAuthURL    string `json:"app_oauth_url"`
+	WebOAuthURL    string `json:"web_oauth_url"`
+	CallbackScheme string `json:"callback_scheme"`
+	RedirectURI    string `json:"redirect_uri"`
 }
 
 type mobileOAuthStatePayload struct {
@@ -196,8 +200,8 @@ func (s *Server) buildMobileOAuthStart(r *http.Request, appRedirect string) (mob
 	params.Set("redirect_uri", redirectURI)
 	params.Set("response_type", "code")
 	params.Set("state", state)
-	params.Set("approval_prompt", "auto")
-	params.Set("scope", "read,activity:read_all,activity:write")
+	params.Set("approval_prompt", "force")
+	params.Set("scope", strava.RequestedScopes)
 
 	webOAuthURL := webEndpoint + "?" + params.Encode()
 	appParams := url.Values{}
@@ -261,7 +265,7 @@ func (s *Server) StravaMobileCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := s.connectStravaUser(r.Context(), r.URL.Query().Get("code"))
+	userID, err := s.connectStravaUser(r.Context(), r.URL.Query().Get("code"), r.URL.Query().Get("scope"))
 	if err != nil {
 		http.Redirect(w, r, appendQueryValue(appRedirect, "error", compactForLog(err.Error(), 64)), http.StatusFound)
 		return
@@ -369,7 +373,17 @@ func (s *Server) MobileActivities(w http.ResponseWriter, r *http.Request) {
 		limit = 100
 	}
 
-	activities, err := s.store.ListActivitiesWithStats(r.Context(), userID, limit)
+	cursor, err := parseActivityCursor(r.URL.Query().Get("before"))
+	if err != nil {
+		http.Error(w, "invalid activity cursor", 400)
+		return
+	}
+	activities, err := s.store.ListActivitiesPage(r.Context(), userID, limit+1, time.Time{}, time.Time{}, cursor)
+	nextCursor := ""
+	if len(activities) > limit {
+		activities = activities[:limit]
+		nextCursor = nextActivityCursor(activities[limit-1].Activity)
+	}
 	if err != nil {
 		http.Error(w, "failed to load activities", http.StatusInternalServerError)
 		return
@@ -379,7 +393,12 @@ func (s *Server) MobileActivities(w http.ResponseWriter, r *http.Request) {
 	for _, activity := range activities {
 		items = append(items, buildMobileActivityView(activity))
 	}
-	writeJSON(w, http.StatusOK, mobileActivitiesResponse{Activities: items})
+	syncView, err := s.syncView(r.Context(), userID)
+	if err != nil {
+		http.Error(w, "failed to load import status", 500)
+		return
+	}
+	writeJSON(w, http.StatusOK, mobileActivitiesResponse{Activities: items, Sync: &syncView, NextCursor: nextCursor})
 }
 
 func buildMobileAthleteView(token storage.StravaToken) mobileAthleteView {
@@ -404,6 +423,7 @@ func buildMobileActivityView(activity storage.ActivityWithStats) mobileActivityV
 		StopCount:         activity.StopCount,
 		LightStops:        activity.TrafficLightStopCount,
 		RoadCrossings:     activity.RoadCrossingCount,
+		GPSStatus:         activity.GPSStatus,
 		DetectedFactCount: detectedFactCount,
 		PhotoURL:          activity.PhotoURL,
 	}

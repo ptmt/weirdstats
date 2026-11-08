@@ -51,14 +51,14 @@ credentials. Debug symbols are retained as workflow artifacts for 30 days.
 ### First-time Apple setup
 
 1. In your paid Apple Developer account, register the explicit App ID
-   `com.ptmt.weirdstats`, then create an iOS app record with that bundle ID in
+   `com.potomushto.weirdstats`, then create an iOS app record with that bundle ID in
    [App Store Connect](https://appstoreconnect.apple.com/). Keep the bundle ID
    consistent with `project.yml` and `scripts/signing_metadata.py`.
 2. Create an **Apple Distribution** certificate. Export the certificate **with
    its private key** from Keychain Access as a password-protected `.p12` file.
    The Apple Development certificate used for local device builds is insufficient.
 3. Create an **App Store Connect distribution provisioning profile** for
-   `com.ptmt.weirdstats` and that distribution certificate. Download the
+   `com.potomushto.weirdstats` and that distribution certificate. Download the
    `.mobileprovision` file. CI checks its app ID, team, type, and expiry.
    See [Apple's manual signing instructions](https://help.apple.com/xcode/mac/current/en.lproj/devcac6ab5b3.html).
 4. In App Store Connect → Users and Access → Integrations → App Store Connect
