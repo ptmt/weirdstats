@@ -224,7 +224,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.ptmt.weirdstats;
+				PRODUCT_BUNDLE_IDENTIFIER = com.potomushto.weirdstats;
 				PRODUCT_NAME = WeirdStats;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.1;
@@ -246,7 +246,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.ptmt.weirdstats;
+				PRODUCT_BUNDLE_IDENTIFIER = com.potomushto.weirdstats;
 				PRODUCT_NAME = WeirdStats;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.1;

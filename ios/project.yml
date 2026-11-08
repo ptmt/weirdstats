@@ -1,6 +1,6 @@
 name: WeirdStats
 options:
-  bundleIdPrefix: com.ptmt
+  bundleIdPrefix: com.potomushto
 configs:
   Debug: debug
   Release: release
@@ -17,7 +17,7 @@ targets:
       path: WeirdStats/Info.plist
       properties:
         CFBundleURLTypes:
-          - CFBundleURLName: com.ptmt.weirdstats.auth
+          - CFBundleURLName: com.potomushto.weirdstats.auth
             CFBundleURLSchemes:
               - weirdstats
         LSApplicationQueriesSchemes:
@@ -32,7 +32,7 @@ targets:
           - UIInterfaceOrientationPortrait
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.ptmt.weirdstats
+        PRODUCT_BUNDLE_IDENTIFIER: com.potomushto.weirdstats
         PRODUCT_NAME: WeirdStats
         SWIFT_VERSION: 5.10
         CURRENT_PROJECT_VERSION: 1
