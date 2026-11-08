@@ -3,3 +3,12 @@ weirdstats.db
 tmp
 .DS_Store
 .idea
+
+# Local iOS builds and signing credentials
+ios/build/
+ios/DerivedData/
+**/xcuserdata/
+*.p12
+*.p8
+*.mobileprovision
+__pycache__/

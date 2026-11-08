@@ -7,12 +7,14 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0863E37878CBA98A273E9ABB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5D39554DD5BB68D2F99C00DA /* Assets.xcassets */; };
 		09D785566584ADA3767B5001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17C19AD589121BF86B37C05 /* ContentView.swift */; };
 		0EB262200283E8B41FDB1AD8 /* AuthSessionBroker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A148120F32A48E095AE5A2AC /* AuthSessionBroker.swift */; };
 		2909B966F2B80B069AA4EF95 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72A4881C8173EE70A41794A4 /* AppModel.swift */; };
 		4886B20EED6C061A3912D774 /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 666A1D8D0FCF11A17266C522 /* WelcomeView.swift */; };
 		5B44EBE66EE74C2CF3F5032F /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A99C1329B8F6DFCEED7D596 /* APIClient.swift */; };
 		93BB67927522DC5CFE5F5BF7 /* KeychainTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6C36EB7E3AE6C04C9A0A486 /* KeychainTokenStore.swift */; };
+		B49638D811BE9B8CC7FE1016 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 50F253A82674780B0FC041FD /* PrivacyInfo.xcprivacy */; };
 		D5AD5A25D5B0FDCFF602172C /* WeirdStatsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 004409E3A4C1CADA776F8A15 /* WeirdStatsApp.swift */; };
 		FBB3A55B856DFDC50CAB7972 /* weirdstats.png in Resources */ = {isa = PBXBuildFile; fileRef = 04F31F3F83B1004304F19510 /* weirdstats.png */; };
 /* End PBXBuildFile section */
@@ -22,6 +24,8 @@
 		04F31F3F83B1004304F19510 /* weirdstats.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = weirdstats.png; sourceTree = "<group>"; };
 		3D3E462001615D350BEAB740 /* WeirdStats.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = WeirdStats.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4A99C1329B8F6DFCEED7D596 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		50F253A82674780B0FC041FD /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		5D39554DD5BB68D2F99C00DA /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		666A1D8D0FCF11A17266C522 /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		72A4881C8173EE70A41794A4 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		A148120F32A48E095AE5A2AC /* AuthSessionBroker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthSessionBroker.swift; sourceTree = "<group>"; };
@@ -54,10 +58,12 @@
 			children = (
 				4A99C1329B8F6DFCEED7D596 /* APIClient.swift */,
 				72A4881C8173EE70A41794A4 /* AppModel.swift */,
+				5D39554DD5BB68D2F99C00DA /* Assets.xcassets */,
 				A148120F32A48E095AE5A2AC /* AuthSessionBroker.swift */,
 				F17C19AD589121BF86B37C05 /* ContentView.swift */,
 				EBBE467A8F7BE6E69C2AEF77 /* Info.plist */,
 				F6C36EB7E3AE6C04C9A0A486 /* KeychainTokenStore.swift */,
+				50F253A82674780B0FC041FD /* PrivacyInfo.xcprivacy */,
 				004409E3A4C1CADA776F8A15 /* WeirdStatsApp.swift */,
 				666A1D8D0FCF11A17266C522 /* WelcomeView.swift */,
 			);
@@ -131,6 +137,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0863E37878CBA98A273E9ABB /* Assets.xcassets in Resources */,
+				B49638D811BE9B8CC7FE1016 /* PrivacyInfo.xcprivacy in Resources */,
 				FBB3A55B856DFDC50CAB7972 /* weirdstats.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -227,7 +235,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.potomushto.weirdstats;
 				PRODUCT_NAME = WeirdStats;
 				SDKROOT = iphoneos;
-				SWIFT_VERSION = 5.1;
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
@@ -249,7 +257,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.potomushto.weirdstats;
 				PRODUCT_NAME = WeirdStats;
 				SDKROOT = iphoneos;
-				SWIFT_VERSION = 5.1;
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
