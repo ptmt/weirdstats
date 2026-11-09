@@ -59,6 +59,7 @@ type Server struct {
 }
 
 type ActivityView struct {
+	ProcessingLabel   string
 	GPSStatus         string
 	ID                int64
 	Name              string

@@ -131,7 +131,8 @@ type UserFactMetricHistory struct {
 }
 
 type ActivityWithStats struct {
-	GPSStatus string
+	ProcessingStatus string
+	GPSStatus        string
 	Activity
 	StopCount             int
 	StopTotalSeconds      int
@@ -2125,7 +2126,12 @@ SELECT a.id,
 	s.stop_total_seconds,
 	s.traffic_light_stop_count,
 	s.road_crossing_count,
- CASE WHEN a.streams_fetched=1 AND NOT EXISTS(SELECT 1 FROM activity_points p WHERE p.activity_id=a.id) THEN 'GPS data unavailable; route statistics cannot be calculated.' ELSE '' END
+ CASE WHEN a.streams_fetched=1 AND NOT EXISTS(SELECT 1 FROM activity_points p WHERE p.activity_id=a.id) THEN 'GPS data unavailable; route statistics cannot be calculated.' ELSE '' END,
+ CASE
+ WHEN s.activity_id IS NULL THEN CASE WHEN (SELECT status FROM jobs WHERE user_id=a.user_id AND activity_id=a.id AND type='process_activity' ORDER BY id DESC LIMIT 1) IN ('failed','blocked') THEN 'analysis_error' ELSE 'analysis_pending' END
+ WHEN (SELECT status FROM jobs WHERE user_id=a.user_id AND activity_id=a.id AND type='enrich_activity' ORDER BY id DESC LIMIT 1) IN ('failed','blocked') THEN 'maps_error'
+ WHEN (SELECT status FROM jobs WHERE user_id=a.user_id AND activity_id=a.id AND type='enrich_activity' ORDER BY id DESC LIMIT 1) IN ('queued','running','retry','waiting') THEN 'maps_pending'
+ ELSE '' END
 FROM activities a
 LEFT JOIN activity_stats s ON s.activity_id = a.id
 WHERE a.user_id = ?
@@ -2190,6 +2196,7 @@ func scanActivityWithStatsRows(rows *sql.Rows) ([]ActivityWithStats, error) {
 			&trafficLightStopCount,
 			&roadCrossingCount,
 			&item.GPSStatus,
+			&item.ProcessingStatus,
 		); err != nil {
 			return nil, err
 		}

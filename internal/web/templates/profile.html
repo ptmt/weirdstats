@@ -197,6 +197,7 @@
                 <span aria-hidden="true">→</span>
               </a>
             </div>
+            {{if .ProcessingLabel}}<span class="pill" role="status">{{.ProcessingLabel}}</span>{{end}}
             {{if .GPSStatus}}<p class="muted">{{.GPSStatus}}</p>{{end}}
             {{if or .HasPower .StopCount .LightStops .RoadCrossings}}
             <details class="activity-extra">

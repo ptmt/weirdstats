@@ -106,6 +106,16 @@ struct MobileActivity: Decodable, Identifiable {
     let roadCrossings: Int
     let detectedFactCount: Int
     let gpsStatus: String?
+    let processingStatus: String?
+    var processingLabel: String? {
+        switch processingStatus {
+        case "analysis_pending": return "Analysis pending"
+        case "analysis_error": return "Analysis unavailable"
+        case "maps_pending": return "Map details pending"
+        case "maps_error": return "Map details unavailable"
+        default: return nil
+        }
+    }
     let photoURL: String?
 
     private enum CodingKeys: String, CodingKey {
@@ -125,6 +135,7 @@ struct MobileActivity: Decodable, Identifiable {
         case detectedFactCount = "detected_fact_count"
         case photoURL = "photo_url"
         case gpsStatus = "gps_status"
+        case processingStatus = "processing_status"
     }
 }
 

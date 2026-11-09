@@ -140,6 +140,12 @@ private struct ActivityCard: View {
                 Text(activity.startTime.prefix(10))
             }.font(.caption).foregroundStyle(.secondary)
             Text(activity.name).font(.title3.bold()).fixedSize(horizontal: false, vertical: true)
+            if let label = activity.processingLabel {
+                Label(label, systemImage: activity.processingStatus?.hasSuffix("error") == true ? "exclamationmark.circle" : "clock")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(Color(.tertiarySystemFill), in: Capsule())
+            }
             RoutePreview(activity: activity).frame(height: 164).clipShape(RoundedRectangle(cornerRadius: 14))
             HStack(alignment: .firstTextBaseline) {
                 Text(activity.distance).font(.title2.bold())

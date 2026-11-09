@@ -126,6 +126,7 @@ func (s *Server) Activities(w http.ResponseWriter, r *http.Request) {
 			Duration:          formatDuration(activity.MovingTime),
 			HasStats:          activity.HasStats,
 			GPSStatus:         activity.GPSStatus,
+			ProcessingLabel:   activityProcessingLabel(activity.ProcessingStatus),
 			StopCount:         activity.StopCount,
 			StopTotal:         formatDuration(activity.StopTotalSeconds),
 			LightStops:        activity.TrafficLightStopCount,

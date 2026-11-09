@@ -2,6 +2,17 @@ import XCTest
 @testable import WeirdStats
 
 final class APITests: XCTestCase {
+    func testPerActivityProcessingBadgesPreserveMetricsAndLegacyCompatibility() throws {
+        let base = #"{"id":42,"name":"Saved ride","type":"Ride","type_label":"Ride","start_time":"2026-01-15T12:00:00Z","distance":"12 km","duration":"30m","stop_count":4,"light_stops":0,"road_crossings":0,"detected_fact_count":0"#
+        for (status, label) in [("analysis_pending", "Analysis pending"), ("analysis_error", "Analysis unavailable"), ("maps_pending", "Map details pending"), ("maps_error", "Map details unavailable")] {
+            let activity = try JSONDecoder().decode(MobileActivity.self, from: Data((base + ",\"processing_status\":\"\(status)\"}").utf8))
+            XCTAssertEqual(activity.processingLabel, label)
+            XCTAssertEqual(activity.stopCount, 4)
+            XCTAssertEqual(activity.distance, "12 km")
+        }
+        let legacy = try JSONDecoder().decode(MobileActivity.self, from: Data((base + "}").utf8))
+        XCTAssertNil(legacy.processingLabel)
+    }
     func testActivityFailureClassifiesOnlyOfflineAndKeepsOperation() {
         let offline = ActivityRefreshFailure(error: URLError(.notConnectedToInternet), operation: .refresh)
         XCTAssertEqual(offline.title, "You’re offline")

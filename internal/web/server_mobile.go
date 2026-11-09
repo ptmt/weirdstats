@@ -48,6 +48,7 @@ type mobileActivitiesResponse struct {
 }
 
 type mobileActivityView struct {
+	ProcessingStatus  string                `json:"processing_status,omitempty"`
 	Route             []routePreviewPoint   `json:"route"`
 	RouteStatus       string                `json:"route_status"`
 	Facts             []ActivityMapFactView `json:"facts"`
@@ -497,6 +498,7 @@ func buildMobileActivityView(activity storage.ActivityWithStats) mobileActivityV
 		LightStops:        activity.TrafficLightStopCount,
 		RoadCrossings:     activity.RoadCrossingCount,
 		GPSStatus:         activity.GPSStatus,
+		ProcessingStatus:  activity.ProcessingStatus,
 		DetectedFactCount: detectedFactCount,
 		PhotoURL:          activity.PhotoURL,
 	}
