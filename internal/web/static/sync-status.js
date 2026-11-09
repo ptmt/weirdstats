@@ -36,12 +36,16 @@
       ? `${newActivities} new ${newActivities === 1 ? 'activity' : 'activities'}` : status.label;
     summary.setAttribute('aria-label', 'Activity import status: ' + document.getElementById('sync-label').textContent);
     document.getElementById('sync-message').textContent = status.message;
-    document.getElementById('sync-counts').textContent = `${status.completed} processed · ${status.pending} waiting`
-      + (status.failed ? ` · ${status.failed} failed attempts` : '');
+    document.getElementById('sync-counts').textContent = `${status.completed} imported and analyzed · ${status.pending} waiting`
+      + (status.failed ? ` · ${status.failed} import failures` : '')
+      + (status.map_failed ? ` · ${status.map_failed} map details unavailable` : '')
+      + (status.map_blocked ? ` · ${status.map_blocked} map details blocked` : '')
+      + (status.publishing_failed ? ` · ${status.publishing_failed} publishing failures` : '')
+      + (status.publishing_blocked ? ` · ${status.publishing_blocked} publishing blocked` : '');
     document.getElementById('sync-new-activities').hidden = newActivities === 0;
     document.getElementById('sync-discovering').hidden = !status.discovering;
-    document.getElementById('sync-reconnect').hidden = !status.blocked;
-    retry.hidden = !status.failed;
+    document.getElementById('sync-reconnect').hidden = !(status.blocked || status.publishing_blocked || status.map_blocked);
+    retry.hidden = !(status.failed || status.map_failed || status.publishing_failed);
     updateTime(status.next_run_at);
     document.getElementById('sync-errors').replaceChildren(...status.errors.map(error => {
       const p = document.createElement('p');
@@ -58,13 +62,25 @@
     }));
   }
 
-  async function loadStatus(method = 'GET') {
+  async function loadStatus(method = 'GET', url = '/api/sync') {
     const version = ++requestVersion;
-    const response = await fetch('/api/sync', { method });
+    const response = await fetch(url, { method, cache: 'no-store' });
     if (!response.ok) throw new Error('Could not load import status');
     const status = await response.json();
     if (version === requestVersion) render(status);
   }
+
+  const sync = document.getElementById('sync-strava');
+  sync.addEventListener('click', async () => {
+    sync.disabled = true;
+    sync.textContent = 'Requesting sync…';
+    try {
+      await loadStatus('POST', '/api/sync/latest');
+      sync.textContent = 'Sync with Strava';
+    } catch {
+      sync.textContent = 'Could not request sync. Try again.';
+    } finally { sync.disabled = false; }
+  });
 
   retry.addEventListener('click', async () => {
     retry.disabled = true;

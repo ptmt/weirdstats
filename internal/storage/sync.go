@@ -149,15 +149,19 @@ GROUP BY type,error_code,status ORDER BY MAX(updated_at) DESC,MAX(id) DESC`, use
 }
 
 type SyncStatus struct {
-	Enriching   int   `json:"enriching"`
-	Publishing  int   `json:"publishing"`
-	Pending     int   `json:"pending"`
-	Completed   int   `json:"completed"`
-	Failed      int   `json:"failed"`
-	Blocked     int   `json:"blocked"`
-	Waiting     int   `json:"waiting"`
-	Discovering int   `json:"discovering"`
-	NextRunAt   int64 `json:"next_run_at,omitempty"`
+	MapFailed         int   `json:"map_failed"`
+	MapBlocked        int   `json:"map_blocked"`
+	PublishingFailed  int   `json:"publishing_failed"`
+	PublishingBlocked int   `json:"publishing_blocked"`
+	Enriching         int   `json:"enriching"`
+	Publishing        int   `json:"publishing"`
+	Pending           int   `json:"pending"`
+	Completed         int   `json:"completed"`
+	Failed            int   `json:"failed"`
+	Blocked           int   `json:"blocked"`
+	Waiting           int   `json:"waiting"`
+	Discovering       int   `json:"discovering"`
+	NextRunAt         int64 `json:"next_run_at,omitempty"`
 }
 
 func (s *Store) UserSyncStatus(ctx context.Context, userID int64) (SyncStatus, error) {
@@ -165,12 +169,16 @@ func (s *Store) UserSyncStatus(ctx context.Context, userID int64) (SyncStatus, e
 	err := s.db.QueryRowContext(ctx, `SELECT
 COALESCE(SUM(type='process_activity' AND status IN ('queued','running','retry','waiting')),0),
 (SELECT COUNT(*) FROM activities a JOIN activity_stats s ON s.activity_id=a.id WHERE a.user_id=?),
-COALESCE(SUM(status='failed' AND `+currentJobPredicate+`),0), COALESCE(SUM(status='blocked' AND `+currentJobPredicate+`),0), COALESCE(SUM(status='waiting'),0),
+COALESCE(SUM(type IN ('process_activity','sync_activities_since','sync_latest') AND status='failed' AND `+currentJobPredicate+`),0), COALESCE(SUM(type IN ('process_activity','sync_activities_since','sync_latest') AND status='blocked' AND `+currentJobPredicate+`),0), COALESCE(SUM(type IN ('process_activity','sync_activities_since','sync_latest') AND status='waiting'),0),
 COALESCE(SUM(type IN ('sync_activities_since','sync_latest') AND status IN ('queued','running','retry','waiting')),0),
 COALESCE(MIN(CASE WHEN status IN ('waiting','retry') THEN next_run_at END),0),
 COALESCE(SUM(type='enrich_activity' AND status IN ('queued','running','retry')),0),
-COALESCE(SUM(type='apply_activity_rules' AND status IN ('queued','running','retry','waiting')),0)
-FROM jobs WHERE user_id=?`, userID, userID).Scan(&status.Pending, &status.Completed, &status.Failed, &status.Blocked, &status.Waiting, &status.Discovering, &status.NextRunAt, &status.Enriching, &status.Publishing)
+COALESCE(SUM(type='apply_activity_rules' AND status IN ('queued','running','retry','waiting')),0),
+COALESCE(SUM(type='enrich_activity' AND status='failed' AND `+currentJobPredicate+`),0),
+COALESCE(SUM(type='enrich_activity' AND status='blocked' AND `+currentJobPredicate+`),0),
+COALESCE(SUM(type='apply_activity_rules' AND status='failed' AND `+currentJobPredicate+`),0),
+COALESCE(SUM(type='apply_activity_rules' AND status='blocked' AND `+currentJobPredicate+`),0)
+FROM jobs WHERE user_id=?`, userID, userID).Scan(&status.Pending, &status.Completed, &status.Failed, &status.Blocked, &status.Waiting, &status.Discovering, &status.NextRunAt, &status.Enriching, &status.Publishing, &status.MapFailed, &status.MapBlocked, &status.PublishingFailed, &status.PublishingBlocked)
 	return status, err
 }
 

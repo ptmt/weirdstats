@@ -30,6 +30,8 @@ private struct ActivitiesView: View {
         ScrollView {
             LazyVStack(spacing: 18) {
                 if !model.errorMessage.isEmpty { ErrorNotice(message: model.errorMessage) { await model.refresh() } }
+                if let status = model.syncStatus { Text(status.message).font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("feed-sync-status") }
+                if model.isSyncing { ProgressView("Requesting Strava sync…") }
                 if model.isLoading && model.activities.isEmpty { ProgressView("Loading activities…").padding(40) }
                 if model.activities.isEmpty && !model.isLoading && model.errorMessage.isEmpty {
                     ContentUnavailableView("No activities yet", systemImage: "figure.run", description: Text("Imported Strava activities will appear here. Check import progress in Profile."))
@@ -47,8 +49,8 @@ private struct ActivitiesView: View {
         }
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Activities")
-        .refreshable { await model.refresh() }
-        .toolbar { Button { Task { await model.refresh() } } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("Refresh activities").disabled(model.isLoading) }
+        .refreshable { await model.syncWithStrava() }
+        .toolbar { Button("Sync with Strava") { Task { await model.syncWithStrava() } }.disabled(model.isLoading || model.isSyncing) }
     }
 }
 
@@ -273,18 +275,22 @@ private struct ProfileView: View {
             Section("Account") {
                 Label(model.athleteName.isEmpty ? "Your Strava account" : model.athleteName, systemImage: "person.crop.circle.fill")
                 LabeledContent("Backend", value: model.serverURLText).font(.caption)
-                Button("Refresh profile and activities") { Task { await model.refresh() } }.disabled(model.isLoading)
+                Button("Reload profile and imported activities") { Task { await model.refresh() } }.disabled(model.isLoading)
                 if model.isLoading { ProgressView("Refreshing…") }
             }
             Section("Activity import") {
+                Button("Sync with Strava") { Task { await model.syncWithStrava() } }.disabled(model.isSyncing || model.isLoading)
+                Text("Sync checks Strava for missing activities. Reload only reads saved activities.").font(.caption).foregroundStyle(.secondary)
                 if let sync = model.syncStatus {
                     Text(sync.message)
-                    Text("\(sync.completed) processed · \(sync.pending) waiting").foregroundStyle(.secondary)
-                    Text("\(sync.failed) failed · \(sync.blocked) blocked").font(.caption)
+                    Text("\(sync.completed) imported and analyzed · \(sync.pending) waiting").foregroundStyle(.secondary)
+                    Text("\(sync.failed) import failures · \(sync.blocked) import blocked").font(.caption)
+                    if sync.mapFailed + sync.mapBlocked > 0 { Text("\(sync.mapFailed + sync.mapBlocked) optional map details unavailable").font(.caption) }
+                    if sync.publishingFailed + sync.publishingBlocked > 0 { Text("\(sync.publishingFailed + sync.publishingBlocked) publishing updates need attention").font(.caption) }
                     if let next = sync.nextRunAt { Text("Next attempt: \(Date(timeIntervalSince1970: TimeInterval(next)).formatted())").font(.caption) }
                     ForEach(sync.errors) { error in Text("\(error.message) Reference #\(error.jobID)").font(.caption) }
-                    if sync.blocked > 0 { Button("Reconnect Strava") { Task { await model.signIn() } }.disabled(model.isAuthenticating) }
-                    if sync.failed > 0 { Button("Retry failed activities") { Task { await model.retryActivities() } } }
+                    if sync.blocked + sync.publishingBlocked + sync.mapBlocked > 0 { Button("Reconnect Strava") { Task { await model.signIn() } }.disabled(model.isAuthenticating) }
+                    if sync.canRetryWork { Button("Retry failed work") { Task { await model.retryActivities() } } }
                 } else { Text("Refresh to check your import status.").foregroundStyle(.secondary) }
             }
             if !model.errorMessage.isEmpty { Section("Connection") { ErrorNotice(message: model.errorMessage) { await model.refresh() } } }

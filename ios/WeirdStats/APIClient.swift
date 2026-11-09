@@ -54,9 +54,26 @@ struct MobileSyncStatus: Decodable {
     let blocked: Int
     let nextRunAt: Int64?
     let errors: [MobileSyncError]
+    private let mapFailureCount: Int?
+    private let mapBlockedCount: Int?
+    private let publishingFailureCount: Int?
+    private let publishingBlockedCount: Int?
+    private let discoveryCount: Int?
+    var discovering: Int { discoveryCount ?? 0 }
+    var isImporting: Bool { pending > 0 || discovering > 0 }
+    var mapFailed: Int { mapFailureCount ?? 0 }
+    var mapBlocked: Int { mapBlockedCount ?? 0 }
+    var publishingFailed: Int { publishingFailureCount ?? 0 }
+    var publishingBlocked: Int { publishingBlockedCount ?? 0 }
+    var canRetryWork: Bool { failed + mapFailed + publishingFailed > 0 }
 
     private enum CodingKeys: String, CodingKey {
+        case discoveryCount = "discovering"
         case message, pending, completed, failed, blocked, errors
+        case mapFailureCount = "map_failed"
+        case mapBlockedCount = "map_blocked"
+        case publishingFailureCount = "publishing_failed"
+        case publishingBlockedCount = "publishing_blocked"
         case nextRunAt = "next_run_at"
     }
 }
@@ -159,6 +176,13 @@ final class APIClient {
         let detail = try await perform(request, as: MobileActivityDetail.self)
         guard detail.activity.id == id else { throw APIError.invalidResponse }
         return detail
+    }
+
+    func syncLatest(baseURL: URL, accessToken: String) async throws -> MobileSyncStatus {
+        var request = URLRequest(url: baseURL.appending(path: "/api/sync/latest"))
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        return try await perform(request, as: MobileSyncStatus.self)
     }
 
     func retryActivities(baseURL: URL, accessToken: String) async throws -> MobileSyncStatus {

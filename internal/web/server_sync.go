@@ -115,6 +115,14 @@ func (s *Server) syncView(ctx context.Context, userID int64) (SyncView, error) {
 		view.NextRunAt = until.Unix()
 		view.Label, view.State = "Waiting for Strava", "waiting"
 	}
+	if (status.MapFailed > 0 || status.MapBlocked > 0) && status.Pending == 0 && status.Discovering == 0 {
+		view.Message = "Imported activities and analysis are available. Optional map details could not be completed."
+		view.Label, view.State = "Map details unavailable", "attention"
+	}
+	if (status.PublishingFailed > 0 || status.PublishingBlocked > 0) && status.Pending == 0 && status.Discovering == 0 {
+		view.Message = "Imported activities and analysis are available. Publishing updates to Strava needs attention."
+		view.Label, view.State = "Publishing needs attention", "attention"
+	}
 	if status.Failed > 0 {
 		view.Message = "Some activities need attention. Completed analysis is available."
 		view.Label, view.State = fmt.Sprintf("%d need attention", status.Failed), "attention"
@@ -183,6 +191,33 @@ func (s *Server) SyncStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, view)
+}
+
+// SyncLatest requests discovery only; retries and optional enrichment are separate.
+func (s *Server) SyncLatest(w http.ResponseWriter, r *http.Request) {
+	userID, ok := s.requireAPIUserID(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if _, bearer := s.currentBearerUserID(r.Context(), r); !bearer && !sameOriginRequest(r) {
+		http.Error(w, "invalid origin", http.StatusForbidden)
+		return
+	}
+	if err := s.store.RequestLatestSync(r.Context(), userID); err != nil {
+		http.Error(w, "could not request sync", 500)
+		return
+	}
+	view, err := s.syncView(r.Context(), userID)
+	if err != nil {
+		http.Error(w, "could not load sync status", 500)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusAccepted, view)
 }
 
 func sameOriginRequest(r *http.Request) bool {

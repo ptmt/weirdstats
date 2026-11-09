@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -276,8 +275,7 @@ func (c *OverpassClient) runQueryOnce(ctx context.Context, base string, query st
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, resp.StatusCode, fmt.Errorf("overpass status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, resp.StatusCode, &ResponseError{StatusCode: resp.StatusCode}
 	}
 
 	var decoded overpassResponse
@@ -550,21 +548,12 @@ type cacheEntry struct {
 }
 
 func isRetryable(status int, err error) bool {
-	if status == http.StatusTooManyRequests || status == http.StatusBadGateway || status == http.StatusServiceUnavailable || status == http.StatusGatewayTimeout {
-		return true
+	// Never move a rate-limited query to another public instance.
+	if status != 0 {
+		return status >= 500 && status <= 599
 	}
-	var netErr interface{ Temporary() bool }
-	if errors.As(err, &netErr) && netErr.Temporary() {
-		return true
-	}
-	var timeoutErr interface{ Timeout() bool }
-	if errors.As(err, &timeoutErr) && timeoutErr.Timeout() {
-		return true
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-	return false
+	cause, _ := SafeError(err)
+	return cause == "connection_refused" || cause == "dns" || cause == "transport" || cause == "timeout"
 }
 
 // WithAccessCheck revalidates consent and activity access before each external request.

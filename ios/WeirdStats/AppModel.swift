@@ -6,6 +6,8 @@ final class AppModel: ObservableObject {
     @Published var serverURLText: String
     @Published var athleteName = ""
     @Published var activities: [MobileActivity] = []
+    @Published var isSyncing = false
+    private var syncPoll: Task<Void, Never>?
     @Published var isLoading = false
     @Published var isAuthenticating = false
     @Published var errorMessage = ""
@@ -161,7 +163,37 @@ final class AppModel: ObservableObject {
         isLoading = false
     }
 
+    func syncWithStrava() async {
+        guard !isSyncing, !isEmptyUITest, let baseURL = normalizedBaseURL(), let token = accessToken else { return }
+        let generation = sessionGeneration
+        isSyncing = true
+        defer { if generation == sessionGeneration { isSyncing = false } }
+        errorMessage = ""
+        do {
+            let status = try await apiClient.syncLatest(baseURL: baseURL, accessToken: token)
+            guard generation == sessionGeneration, !Task.isCancelled else { return }
+            syncStatus = status
+            await refresh()
+            syncPoll?.cancel()
+            syncPoll = Task { [weak self] in
+                // Only GET the saved feed after the explicit POST; never auto-enqueue.
+                for _ in 0..<12 {
+                    guard let self, generation == self.sessionGeneration, self.syncStatus?.isImporting == true else { return }
+                    do { try await Task.sleep(nanoseconds: 5_000_000_000) } catch { return }
+                    guard !Task.isCancelled, generation == self.sessionGeneration else { return }
+                    await self.refresh()
+                }
+            }
+        } catch {
+            guard generation == sessionGeneration else { return }
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func signOut() {
+        syncPoll?.cancel()
+        syncPoll = nil
+        isSyncing = false
         sessionGeneration = UUID()
         authRequest = UUID()
         authBroker.cancel()

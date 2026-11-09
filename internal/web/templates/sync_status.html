@@ -11,15 +11,17 @@
         <button type="button" id="sync-close" aria-label="Close import details"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button>
       </div>
       <p id="sync-message">{{.Sync.Message}}</p>
-      <p class="muted" id="sync-counts">{{.Sync.Completed}} processed · {{.Sync.Pending}} waiting{{if .Sync.Failed}} · {{.Sync.Failed}} failed attempts{{end}}</p>
+      <p class="muted" id="sync-counts">{{.Sync.Completed}} imported and analyzed · {{.Sync.Pending}} waiting{{if .Sync.Failed}} · {{.Sync.Failed}} import failures{{end}}{{if .Sync.MapFailed}} · {{.Sync.MapFailed}} map details unavailable{{end}}{{if .Sync.MapBlocked}} · {{.Sync.MapBlocked}} map details blocked{{end}}{{if .Sync.PublishingFailed}} · {{.Sync.PublishingFailed}} publishing failures{{end}}{{if .Sync.PublishingBlocked}} · {{.Sync.PublishingBlocked}} publishing blocked{{end}}</p>
       <p class="muted" id="sync-discovering" {{if not .Sync.Discovering}}hidden{{end}}>Still finding activities in Strava.</p>
       <p class="muted" id="sync-next" {{if not .Sync.NextRunAt}}hidden{{end}}>Next attempt: <time data-unix="{{.Sync.NextRunAt}}">{{.Sync.NextRunAt}}</time></p>
       <div class="sync-errors" id="sync-errors">{{range .Sync.Errors}}<p>{{if gt .Count 1}}<strong>{{.Count}} attempts: </strong>{{end}}{{.Message}} <small>Reference #{{.JobID}}</small></p>{{end}}</div>
       <div class="sync-actions">
-        <a class="btn secondary small" id="sync-new-activities" href="/activities/" hidden>Refresh activities</a>
-        <a class="btn secondary small" id="sync-reconnect" href="/connect/strava?force=1" {{if not .Sync.Blocked}}hidden{{end}}>Reconnect Strava</a>
-        <button class="btn secondary small" type="button" id="retry-import" {{if not .Sync.Failed}}hidden{{end}}>Retry failed work</button>
+        <button class="btn secondary small" type="button" id="sync-strava">Sync with Strava</button>
+        <a class="btn secondary small" id="sync-new-activities" href="/activities/" hidden>Reload imported activities</a>
+        <a class="btn secondary small" id="sync-reconnect" href="/connect/strava?force=1" {{if not (or .Sync.Blocked .Sync.PublishingBlocked .Sync.MapBlocked)}}hidden{{end}}>Reconnect Strava</a>
+        <button class="btn secondary small" type="button" id="retry-import" {{if not (or .Sync.Failed .Sync.MapFailed .Sync.PublishingFailed)}}hidden{{end}}>Retry failed work</button>
       </div>
+      <p class="muted">Reloading does not fetch new activities from Strava.</p>
       <a class="sync-settings" href="/activities/settings">Processing preferences <span aria-hidden="true">→</span></a>
     </section>
   </details>

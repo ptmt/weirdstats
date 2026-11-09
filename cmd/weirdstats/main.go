@@ -131,6 +131,7 @@ func main() {
 	mux.HandleFunc("/api/mobile/session/exchange", webServer.MobileSessionExchange)
 	mux.HandleFunc("/api/mobile/me", webServer.MobileMe)
 	mux.HandleFunc("/api/sync", webServer.SyncStatus)
+	mux.HandleFunc("/api/sync/latest", webServer.SyncLatest)
 	mux.HandleFunc("/api/mobile/activities", webServer.MobileActivities)
 	mux.HandleFunc("/api/mobile/activities/", webServer.MobileActivityDetail)
 	mux.HandleFunc("/activity/", webServer.Activity)

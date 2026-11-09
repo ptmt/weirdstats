@@ -1229,23 +1229,7 @@ func (s *Server) enqueueLatestJob(ctx context.Context, userID int64) error {
 	if s.store == nil {
 		return fmt.Errorf("store not configured")
 	}
-	payload := jobs.SyncLatestPayload{UserID: userID}
-	payloadJSON, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	cursorJSON, err := json.Marshal(jobs.SyncLatestCursor{})
-	if err != nil {
-		return err
-	}
-	_, err = s.store.CreateJob(ctx, storage.Job{
-		Type:        jobs.JobTypeSyncLatest,
-		Payload:     string(payloadJSON),
-		Cursor:      string(cursorJSON),
-		MaxAttempts: 10,
-		NextRunAt:   time.Now(),
-	})
-	return err
+	return s.store.RequestLatestSync(ctx, userID)
 }
 
 func (s *Server) buildJobViews(ctx context.Context, userID int64) []JobView {

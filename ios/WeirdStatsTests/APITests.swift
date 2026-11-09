@@ -2,6 +2,52 @@ import XCTest
 @testable import WeirdStats
 
 final class APITests: XCTestCase {
+    func testOptionalMapErrorsAreNotFailedActivitiesAndLegacyFieldsDefault() throws {
+        let current = Data(#"{"message":"Imported. Map details unavailable.","pending":0,"completed":7,"failed":0,"blocked":0,"map_failed":7,"publishing_failed":0,"publishing_blocked":0,"errors":[]}"#.utf8)
+        let status = try JSONDecoder().decode(MobileSyncStatus.self, from: current)
+        XCTAssertEqual(status.mapFailed, 7)
+        XCTAssertEqual(status.failed, 0)
+        XCTAssertTrue(status.canRetryWork)
+        let legacy = Data(#"{"message":"Up to date","pending":0,"completed":7,"failed":0,"blocked":0,"errors":[]}"#.utf8)
+        let old = try JSONDecoder().decode(MobileSyncStatus.self, from: legacy)
+        XCTAssertEqual(old.mapFailed, 0)
+        XCTAssertFalse(old.canRetryWork)
+    }
+
+    @MainActor func testRefreshOnlyReloadsImportedFeedAndDoesNotEnqueueStravaWork() async {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [HeldProtocol.self]
+        HeldProtocol.requests = []
+        let model = AppModel(apiClient: APIClient(session: URLSession(configuration: config)), tokenProvider: { "test-only" })
+        let task = Task { await model.refresh() }
+        while HeldProtocol.requests.count < 2 { await Task.yield() }
+        XCTAssertEqual(Set(HeldProtocol.requests.map { $0.request.httpMethod ?? "" }), ["GET"])
+        XCTAssertEqual(HeldProtocol.requests.count, 2)
+        XCTAssertEqual(Set(HeldProtocol.requests.compactMap { $0.request.url?.path }), ["/api/mobile/me", "/api/mobile/activities"])
+        for request in HeldProtocol.requests { request.finish(status: 500, body: "test response") }
+        await task.value
+        XCTAssertFalse(model.isLoading)
+    }
+
+    @MainActor func testSyncRequestsOwnerEndpointBeforeReload() async {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [HeldProtocol.self]
+        HeldProtocol.requests = []
+        let model = AppModel(apiClient: APIClient(session: URLSession(configuration: config)), tokenProvider: { "test-only" })
+        let task = Task { await model.syncWithStrava() }
+        while HeldProtocol.requests.isEmpty { await Task.yield() }
+        let request = HeldProtocol.requests[0]
+        XCTAssertEqual(request.request.httpMethod, "POST")
+        XCTAssertEqual(request.request.url?.path, "/api/sync/latest")
+        XCTAssertNil(request.request.url?.query)
+        XCTAssertEqual(request.request.value(forHTTPHeaderField: "Authorization"), "Bearer test-only")
+        request.finish(status: 202, body: #"{"message":"Finding activities","pending":0,"completed":0,"failed":0,"blocked":0,"discovering":0,"errors":[]}"#)
+        while HeldProtocol.requests.count < 3 { await Task.yield() }
+        for request in HeldProtocol.requests.dropFirst() { request.finish(status: 500, body: "test response") }
+        await task.value
+        XCTAssertFalse(model.isSyncing)
+    }
+
     func testLegacyBackendDoesNotInventRoutesOrFacts() throws {
         let data = Data(#"{"activities":[{"id":42,"name":"Virtual Ride","type":"VirtualRide","type_label":"Virtual ride","start_time":"2026-01-15T12:00:00Z","distance":"1 km","duration":"10m","stop_count":0,"light_stops":0,"road_crossings":0,"detected_fact_count":0}]}"#.utf8)
         let feed = try JSONDecoder().decode(MobileActivities.self, from: data)

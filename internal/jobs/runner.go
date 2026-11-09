@@ -44,7 +44,10 @@ type SyncLatestPayload struct {
 }
 
 type SyncLatestCursor struct {
-	Enqueued int `json:"enqueued"`
+	Enqueued   int   `json:"enqueued"`
+	Page       int   `json:"page"`
+	BeforeUnix int64 `json:"before_unix"`
+	AfterUnix  int64 `json:"after_unix"`
 }
 
 type ProcessActivityPayload struct {
@@ -235,13 +238,61 @@ func (r *Runner) handleSyncLatest(ctx context.Context, job storage.Job) error {
 	if payload.UserID == 0 {
 		return r.Store.MarkJobFailed(ctx, job.ID, job.Cursor, "missing user id")
 	}
-	count, err := r.Ingestor.SyncLatestActivity(ctx, payload.UserID)
+	if payload.UserID != job.UserID {
+		return r.Store.MarkJobFailed(ctx, job.ID, job.Cursor, "Invalid discovery owner.")
+	}
+	var cursor SyncLatestCursor
+	if err := json.Unmarshal([]byte(job.Cursor), &cursor); err != nil {
+		return r.Store.MarkJobFailed(ctx, job.ID, job.Cursor, "Invalid discovery cursor.")
+	}
+	if cursor.Page <= 0 {
+		cursor.Page = 1
+	}
+	if cursor.BeforeUnix == 0 {
+		cursor.BeforeUnix = time.Now().Unix()
+		cursor.AfterUnix, err = r.Store.LatestSyncAfter(ctx, job.UserID)
+		if err != nil {
+			return err
+		}
+	}
+	// Persist the fixed time range before any network request, including failures.
+	raw, _ := json.Marshal(cursor)
+	job.Cursor = string(raw)
+	if err = r.Store.DeferJob(ctx, job.ID, job.Cursor, "running", "", "", time.Now()); err != nil {
+		return err
+	}
+	client, err := r.Ingestor.ClientForUser(ctx, job.UserID)
 	if err != nil {
 		return r.markJobRetry(ctx, job, SyncSinceCursor{}, err)
 	}
-	cursor := SyncLatestCursor{Enqueued: count}
-	cursorJSON, _ := json.Marshal(cursor)
-	return r.Store.MarkJobCompleted(ctx, job.ID, string(cursorJSON))
+	workCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	const perPage = 50
+	activities, err := client.ListActivities(workCtx, time.Unix(cursor.AfterUnix, 0), time.Unix(cursor.BeforeUnix, 0), cursor.Page, perPage)
+	if err != nil {
+		return r.markJobRetry(ctx, job, SyncSinceCursor{}, err)
+	}
+	var children []storage.Job
+	for _, activity := range activities {
+		exists, err := r.Store.HasActivityForUser(ctx, job.UserID, activity.ID)
+		if err != nil {
+			return err
+		}
+		if exists {
+			continue
+		}
+		body, _ := json.Marshal(ProcessActivityPayload{ActivityID: activity.ID, UserID: job.UserID})
+		children = append(children, storage.Job{Type: JobTypeProcessActivity, UserID: job.UserID, ActivityID: activity.ID, ParentID: job.ID, Payload: string(body), MaxAttempts: 10})
+		cursor.Enqueued++
+	}
+	status := "queued"
+	if len(activities) < perPage {
+		status = "completed"
+	} else {
+		cursor.Page++
+	}
+	raw, _ = json.Marshal(cursor)
+	return r.Store.EnqueueSyncPage(ctx, job, children, string(raw), status, time.Now().Add(2*time.Second))
 }
 
 func (r *Runner) handleProcessActivity(ctx context.Context, job storage.Job) error {
@@ -359,7 +410,10 @@ func (r *Runner) markJobRetry(ctx context.Context, job storage.Job, cursor SyncS
 		code, message = "authorization_required", "Reconnect Strava to continue."
 	}
 	var apiCause *strava.APIError
-	if errors.As(err, &apiCause) {
+	if job.Type == JobTypeEnrichActivity {
+		cause, status := maps.SafeError(err)
+		log.Printf("job id=%d user_id=%d type=%s error_code=%s attempt=%d cause=%s http_status=%d", job.ID, job.UserID, job.Type, code, job.Attempts+1, cause, status)
+	} else if errors.As(err, &apiCause) {
 		log.Printf("job id=%d user_id=%d type=%s error_code=%s attempt=%d http_status=%d request_id=%q read_short=%d/%d read_daily=%d/%d", job.ID, job.UserID, job.Type, code, job.Attempts+1, apiCause.StatusCode, apiCause.RequestID, apiCause.RateLimit.ReadUsageShort, apiCause.RateLimit.ReadLimitShort, apiCause.RateLimit.ReadUsageLong, apiCause.RateLimit.ReadLimitLong)
 	} else {
 		log.Printf("job id=%d user_id=%d type=%s error_code=%s attempt=%d", job.ID, job.UserID, job.Type, code, job.Attempts+1)
