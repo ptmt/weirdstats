@@ -7,6 +7,12 @@ struct WeirdStatsApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                #if DEBUG
+                .preferredColorScheme(ProcessInfo.processInfo.arguments.contains("--ui-test-dark") ? .dark : nil)
+                .transformEnvironment(\.dynamicTypeSize) { size in
+                    if ProcessInfo.processInfo.arguments.contains("--ui-test-large-type") { size = .accessibility5 }
+                }
+                #endif
                 .environmentObject(model)
                 .task {
                     await model.bootstrap()

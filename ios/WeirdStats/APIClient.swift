@@ -193,6 +193,15 @@ final class APIClient {
     }
 
     private func perform<T: Decodable>(_ request: URLRequest, as type: T.Type) async throws -> T {
+        #if DEBUG
+        // Explicit transport fixture for UI tests; never supplies synthetic production data.
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-offline") {
+            throw URLError(.notConnectedToInternet)
+        }
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-sync-offline"), request.httpMethod == "POST" {
+            throw URLError(.notConnectedToInternet)
+        }
+        #endif
         let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.invalidResponse

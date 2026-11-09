@@ -1,6 +1,67 @@
 import XCTest
 
 final class NavigationTests: XCTestCase {
+    func testOfflineEmptyStateLight() { verifyOffline(dark: false, largeText: false) }
+    func testOfflineEmptyStateDark() { verifyOffline(dark: true, largeText: false) }
+    func testOfflineEmptyStateAccessibility() { verifyOffline(dark: false, largeText: true) }
+
+    private func verifyOffline(dark: Bool, largeText: Bool) {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-offline", "--ui-test-server", "http://127.0.0.1:1", "--ui-test-token", "synthetic-only",
+                               "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+                               "-UIUserInterfaceStyle", dark ? "Dark" : "Light"]
+        if dark { app.launchArguments += ["--ui-test-dark"] }
+        if largeText { app.launchArguments += ["--ui-test-large-type"] }
+        app.launch()
+        app.tabBars.buttons["Activities"].tap()
+        let title = app.staticTexts["You’re offline"]
+        let retry = app.buttons["activity-refresh-retry"]
+        XCTAssertTrue(title.waitForExistence(timeout: 8))
+        XCTAssertTrue(retry.isHittable)
+        XCTAssertGreaterThanOrEqual(retry.frame.height, 44)
+        XCTAssertTrue(app.buttons["Sync with Strava"].exists)
+        XCTAssertLessThan(app.buttons["Sync with Strava"].frame.width, 80)
+        XCTAssertGreaterThan(title.frame.minY, app.navigationBars.firstMatch.frame.maxY + 40)
+        XCTAssertFalse(app.staticTexts["No activities yet"].exists)
+        XCTAssertFalse(app.staticTexts["Couldn’t refresh"].exists)
+        save(app, "offline-\(dark ? "dark" : "light")-\(largeText ? "accessibility" : "default")-synthetic-fixture")
+        retry.tap()
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+    }
+
+    func testLoadedFeedSurvivesOfflineRefresh() throws {
+        let server = try RideTestServer()
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-server", server.url, "--ui-test-token", "synthetic-only", "--ui-test-offline-after-load"]
+        app.launch()
+        app.tabBars.buttons["Activities"].tap()
+        XCTAssertTrue(app.buttons["activity-card-42"].waitForExistence(timeout: 8))
+        let scroll = app.scrollViews.firstMatch
+        scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.25))
+            .press(forDuration: 0.1, thenDragTo: scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.8)))
+        XCTAssertTrue(app.staticTexts["You’re offline"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["activity-card-42"].exists)
+        XCTAssertTrue(app.buttons["activity-refresh-retry"].isHittable)
+        save(app, "offline-loaded-feed-synthetic-fixture")
+        app.buttons["activity-refresh-retry"].tap()
+        XCTAssertTrue(app.staticTexts["You’re offline"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["activity-card-42"].exists)
+    }
+
+    func testSyncFailureKeepsFeedAndOffersExplicitSyncRetry() throws {
+        let server = try RideTestServer()
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-server", server.url, "--ui-test-token", "synthetic-only", "--ui-test-sync-offline"]
+        app.launch()
+        app.tabBars.buttons["Activities"].tap()
+        XCTAssertTrue(app.buttons["activity-card-42"].waitForExistence(timeout: 8))
+        app.buttons["Sync with Strava"].tap()
+        XCTAssertTrue(app.staticTexts["You’re offline"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["activity-refresh-retry"].label, "Retry sync")
+        XCTAssertTrue(app.buttons["activity-card-42"].exists)
+        save(app, "offline-sync-loaded-feed-synthetic-fixture")
+    }
+
     func testEveryActivityAndFactNavigatesToItsOwnDetail() throws {
         let server = try RideTestServer()
         let app = XCUIApplication()

@@ -26,31 +26,107 @@ struct ContentView: View {
 
 private struct ActivitiesView: View {
     @EnvironmentObject private var model: AppModel
+    private var isBusy: Bool { model.isLoading || model.isSyncing }
+
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 18) {
-                if !model.errorMessage.isEmpty { ErrorNotice(message: model.errorMessage) { await model.refresh() } }
-                if let status = model.syncStatus { Text(status.message).font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("feed-sync-status") }
-                if model.isSyncing { ProgressView("Requesting Strava sync…") }
-                if model.isLoading && model.activities.isEmpty { ProgressView("Loading activities…").padding(40) }
-                if model.activities.isEmpty && !model.isLoading && model.errorMessage.isEmpty {
-                    ContentUnavailableView("No activities yet", systemImage: "figure.run", description: Text("Imported Strava activities will appear here. Check import progress in Profile."))
+        GeometryReader { geometry in
+            ScrollView {
+                if model.activities.isEmpty {
+                    VStack(spacing: 16) {
+                        if let failure = model.activityFailure {
+                            ContentUnavailableView {
+                                Label(failure.title, systemImage: failure.systemImage)
+                            } description: {
+                                Text(failure.detail)
+                            } actions: {
+                                retryButton(failure)
+                            }
+                        } else if model.isLoading {
+                            ProgressView("Loading activities…")
+                        } else {
+                            ContentUnavailableView("No activities yet", systemImage: "figure.run", description: Text("Imported Strava activities will appear here. Check import progress in Profile."))
+                        }
+                        if model.isSyncing { CompactRefreshStatus(message: "Requesting Strava sync…", isWorking: true) }
+                        else if model.activityFailure == nil, let status = model.syncStatus {
+                            CompactRefreshStatus(message: status.message, isWorking: status.isImporting)
+                                .accessibilityIdentifier("feed-sync-status")
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: geometry.size.height)
+                } else {
+                    LazyVStack(spacing: 18) {
+                        if let failure = model.activityFailure {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Label(failure.title, systemImage: failure.systemImage).font(.subheadline.weight(.semibold))
+                                Text("\(failure.detail) Your loaded activities are still available.")
+                                    .font(.subheadline).foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                retryButton(failure).buttonStyle(.bordered)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(16)
+                            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+
+                        } else if model.isSyncing {
+                            CompactRefreshStatus(message: "Requesting Strava sync…", isWorking: true)
+                        } else if let status = model.syncStatus {
+                            CompactRefreshStatus(message: status.message, isWorking: status.isImporting)
+                                .accessibilityIdentifier("feed-sync-status")
+                        }
+                        ForEach(model.activities) { activity in
+                            NavigationLink { ActivityDetailView(activityID: activity.id) } label: { ActivityCard(activity: activity) }
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier("activity-card-\(activity.id)")
+                        }
+                        if model.nextCursor != nil {
+                            Button("Load older activities") { Task { await model.loadMore() } }.disabled(isBusy)
+                        }
+                        if model.isLoading { CompactRefreshStatus(message: "Refreshing activities…", isWorking: true) }
+                    }.padding()
                 }
-                ForEach(model.activities) { activity in
-                    NavigationLink { ActivityDetailView(activityID: activity.id) } label: { ActivityCard(activity: activity) }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("activity-card-\(activity.id)")
-                }
-                if model.nextCursor != nil {
-                    Button("Load older activities") { Task { await model.loadMore() } }.disabled(model.isLoading)
-                }
-                if model.isLoading && !model.activities.isEmpty { ProgressView() }
-            }.padding()
+            }
+            .background(Color(.systemGroupedBackground))
+            .refreshable { await model.refresh() }
         }
-        .background(Color(.systemGroupedBackground))
         .navigationTitle("Activities")
-        .refreshable { await model.syncWithStrava() }
-        .toolbar { Button("Sync with Strava") { Task { await model.syncWithStrava() } }.disabled(model.isLoading || model.isSyncing) }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { Task { await model.syncWithStrava() } } label: {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .accessibilityLabel("Sync with Strava")
+                .accessibilityHint("Checks Strava for missing activities")
+                .disabled(isBusy)
+            }
+        }
+    }
+
+    private func retryButton(_ failure: ActivityRefreshFailure) -> some View {
+        Button { Task { await model.retryActivityFailure() } } label: {
+            Text(isBusy ? "Trying again…" : failure.retryTitle)
+                .frame(minHeight: 44).padding(.horizontal, 16)
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(isBusy)
+        .accessibilityIdentifier("activity-refresh-retry")
+    }
+}
+
+// A quiet, wrapping status row, shared by empty and populated feed states.
+struct CompactRefreshStatus: View {
+    let message: String
+    var isWorking = false
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            if isWorking { ProgressView().controlSize(.mini).accessibilityHidden(true) }
+            Text(message).font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 }
 

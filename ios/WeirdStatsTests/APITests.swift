@@ -2,6 +2,21 @@ import XCTest
 @testable import WeirdStats
 
 final class APITests: XCTestCase {
+    func testActivityFailureClassifiesOnlyOfflineAndKeepsOperation() {
+        let offline = ActivityRefreshFailure(error: URLError(.notConnectedToInternet), operation: .refresh)
+        XCTAssertEqual(offline.title, "You’re offline")
+        XCTAssertEqual(offline.systemImage, "wifi.slash")
+        XCTAssertEqual(offline.operation, .refresh)
+        XCTAssertEqual(offline.retryTitle, "Try again")
+        let sync = ActivityRefreshFailure(error: URLError(.timedOut), operation: .sync)
+        XCTAssertEqual(sync.title, "Couldn’t sync with Strava")
+        XCTAssertEqual(sync.retryTitle, "Retry sync")
+        XCTAssertNotEqual(sync.systemImage, "wifi.slash")
+        let backend = ActivityRefreshFailure(error: APIError.server(503, "private diagnostic wall"), operation: .refresh)
+        XCTAssertEqual(backend.title, "Couldn’t load activities")
+        XCTAssertFalse(backend.detail.contains("private diagnostic wall"))
+    }
+
     func testOptionalMapErrorsAreNotFailedActivitiesAndLegacyFieldsDefault() throws {
         let current = Data(#"{"message":"Imported. Map details unavailable.","pending":0,"completed":7,"failed":0,"blocked":0,"map_failed":7,"publishing_failed":0,"publishing_blocked":0,"errors":[]}"#.utf8)
         let status = try JSONDecoder().decode(MobileSyncStatus.self, from: current)
@@ -12,6 +27,70 @@ final class APITests: XCTestCase {
         let old = try JSONDecoder().decode(MobileSyncStatus.self, from: legacy)
         XCTAssertEqual(old.mapFailed, 0)
         XCTAssertFalse(old.canRetryWork)
+    }
+
+    @MainActor func testOfflineRefreshPreservesLoadedFeedAndRetryOnlyUsesGET() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [HeldProtocol.self]
+        HeldProtocol.requests = []
+        let model = AppModel(apiClient: APIClient(session: URLSession(configuration: config)), tokenProvider: { "test-only" })
+        let feed = #"{"activities":[{"id":42,"name":"Saved fixture ride","type":"Ride","type_label":"Ride","start_time":"2026-01-15T12:00:00Z","distance":"1 km","duration":"10m","stop_count":0,"light_stops":0,"road_crossings":0,"detected_fact_count":0}],"next_cursor":"older"}"#
+        let first = Task { await model.refresh() }
+        while HeldProtocol.requests.count < 2 { await Task.yield() }
+        for request in HeldProtocol.requests {
+            request.finish(status: 200, body: request.request.url?.path == "/api/mobile/me" ? #"{"user_id":1,"connected":true,"athlete":{"id":1,"name":"Fixture"},"activities_url":"/api/mobile/activities"}"# : feed)
+        }
+        await first.value
+        XCTAssertEqual(model.activities.map(\.id), [42])
+        HeldProtocol.requests = []
+        let failed = Task { await model.refresh() }
+        while HeldProtocol.requests.count < 2 { await Task.yield() }
+        for request in HeldProtocol.requests { request.client?.urlProtocol(request, didFailWithError: URLError(.notConnectedToInternet)) }
+        await failed.value
+        XCTAssertEqual(model.activities.map(\.id), [42])
+        XCTAssertEqual(model.nextCursor, "older")
+        XCTAssertEqual(model.activityFailure?.title, "You’re offline")
+        XCTAssertEqual(model.activityFailure?.operation, .refresh)
+        XCTAssertFalse(model.isLoading)
+        HeldProtocol.requests = []
+        let retry = Task { await model.retryActivityFailure() }
+        while HeldProtocol.requests.count < 2 { await Task.yield() }
+        XCTAssertTrue(HeldProtocol.requests.allSatisfy { $0.request.httpMethod == "GET" })
+        for request in HeldProtocol.requests { request.finish(status: 500, body: "server diagnostic") }
+        await retry.value
+        XCTAssertEqual(model.activityFailure?.title, "Couldn’t load activities")
+        model.signOut()
+        XCTAssertNil(model.activityFailure)
+    }
+
+    @MainActor func testFailedSyncRetryExplicitlyPostsAndRefreshDoesNotLoseSyncError() async {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [HeldProtocol.self]
+        HeldProtocol.requests = []
+        let model = AppModel(apiClient: APIClient(session: URLSession(configuration: config)), tokenProvider: { "test-only" })
+        let sync = Task { await model.syncWithStrava() }
+        while HeldProtocol.requests.isEmpty { await Task.yield() }
+        HeldProtocol.requests[0].client?.urlProtocol(HeldProtocol.requests[0], didFailWithError: URLError(.notConnectedToInternet))
+        await sync.value
+        XCTAssertEqual(model.activityFailure?.operation, .sync)
+        XCTAssertEqual(model.activityFailure?.retryTitle, "Retry sync")
+        HeldProtocol.requests = []
+        let reload = Task { await model.refresh() }
+        while HeldProtocol.requests.count < 2 { await Task.yield() }
+        for request in HeldProtocol.requests {
+            request.finish(status: 200, body: request.request.url?.path == "/api/mobile/me" ? #"{"user_id":1,"connected":true,"athlete":{"id":1,"name":"Fixture"},"activities_url":"/api/mobile/activities"}"# : #"{"activities":[]}"#)
+        }
+        await reload.value
+        XCTAssertEqual(model.activityFailure?.operation, .sync, "Reading saved activities must not dismiss a failed Strava request")
+        HeldProtocol.requests = []
+        let retry = Task { await model.retryActivityFailure() }
+        while HeldProtocol.requests.isEmpty { await Task.yield() }
+        XCTAssertEqual(HeldProtocol.requests.count, 1)
+        XCTAssertEqual(HeldProtocol.requests[0].request.httpMethod, "POST")
+        XCTAssertEqual(HeldProtocol.requests[0].request.url?.path, "/api/sync/latest")
+        HeldProtocol.requests[0].finish(status: 503, body: "fixture failure")
+        await retry.value
+        XCTAssertEqual(model.activityFailure?.title, "Couldn’t sync with Strava")
     }
 
     @MainActor func testRefreshOnlyReloadsImportedFeedAndDoesNotEnqueueStravaWork() async {

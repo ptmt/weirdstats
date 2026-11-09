@@ -1,6 +1,28 @@
 import Foundation
 import SwiftUI
 
+struct ActivityRefreshFailure: Equatable {
+    enum Operation: Equatable { case refresh, loadMore, sync }
+    let operation: Operation
+    let isOffline: Bool
+
+    init(error: Error, operation: Operation) {
+        self.operation = operation
+        let error = error as NSError
+        isOffline = error.domain == NSURLErrorDomain && error.code == NSURLErrorNotConnectedToInternet
+    }
+    var title: String {
+        if isOffline { return "You’re offline" }
+        return operation == .sync ? "Couldn’t sync with Strava" : "Couldn’t load activities"
+    }
+    var detail: String {
+        if isOffline { return operation == .sync ? "Connect to the internet to sync with Strava." : "Connect to the internet to load your activities." }
+        return operation == .sync ? "Your sync request didn’t complete. Please try again." : "Your activities couldn’t be refreshed. Please try again."
+    }
+    var systemImage: String { isOffline ? "wifi.slash" : "arrow.clockwise" }
+    var retryTitle: String { operation == .sync ? "Retry sync" : "Try again" }
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     @Published var serverURLText: String
@@ -11,6 +33,7 @@ final class AppModel: ObservableObject {
     @Published var isLoading = false
     @Published var isAuthenticating = false
     @Published var errorMessage = ""
+    @Published private(set) var activityFailure: ActivityRefreshFailure?
     @Published var syncStatus: MobileSyncStatus?
     @Published var nextCursor: String?
     @Published private var hasSession = false
@@ -116,6 +139,7 @@ final class AppModel: ObservableObject {
             isLoading = false
             isLoadingHistory = false
             activities = []
+            activityFailure = nil
             history = nil
             historyError = ""
             nextCursor = nil
@@ -143,6 +167,11 @@ final class AppModel: ObservableObject {
         errorMessage = ""
 
         do {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--ui-test-offline-after-load"), !activities.isEmpty {
+                throw URLError(.notConnectedToInternet)
+            }
+            #endif
             async let me = apiClient.fetchMe(baseURL: baseURL, accessToken: token)
             async let recent = apiClient.fetchActivities(baseURL: baseURL, accessToken: token, limit: 20)
             let (profile, feed) = try await (me, recent)
@@ -151,9 +180,13 @@ final class AppModel: ObservableObject {
             activities = feed.activities
             syncStatus = feed.sync
             nextCursor = feed.nextCursor
+            if activityFailure?.operation != .sync { activityFailure = nil }
         } catch {
             guard generation == sessionGeneration else { return }
             errorMessage = error.localizedDescription
+            if activityFailure?.operation != .sync {
+                activityFailure = ActivityRefreshFailure(error: error, operation: .refresh)
+            }
             if case APIError.server(401, _) = error {
                 signOut()
                 errorMessage = "Your session expired. Please sign in again."
@@ -164,7 +197,7 @@ final class AppModel: ObservableObject {
     }
 
     func syncWithStrava() async {
-        guard !isSyncing, !isEmptyUITest, let baseURL = normalizedBaseURL(), let token = accessToken else { return }
+        guard !isSyncing, !isLoading, !isEmptyUITest, let baseURL = normalizedBaseURL(), let token = accessToken else { return }
         let generation = sessionGeneration
         isSyncing = true
         defer { if generation == sessionGeneration { isSyncing = false } }
@@ -173,6 +206,7 @@ final class AppModel: ObservableObject {
             let status = try await apiClient.syncLatest(baseURL: baseURL, accessToken: token)
             guard generation == sessionGeneration, !Task.isCancelled else { return }
             syncStatus = status
+            activityFailure = nil
             await refresh()
             syncPoll?.cancel()
             syncPoll = Task { [weak self] in
@@ -187,6 +221,7 @@ final class AppModel: ObservableObject {
         } catch {
             guard generation == sessionGeneration else { return }
             errorMessage = error.localizedDescription
+            activityFailure = ActivityRefreshFailure(error: error, operation: .sync)
         }
     }
 
@@ -205,6 +240,7 @@ final class AppModel: ObservableObject {
         athleteName = ""
         activities = []
         errorMessage = ""
+        activityFailure = nil
         syncStatus = nil
         nextCursor = nil
         historyRequest = UUID()
@@ -252,7 +288,22 @@ final class AppModel: ObservableObject {
             activities.append(contentsOf: feed.activities.filter { !existing.contains($0.id) })
             nextCursor = feed.nextCursor
             syncStatus = feed.sync
-        } catch { if generation == sessionGeneration { errorMessage = error.localizedDescription } }
+            if activityFailure?.operation == .loadMore { activityFailure = nil }
+        } catch {
+            if generation == sessionGeneration {
+                errorMessage = error.localizedDescription
+                if activityFailure?.operation != .sync { activityFailure = ActivityRefreshFailure(error: error, operation: .loadMore) }
+            }
+        }
+    }
+
+    func retryActivityFailure() async {
+        guard !isLoading, !isSyncing, let failure = activityFailure else { return }
+        switch failure.operation {
+        case .refresh: await refresh()
+        case .loadMore: await loadMore()
+        case .sync: await syncWithStrava()
+        }
     }
 
     func retryActivities() async {
