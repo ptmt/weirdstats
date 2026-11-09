@@ -9,6 +9,28 @@ final class APITests: XCTestCase {
         XCTAssertNil(feed.activities[0].facts)
     }
 
+    func testMonthGridUsesMondayFirstDatesAndPreservesServerDays() {
+        let leapDay = HistoryDay(date: "2024-02-29", tooltip: "Server effort", level: 7, inRange: true)
+        let padding = HistoryDay(date: "2023-12-31", tooltip: "Outside year", level: 0, inRange: false)
+        let months = YearCalendarMonth.make(year: 2024, days: [padding, leapDay])
+        XCTAssertEqual(months.map(\.id), Array(1...12))
+        XCTAssertEqual(months[0].cells.first?.date, "2024-01-01") // Monday
+        XCTAssertEqual(months[1].cells.prefix(3).filter { $0.date == nil }.count, 3) // Thursday
+        let feb29 = months[1].cells.first { $0.date == "2024-02-29" }
+        XCTAssertEqual(feb29?.day?.tooltip, "Server effort")
+        XCTAssertEqual(feb29?.day?.level, 7)
+        XCTAssertEqual(months[1].cells.firstIndex { $0.date == "2024-02-29" }! % 7, 3)
+        XCTAssertEqual(months.flatMap(\.cells).compactMap(\.date).count, 366)
+        XCTAssertFalse(months.flatMap(\.cells).contains { $0.date == padding.date })
+        XCTAssertTrue(months.allSatisfy { $0.cells.count % 7 == 0 })
+        let common = YearCalendarMonth.make(year: 2025, days: [])
+        XCTAssertEqual(common.flatMap(\.cells).compactMap(\.date).count, 365)
+        XCTAssertFalse(common[1].cells.contains { $0.date == "2025-02-29" })
+        XCTAssertEqual(common[0].cells.firstIndex { $0.date == "2025-01-01" }, 2) // Wednesday
+        let century = YearCalendarMonth.make(year: 2100, days: [])
+        XCTAssertEqual(century.flatMap(\.cells).compactMap(\.date).count, 365)
+    }
+
     func testWebsiteCalendarWireFormat() throws {
         let data = Data(#"{"activities":[],"years":[2026,2024],"history":{"Year":2024,"TotalEffort":1.5,"Days":[{"Date":"2024-02-29","Tooltip":"Feb 29 · 1.5 effort","Level":3,"InRange":true}]}}"#.utf8)
         let feed = try JSONDecoder().decode(MobileActivities.self, from: data)

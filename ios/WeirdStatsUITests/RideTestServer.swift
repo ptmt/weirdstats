@@ -33,6 +33,23 @@ final class RideTestServer {
             object = ["user_id": 1, "connected": true, "athlete": ["id": 1, "name": "UI test account"], "activities_url": "/api/mobile/activities"]
         } else if path == "/api/mobile/activities/42" || path == "/api/mobile/activities/43" {
             object = ["activity": activity(path.hasSuffix("42") ? 42 : 43), "stops": [], "stats_status": "available", "stop_total": "0s"]
+        } else if path.contains("year=") {
+            let components = URLComponents(string: "http://fixture\(path)")
+            let year = Int(components?.queryItems?.first(where: { $0.name == "year" })?.value ?? "") ?? 2024
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+            let start = calendar.date(from: DateComponents(year: year, month: 1, day: 1))!
+            let count = calendar.range(of: .day, in: .year, for: start)!.count
+            let days: [[String: Any]] = (0..<count).map { offset in
+                let date = calendar.date(byAdding: .day, value: offset, to: start)!
+                let c = calendar.dateComponents([.month, .day], from: date)
+                let key = String(format: "%04d-%02d-%02d", year, c.month!, c.day!)
+                let tooltip = c.month == 1 && c.day == 1 ? "Jan 1 · 2.5 effort hours · fixture" :
+                    (c.month == 2 && c.day == 29 ? "Feb 29 · 1.5 effort hours · fixture" : "\(key) · synthetic fixture")
+                return ["Date": key, "Tooltip": tooltip, "Level": offset % 9, "InRange": true]
+            }
+            object = ["activities": [], "years": [2025, 2024],
+                      "history": ["Year": year, "TotalEffort": year == 2024 ? 4.0 : 3.0, "Days": days]]
         } else { object = ["activities": [activity(42), activity(43)]] }
         return String(data: try! JSONSerialization.data(withJSONObject: object), encoding: .utf8)!
     }

@@ -107,68 +107,131 @@ private struct RoutePreview: View {
     }
 }
 
+// Presentation only: keep the server's effort, tooltips and range flags unchanged.
+// Gregorian UTC date components avoid device timezone/DST and calendar drift.
+struct YearCalendarMonth: Identifiable {
+    struct Cell: Identifiable {
+        let id: Int
+        let date: String?
+        let number: Int?
+        let day: HistoryDay?
+    }
+    let id: Int
+    let title: String
+    let cells: [Cell]
+
+    static func make(year: Int, days: [HistoryDay]) -> [YearCalendarMonth] {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale.current
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let stored = Dictionary(days.map { ($0.date, $0) }, uniquingKeysWith: { first, _ in first })
+        return (1...12).map { month in
+            let start = calendar.date(from: DateComponents(year: year, month: month, day: 1))!
+            let count = calendar.range(of: .day, in: .month, for: start)!.count
+            let offset = (calendar.component(.weekday, from: start) + 5) % 7
+            let cellCount = ((offset + count + 6) / 7) * 7
+            let cells = (0..<cellCount).map { index -> Cell in
+                let number = index - offset + 1
+                guard (1...count).contains(number) else {
+                    return Cell(id: index, date: nil, number: nil, day: nil)
+                }
+                let date = String(format: "%04d-%02d-%02d", year, month, number)
+                return Cell(id: index, date: date, number: number, day: stored[date])
+            }
+            return YearCalendarMonth(id: month, title: calendar.monthSymbols[month - 1], cells: cells)
+        }
+    }
+}
+
 private struct YearView: View {
     @EnvironmentObject private var model: AppModel
     @AppStorage("weirdstats.selected-year") private var year = Calendar.current.component(.year, from: Date())
     @State private var selectedDay: HistoryDay?
-    private func monthLabel(_ date: String) -> String {
-        guard let number = Int(date.dropFirst(5).prefix(2)), (1...12).contains(number) else { return "" }
-        return Calendar.current.shortMonthSymbols[number - 1]
+    @ScaledMetric(relativeTo: .body) private var dayHeight = 44
+    private let columns = Array(repeating: GridItem(.flexible(minimum: 0), spacing: 4), count: 7)
+
+    private var yearPicker: some View {
+        Picker("Year", selection: $year) {
+            ForEach(Array(Set(model.years + [year])).sorted(by: >), id: \.self) { Text(String($0)).tag($0) }
+        }.pickerStyle(.menu).accessibilityIdentifier("year-picker")
     }
+
+    private func annualTotal(_ history: MobileHistory) -> some View {
+        Text("\(history.totalEffort, specifier: "%.1f") effort hours")
+            .font(.headline).fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("annual-effort")
+    }
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                Text("Your year in motion").font(.title2.bold())
-                Text("The same effort calendar as WeirdStats on the web. Every square is one day, including activities without GPS.")
-                    .font(.subheadline).foregroundStyle(.secondary)
-                Picker("Year", selection: $year) {
-                    ForEach(Array(Set(model.years + [year])).sorted(by: >), id: \.self) { Text(String($0)).tag($0) }
-                }.pickerStyle(.menu)
+        ScrollView(.vertical) {
+            LazyVStack(alignment: .leading, spacing: 24) {
+                ViewThatFits(in: .horizontal) {
+                    HStack {
+                        yearPicker
+                        Spacer(minLength: 12)
+                        if let history = model.history, history.year == year { annualTotal(history) }
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        yearPicker
+                        if let history = model.history, history.year == year { annualTotal(history) }
+                    }
+                }
                 if model.isLoadingHistory { ProgressView("Loading year…").frame(maxWidth: .infinity).padding() }
                 if !model.historyError.isEmpty { ErrorNotice(message: model.historyError) { await model.loadHistory(year: year) } }
                 if let history = model.history, history.year == year {
-                    Text("\(history.totalEffort, specifier: "%.1f") effort hours").font(.title.bold())
-                    HStack(alignment: .top, spacing: 8) {
-                        VStack(spacing: 5) {
-                            Color.clear.frame(height: 18)
-                            ForEach(["M", "T", "W", "T", "F", "S", "S"].indices, id: \.self) { index in
-                                Text(["M", "T", "W", "T", "F", "S", "S"][index]).font(.caption2).frame(width: 14, height: 22)
-                            }
-                        }.foregroundStyle(.secondary)
-                        ScrollView(.horizontal) {
-                            VStack(alignment: .leading, spacing: 5) {
-                                HStack(spacing: 5) {
-                                    ForEach(0..<((history.days.count + 6) / 7), id: \.self) { week in
-                                        let dates = history.days.dropFirst(week * 7).prefix(7)
-                                        Text(dates.first(where: { $0.date.hasSuffix("-01") }).map { monthLabel($0.date) } ?? "")
-                                            .font(.system(size: 10)).frame(width: 22, height: 18, alignment: .leading)
-                                    }
-                                }.foregroundStyle(.secondary)
-                                LazyHGrid(rows: Array(repeating: GridItem(.fixed(22), spacing: 5), count: 7), spacing: 5) {
-                                    ForEach(history.days) { day in
-                                        Button { selectedDay = day } label: {
-                                            RoundedRectangle(cornerRadius: 4)
-                                                .fill(day.inRange ? Color.purple.opacity(day.level == 0 ? 0.08 : min(1, 0.18 + Double(day.level) / 13)) : Color.clear)
-                                                .frame(width: 22, height: 22)
-                                                .overlay(RoundedRectangle(cornerRadius: 4).stroke(selectedDay?.id == day.id ? Color.primary : .clear, lineWidth: 2))
-                                        }.buttonStyle(.plain).accessibilityLabel(day.tooltip)
+                    ForEach(YearCalendarMonth.make(year: year, days: history.days)) { month in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(month.title).font(.title3.bold())
+                                .accessibilityAddTraits(.isHeader)
+                                .accessibilityIdentifier("year-month-\(month.id)")
+                            LazyVGrid(columns: columns, spacing: 4) {
+                                ForEach(0..<7) { index in
+                                    let weekday = (index + 1) % 7
+                                    Text(Calendar(identifier: .gregorian).veryShortWeekdaySymbols[weekday])
+                                        .font(.caption).foregroundStyle(.secondary)
+                                        .frame(maxWidth: .infinity).lineLimit(1).minimumScaleFactor(0.5)
+                                        .accessibilityLabel(Calendar(identifier: .gregorian).weekdaySymbols[weekday])
+                                }
+                                ForEach(month.cells) { cell in
+                                    if let number = cell.number {
+                                        Button { selectedDay = cell.day } label: {
+                                            Text(String(number)).font(.callout.monospacedDigit())
+                                                .lineLimit(1).minimumScaleFactor(0.6)
+                                                .frame(maxWidth: .infinity).frame(height: dayHeight)
+                                                .foregroundStyle(cell.day?.inRange == true ? Color.primary : Color.secondary)
+                                                .background(dayColor(cell.day), in: RoundedRectangle(cornerRadius: 8))
+                                                .overlay(RoundedRectangle(cornerRadius: 8).stroke(selectedDay?.id == cell.date ? Color.primary : .clear, lineWidth: 2))
+                                                .contentShape(Rectangle())
+                                        }.buttonStyle(.plain)
+                                            .disabled(cell.day == nil)
+                                            .accessibilityLabel(cell.day?.tooltip ?? cell.date ?? "")
+                                            .accessibilityIdentifier("year-day-\(cell.date ?? "")")
+                                    } else {
+                                        Color.clear.frame(height: dayHeight).accessibilityHidden(true)
                                     }
                                 }
                             }
+                            if let selectedDay, month.cells.contains(where: { $0.date == selectedDay.date }) {
+                                Text(selectedDay.tooltip).font(.callout)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .accessibilityIdentifier("selected-day-effort")
+                            }
                         }
                     }
-                    HStack { Text("Less"); ForEach(0..<6) { n in RoundedRectangle(cornerRadius: 3).fill(Color.purple.opacity(0.08 + Double(n) * 0.18)).frame(width: 14, height: 14) }; Text("More") }.font(.caption).foregroundStyle(.secondary)
-                    if let selectedDay { Text(selectedDay.tooltip).font(.callout) }
-                    Text("Swipe across to explore January–December. Tap a day for its effort. Effort uses the website’s normalized score, or moving hours when unavailable.")
-                        .font(.caption).foregroundStyle(.secondary)
                 } else if !model.isLoadingHistory && model.historyError.isEmpty {
-                    ContentUnavailableView("No history loaded", systemImage: "calendar", description: Text("Refresh to load your activity year from the server."))
+                    ContentUnavailableView("No history loaded", systemImage: "calendar")
                 }
-            }.padding()
+            }.padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 88)
         }
-        .navigationTitle("Year")
+        .accessibilityIdentifier("year-calendar")
+        .toolbar(.hidden, for: .navigationBar)
         .task(id: year) { selectedDay = nil; await model.loadHistory(year: year) }
         .refreshable { await model.loadHistory(year: year) }
+    }
+
+    private func dayColor(_ day: HistoryDay?) -> Color {
+        guard let day, day.inRange else { return Color(.tertiarySystemFill) }
+        return Color.purple.opacity(day.level == 0 ? 0.08 : min(1, 0.18 + Double(day.level) / 13))
     }
 }
 

@@ -187,8 +187,12 @@ import progress, reconnect/retry controls, refresh and sign-out.
   have separate explanatory placeholders.
 - The website uses an **effort calendar**, not a geographic annual route heatmap
   (`internal/web/templates/profile.html`). Year deliberately matches that design:
-  server-side full-year aggregation, year selector, Monday-first day grid, month
-  labels, intensity legend and selectable day tooltips. The same server function
+  server-side full-year aggregation and year selector with a compact annual total.
+  January–December now scroll vertically as full-width, Monday-first seven-column
+  month grids, with aligned numbered dates and selectable server day tooltips.
+  The Year tab alone hides its navigation header; no promotional/explanatory copy
+  or bulky legend appears. Dynamic Type can stack the year/total, and date targets
+  grow vertically without horizontal scrolling. The same server function
   owns timezone, normalized effort/moving-hour fallback, future-day handling and
   intensity levels. It does not aggregate only the currently loaded feed page.
 - Facts displays actual cached detected facts grouped by source activity. Older
