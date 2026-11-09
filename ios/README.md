@@ -167,9 +167,107 @@ xcodebuild -project ios/WeirdStats.xcodeproj -scheme WeirdStats \
 `scripts/testflight.sh` is intended for the disposable GitHub-hosted runner; it
 changes the runner's keychain search list. Apple signing and upload can only be
 verified with real distribution credentials. These build checks do not exercise
-Strava sign-in: the backend must remain reachable from testers' devices, and the
-client session JSON decoding issue identified in the iOS review still needs a
-separate fix before testers can sign in successfully.
+Strava sign-in: the backend must remain reachable from testers' devices. Native
+wire decoding is covered separately by `WeirdStatsTests`; a real Strava login and
+populated route rendering still need account-backed manual verification.
+
+## Native navigation and data
+
+The signed-in app has four independent navigation stacks: **Activities**, **Year**,
+**Facts**, and **Profile**. The last tab and selected year persist locally and reset
+on sign-out. Activities supports pull-to-refresh, an accessible refresh button,
+and cursor-based loading of older activities. Profile contains account/server,
+import progress, reconnect/retry controls, refresh and sign-out.
+
+### Maps, history, and facts
+
+- Activities renders actual stored GPS preview coordinates using iOS 17 MapKit
+  `MapPolyline`, in a fixed-height card. No sample route is inserted. Missing GPS,
+  virtual activities, route query failures, and older servers without route support
+  have separate explanatory placeholders.
+- The website uses an **effort calendar**, not a geographic annual route heatmap
+  (`internal/web/templates/profile.html`). Year deliberately matches that design:
+  server-side full-year aggregation, year selector, Monday-first day grid, month
+  labels, intensity legend and selectable day tooltips. The same server function
+  owns timezone, normalized effort/moving-hour fallback, future-day handling and
+  intensity levels. It does not aggregate only the currently loaded feed page.
+- Facts displays actual cached detected facts grouped by source activity. Older
+  pages can be loaded explicitly; this is a progressively loaded collection, not
+  a claimed account-wide total. Pending processing, unavailable legacy support
+  and read failures are distinguished. No facts are synthesized from counters.
+
+The existing authenticated `GET /api/mobile/activities` endpoint now includes
+`route`, `route_status`, `facts`, and `facts_status` per activity. The optional
+`year=YYYY` query filters the page and returns `history` (the shared website
+`ContributionData` wire representation) plus owner-scoped `years`. Existing
+clients remain compatible. `history` uses the website struct's capitalized keys;
+activity JSON uses the existing snake_case convention. Invalid/future years
+return 400. Bearer/session authentication and all ownership checks stay server-side.
+Route/fact lookups use IDs from the authenticated user's scoped activity page.
+No additional Strava requests, credentials, or permissions are introduced.
+
+Deploy the backend and app together for the new fields. Against an older server,
+the app shows honest unsupported states rather than invented routes/history/facts.
+
+### Per-activity details
+
+Every Activities card and every fact row opens its own independently fetched
+native detail screen (not a reused feed preview). Facts open with the associated
+segment/location highlighted. `GET /api/mobile/activities/{id}` is a new,
+owner-authenticated read-only endpoint with `Cache-Control: no-store`; another
+user's IDs and missing IDs both return 404. Deploy this backend change before
+expecting populated detail screens in the distributed app.
+
+The detail screen includes:
+
+- The complete stored GPS route in an interactive MapKit section, start/finish,
+  stored stop annotations, and selectable fact paths/locations. There is an
+  explicit no-GPS/virtual state; no routes are generated or substituted.
+- Date/time, activity type, distance and moving duration; website-formatted
+  speed/pace when distance and moving time exist; average HR/power only when
+  positive stored values exist. Elevation and elapsed duration are **not** in
+  the current storage model, so the app does not invent or display them.
+- Actual stored detected facts and segment summaries, stop durations/timing,
+  light/crossing classification, and website GPS-derived ride quarter splits
+  when the existing website pacing model considers the trace sufficient.
+- Independent loading, generic/private error messages, pull-to-refresh and retry.
+  A 404 explains missing/unowned/older-backend possibilities. Missing processing
+  is distinguished from processed-empty results.
+
+Detail requests are invalidated by navigation cancellation, a newer detail
+selection, logout, or account replacement. OAuth reconnect checks the session
+generation after both asynchronous stages before saving a credential; logout
+invalidates authentication and cancels the broker. Session replacement invalidates
+all previous feed/history/detail requests before loading the new account.
+
+### Tests and simulator evidence
+
+```bash
+xcodegen generate --spec ios/project.yml
+xcodebuild -project ios/WeirdStats.xcodeproj -scheme WeirdStats \
+  -destination 'platform=iOS Simulator,name=iPhone 18 Pro' \
+  -derivedDataPath "$HOME/.hermes/cache/scratch/weirdstats-build" \
+  CODE_SIGNING_ALLOWED=NO test
+go test ./...
+```
+
+`WeirdStatsTests` covers wire decoding, legacy fields, GPS validation, independent
+history/detail errors/loading, detail ID validation and selection races, cancellation,
+logout during both OAuth stages, and old refresh completion after session replacement.
+`WeirdStatsUITests` exercises all four tabs and persistence across relaunch. It also
+runs a loopback HTTP server **in the test target only** with explicitly synthetic
+ride fixtures, then opens both activity cards and a fact into separate detail
+screens, capturing a route and no-GPS screen. Those screenshots are fixture UI
+proof, not personal-account data or deployed-backend validation. DEBUG-only
+`--ui-test-server`/`--ui-test-token` arguments inject the test server/token in memory
+without saving or clearing user credentials. Release ignores these arguments.
+The DEBUG-only
+`--ui-test-empty` launch argument exposes an **empty** signed-in shell for UI tests:
+it supplies no token, GPS route, activity or fact and makes no authenticated API
+requests. Release builds ignore this argument. Screenshot evidence from that mode
+verifies navigation/empty states, not a real Strava account or map tiles. A real
+account login is still needed to manually verify populated GPS cards against the
+deployed backend; no test-only credentials or fabricated account data are bundled.
 
 ## Notes
 

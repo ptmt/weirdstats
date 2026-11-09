@@ -9,8 +9,23 @@ final class AuthSessionBroker: NSObject, ASWebAuthenticationPresentationContextP
     private var foregroundObserver: NSObjectProtocol?
     private var foregroundCancelTask: Task<Void, Never>?
 
+    private var generation = UUID()
+    func cancel() {
+        generation = UUID()
+        session?.cancel()
+        session = nil
+        foregroundCancelTask?.cancel()
+        foregroundCancelTask = nil
+        removeForegroundObserver()
+        let continuation = pendingExternalContinuation
+        pendingExternalContinuation = nil
+        continuation?.resume(throwing: AuthError.cancelled)
+    }
+
     func start(baseURL: URL) async throws -> String {
+        let requestGeneration = generation
         let launch = try await fetchLaunch(baseURL: baseURL)
+        guard requestGeneration == generation, !Task.isCancelled else { throw AuthError.cancelled }
         let callbackURL: URL
         if let appOAuthURL = URL(string: launch.appOAuthURL), UIApplication.shared.canOpenURL(appOAuthURL) {
             callbackURL = try await startWithStravaApp(appOAuthURL)

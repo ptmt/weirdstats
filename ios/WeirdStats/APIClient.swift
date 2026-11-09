@@ -34,12 +34,14 @@ struct MobileMe: Decodable {
 }
 
 struct MobileActivities: Decodable {
+    let history: MobileHistory?
+    let years: [Int]?
     let activities: [MobileActivity]
     let sync: MobileSyncStatus?
     let nextCursor: String?
 
     private enum CodingKeys: String, CodingKey {
-        case activities, sync
+        case activities, sync, history, years
         case nextCursor = "next_cursor"
     }
 }
@@ -71,6 +73,10 @@ struct MobileSyncError: Decodable, Identifiable {
 }
 
 struct MobileActivity: Decodable, Identifiable {
+    let route: [RoutePoint]?
+    let routeStatus: String?
+    let facts: [MobileFact]?
+    let factsStatus: String?
     let id: Int64
     let name: String
     let type: String
@@ -86,6 +92,9 @@ struct MobileActivity: Decodable, Identifiable {
     let photoURL: String?
 
     private enum CodingKeys: String, CodingKey {
+        case route, facts
+        case routeStatus = "route_status"
+        case factsStatus = "facts_status"
         case id
         case name
         case type
@@ -107,7 +116,8 @@ struct GrantExchangeRequest: Encodable {
 }
 
 final class APIClient {
-    private let session = URLSession.shared
+    private let session: URLSession
+    init(session: URLSession = .shared) { self.session = session }
     private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
 
@@ -126,9 +136,10 @@ final class APIClient {
         return try await perform(request, as: MobileMe.self)
     }
 
-    func fetchActivities(baseURL: URL, accessToken: String, limit: Int, before: String? = nil) async throws -> MobileActivities {
+    func fetchActivities(baseURL: URL, accessToken: String, limit: Int, before: String? = nil, year: Int? = nil) async throws -> MobileActivities {
         var components = URLComponents(url: baseURL.appending(path: "/api/mobile/activities"), resolvingAgainstBaseURL: false)
         components?.queryItems = [URLQueryItem(name: "limit", value: String(limit))]
+        if let year { components?.queryItems?.append(URLQueryItem(name: "year", value: String(year))) }
         if let before {
             components?.queryItems?.append(URLQueryItem(name: "before", value: before))
         }
@@ -138,6 +149,16 @@ final class APIClient {
         var request = URLRequest(url: url)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         return try await perform(request, as: MobileActivities.self)
+    }
+
+    func fetchActivityDetail(baseURL: URL, accessToken: String, id: Int64) async throws -> MobileActivityDetail {
+        guard id > 0 else { throw APIError.invalidURL }
+        var request = URLRequest(url: baseURL.appending(path: "/api/mobile/activities/\(id)"))
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        let detail = try await perform(request, as: MobileActivityDetail.self)
+        guard detail.activity.id == id else { throw APIError.invalidResponse }
+        return detail
     }
 
     func retryActivities(baseURL: URL, accessToken: String) async throws -> MobileSyncStatus {

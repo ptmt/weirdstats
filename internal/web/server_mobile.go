@@ -2,6 +2,7 @@ package web
 
 import (
 	"crypto/hmac"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -39,25 +40,31 @@ type mobileMeResponse struct {
 }
 
 type mobileActivitiesResponse struct {
+	History    *ContributionData    `json:"history,omitempty"`
+	Years      []int                `json:"years,omitempty"`
 	Sync       *SyncView            `json:"sync,omitempty"`
 	NextCursor string               `json:"next_cursor,omitempty"`
 	Activities []mobileActivityView `json:"activities"`
 }
 
 type mobileActivityView struct {
-	GPSStatus         string `json:"gps_status,omitempty"`
-	ID                int64  `json:"id"`
-	Name              string `json:"name"`
-	Type              string `json:"type"`
-	TypeLabel         string `json:"type_label"`
-	StartTime         string `json:"start_time"`
-	Distance          string `json:"distance"`
-	Duration          string `json:"duration"`
-	StopCount         int    `json:"stop_count"`
-	LightStops        int    `json:"light_stops"`
-	RoadCrossings     int    `json:"road_crossings"`
-	DetectedFactCount int    `json:"detected_fact_count"`
-	PhotoURL          string `json:"photo_url,omitempty"`
+	Route             []routePreviewPoint   `json:"route"`
+	RouteStatus       string                `json:"route_status"`
+	Facts             []ActivityMapFactView `json:"facts"`
+	FactsStatus       string                `json:"facts_status"`
+	GPSStatus         string                `json:"gps_status,omitempty"`
+	ID                int64                 `json:"id"`
+	Name              string                `json:"name"`
+	Type              string                `json:"type"`
+	TypeLabel         string                `json:"type_label"`
+	StartTime         string                `json:"start_time"`
+	Distance          string                `json:"distance"`
+	Duration          string                `json:"duration"`
+	StopCount         int                   `json:"stop_count"`
+	LightStops        int                   `json:"light_stops"`
+	RoadCrossings     int                   `json:"road_crossings"`
+	DetectedFactCount int                   `json:"detected_fact_count"`
+	PhotoURL          string                `json:"photo_url,omitempty"`
 }
 
 type mobileAuthStartResponse struct {
@@ -378,7 +385,40 @@ func (s *Server) MobileActivities(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid activity cursor", 400)
 		return
 	}
-	activities, err := s.store.ListActivitiesPage(r.Context(), userID, limit+1, time.Time{}, time.Time{}, cursor)
+	start, end := time.Time{}, time.Time{}
+	var history *ContributionData
+	var years []int
+	if raw := r.URL.Query().Get("year"); raw != "" {
+		year, parseErr := strconv.Atoi(raw)
+		if parseErr != nil || year < 1 || year > time.Now().Year() {
+			http.Error(w, "invalid activity history year", 400)
+			return
+		}
+		start = time.Date(year, time.January, 1, 0, 0, 0, 0, time.Local)
+		end = start.AddDate(1, 0, 0)
+		// Check the source error before using the shared website aggregation.
+		if _, err := s.store.ListActivityTimes(r.Context(), userID, start, end); err != nil {
+			http.Error(w, "failed to load activity history", 500)
+			return
+		}
+		value := s.buildContributionDataForYear(r.Context(), userID, year, time.Now())
+		history = &value
+		years, err = s.store.ListActivityYears(r.Context(), userID)
+		if err != nil {
+			http.Error(w, "failed to load activity years", 500)
+			return
+		}
+		found := false
+		for _, y := range years {
+			if y == time.Now().Year() {
+				found = true
+			}
+		}
+		if !found {
+			years = append([]int{time.Now().Year()}, years...)
+		}
+	}
+	activities, err := s.store.ListActivitiesPage(r.Context(), userID, limit+1, start, end, cursor)
 	nextCursor := ""
 	if len(activities) > limit {
 		activities = activities[:limit]
@@ -389,16 +429,49 @@ func (s *Server) MobileActivities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ids := make([]int64, 0, len(activities))
+	for _, a := range activities {
+		ids = append(ids, a.ID)
+	}
+	// IDs originate only from this authenticated user's scoped page.
+	routes, routeErr := s.store.ListActivityRoutePreviewPoints(r.Context(), ids, 96)
 	items := make([]mobileActivityView, 0, len(activities))
 	for _, activity := range activities {
-		items = append(items, buildMobileActivityView(activity))
+		item := buildMobileActivityView(activity)
+		item.Route = []routePreviewPoint{}
+		item.Facts = []ActivityMapFactView{}
+		item.RouteStatus = "unavailable"
+		if routeErr != nil {
+			item.RouteStatus = "error"
+		} else {
+			for _, p := range routes[activity.ID] {
+				item.Route = append(item.Route, routePreviewPoint{Lat: p.Lat, Lon: p.Lon})
+			}
+			if len(item.Route) > 1 {
+				item.RouteStatus = "available"
+			}
+		}
+		item.FactsStatus = "pending"
+		raw, _, factErr := s.store.GetActivityDetectedFacts(r.Context(), activity.ID)
+		if factErr != nil && factErr != sql.ErrNoRows {
+			item.FactsStatus = "error"
+		}
+		if factErr == nil && strings.TrimSpace(raw) != "" {
+			if json.Unmarshal([]byte(raw), &item.Facts) != nil {
+				item.FactsStatus = "error"
+				item.Facts = []ActivityMapFactView{}
+			} else {
+				item.FactsStatus = "available"
+			}
+		}
+		items = append(items, item)
 	}
 	syncView, err := s.syncView(r.Context(), userID)
 	if err != nil {
 		http.Error(w, "failed to load import status", 500)
 		return
 	}
-	writeJSON(w, http.StatusOK, mobileActivitiesResponse{Activities: items, Sync: &syncView, NextCursor: nextCursor})
+	writeJSON(w, http.StatusOK, mobileActivitiesResponse{Activities: items, Sync: &syncView, NextCursor: nextCursor, History: history, Years: years})
 }
 
 func buildMobileAthleteView(token storage.StravaToken) mobileAthleteView {

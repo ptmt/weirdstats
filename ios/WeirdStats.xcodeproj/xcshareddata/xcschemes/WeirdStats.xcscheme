@@ -39,7 +39,31 @@
          </BuildableReference>
       </MacroExpansion>
       <Testables>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "1D97CCE723DD40824A0631FA"
+               BuildableName = "WeirdStatsTests.xctest"
+               BlueprintName = "WeirdStatsTests"
+               ReferencedContainer = "container:WeirdStats.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "5158D27AB5E1493940CD4643"
+               BuildableName = "WeirdStatsUITests.xctest"
+               BlueprintName = "WeirdStatsUITests"
+               ReferencedContainer = "container:WeirdStats.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
+      <CommandLineArguments>
+      </CommandLineArguments>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"

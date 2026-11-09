@@ -47,6 +47,26 @@ targets:
         CURRENT_PROJECT_VERSION: 1
         MARKETING_VERSION: 0.1.0
         DEVELOPMENT_TEAM: ""
+  WeirdStatsTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources: [WeirdStatsTests]
+    dependencies:
+      - target: WeirdStats
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+  WeirdStatsUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources: [WeirdStatsUITests]
+    dependencies:
+      - target: WeirdStats
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
 schemes:
   WeirdStats:
     build:
@@ -54,5 +74,9 @@ schemes:
         WeirdStats: all
     run:
       config: Debug
+    test:
+      targets:
+        - WeirdStatsTests
+        - WeirdStatsUITests
     archive:
       config: Release
