@@ -17,7 +17,13 @@
 - The gesture harness waits for XCTest idle, so screenshots are completed-state evidence; delayed transport and model tests establish pending behavior rather than claiming the screenshots show an in-flight spinner.
 
 ## Release
-Pending publication. Apple processing, tester availability and account-backed Strava verification are separate from successful upload.
+Uploaded **0.1.0 (16.1)** from exact source `ca14eb2118e51dd516ad69850e94469f3c20767c`.
+- [Publish run 43693244947](https://github.com/ptmt/weirdstats/actions/runs/43693244947): success.
+- Build job `132748116041`; upload job `132748742058`: success.
+- Apple/Xcode output at `2026-11-15T08:14:12Z`: **“Upload succeeded.”**, **“Uploaded package is processing.”**, **“EXPORT SUCCEEDED”**. This workflow uses xcodebuild export/upload, not altool's literal `UPLOAD SUCCEEDED` wording.
+- Signed archive explicitly used `CURRENT_PROJECT_VERSION=16.1`; unchanged project marketing version `0.1.0`.
+- Push validation run `43693237350` also passed for the same SHA.
+- Apple processing completion, tester availability and account-backed Strava verification remain unverified.
 
 ## Vault
 The requested existing `Apps/WeirdStats.md` was not found in the configured iCloud `TheLog` vault (Apps directory inspected). No replacement or duplicate note created.
