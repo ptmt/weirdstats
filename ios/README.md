@@ -175,9 +175,35 @@ populated route rendering still need account-backed manual verification.
 
 The signed-in app has four independent navigation stacks: **Activities**, **Year**,
 **Facts**, and **Profile**. The last tab and selected year persist locally and reset
-on sign-out. Activities supports pull-to-refresh, an accessible refresh button,
-and cursor-based loading of older activities. Profile contains account/server,
-import progress, reconnect/retry controls, refresh and sign-out.
+on sign-out. Activities supports native pull-to-refresh and cursor-based loading
+of older activities, without a standalone refresh/sync toolbar button or routine
+refresh status rows. Profile contains account/server, explicit Strava import,
+import diagnostics, reconnect/retry controls and sign-out; its redundant reload
+button and refresh prompt are removed. All four tabs retain pull-to-refresh.
+
+Refresh only reads saved backend data (GET); it never starts Strava work. Initial
+bootstrap, year loading and existing post-import polling are retained. The explicit
+**Sync with Strava** action stays in Profile because it starts upstream import,
+not a local refresh. Import counts, failures, reconnect/retry actions and the next
+scheduled retry time remain there: they explain missing/incomplete data, not the
+last UI refresh. Activity dates, metrics and per-activity processing badges remain.
+Initial-load indicators remain only when there is no content to show.
+
+Native pull actions await an independent task: the simulator reproduced SwiftUI
+cancelling a directly awaited read when loading state changed, reporting
+`cancelled` before a new HTTP request. The independent task completes the read;
+existing model guards still deduplicate requests and fence account changes. Year
+refresh now retains the displayed year's cache during a read/failure and suppresses
+same-year overlapping requests; switching years never displays another year's data.
+
+Verification (synthetic fixtures, no live Strava requests): Xcode 27.2/iOS 27.2,
+iPhone 18 Pro, **35 XCTest/UI tests passed**, plus **8 Python distribution/UI
+contract tests**. Real pull gestures on all four tabs used four-second delayed
+loopback responses and verified exact GET counts, intact data and no errors.
+Held transport tests cover overlapping reads, retained cache after failure and
+session invalidation; existing offline UI tests retain actionable retries. UI
+screenshots are exported under `~/.hermes/cache/scratch/weirdstats-refresh-evidence`.
+TestFlight release evidence is recorded in `refresh-cleanup-verification.md`.
 
 ### Maps, history, and facts
 

@@ -1,6 +1,65 @@
 import XCTest
 
 final class NavigationTests: XCTestCase {
+    func testMainScreensDoNotShowStandaloneRefreshControls() throws {
+        let server = try RideTestServer()
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-server", server.url, "--ui-test-token", "synthetic-only"]
+        app.launch()
+        app.tabBars.buttons["Activities"].tap()
+        XCTAssertTrue(app.buttons["activity-card-42"].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["Sync with Strava"].exists)
+        XCTAssertFalse(app.otherElements["feed-sync-status"].exists)
+        save(app, "quiet-activities-synthetic-fixture")
+        app.tabBars.buttons["Profile"].tap()
+        XCTAssertFalse(app.buttons["Reload profile and imported activities"].exists)
+        XCTAssertFalse(app.staticTexts["Refresh to check your import status."].exists)
+        // Import is an explicit upstream mutation, not another local refresh button.
+        XCTAssertTrue(app.buttons["Sync with Strava"].exists)
+        save(app, "quiet-profile-synthetic-fixture")
+    }
+
+    func testDelayedPullRefreshKeepsContentWithoutDuplicateRequests() throws {
+        let server = try RideTestServer()
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-server", server.url, "--ui-test-token", "synthetic-only"]
+        app.launch()
+        app.tabBars.buttons["Activities"].tap()
+        XCTAssertTrue(app.buttons["activity-card-42"].waitForExistence(timeout: 8))
+        XCTAssertEqual(server.requests.filter { !$0.contains("year=") }.count, 2, "Automatic bootstrap reads profile and feed once")
+        server.delayResponses(4)
+        for tab in ["Activities", "Facts", "Profile", "Year"] {
+            app.tabBars.buttons[tab].tap()
+            if tab == "Year" { XCTAssertTrue(app.staticTexts["annual-effort"].waitForExistence(timeout: 10)) }
+            let count = server.requests.count
+            let scroll = (tab == "Activities" || tab == "Year") ? app.scrollViews.firstMatch : app.collectionViews.firstMatch
+            pull(scroll)
+            waitForRequests(count + (tab == "Year" ? 1 : 2), server)
+            XCTAssertFalse(app.staticTexts["Couldn’t refresh"].exists)
+            XCTAssertFalse(app.staticTexts["Couldn’t load activities"].exists)
+            for text in ["Refreshing activities…", "Refreshing…", "Loading facts…", "Loading year…"] {
+                XCTAssertFalse(app.staticTexts[text].exists)
+            }
+            if tab == "Activities" { XCTAssertTrue(app.buttons["activity-card-42"].exists) }
+            if tab == "Facts" { XCTAssertTrue(app.buttons["activity-fact-42-segment"].exists) }
+            if tab == "Year" { XCTAssertTrue(app.staticTexts["annual-effort"].exists) }
+            save(app, "quiet-delayed-pull-\(tab.lowercased())-synthetic-fixture")
+        }
+        XCTAssertTrue(server.requests.allSatisfy { $0.hasPrefix("GET ") }, "Pull must never trigger Strava POSTs")
+    }
+
+    private func pull(_ scroll: XCUIElement) {
+        XCTAssertTrue(scroll.exists)
+        scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.25))
+            .press(forDuration: 0.1, thenDragTo: scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.8)))
+    }
+
+    private func waitForRequests(_ count: Int, _ server: RideTestServer) {
+        let received = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in server.requests.count >= count }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [received], timeout: 8), .completed)
+        XCTAssertEqual(server.requests.count, count)
+    }
+
     func testOfflineEmptyStateLight() { verifyOffline(dark: false, largeText: false) }
     func testOfflineEmptyStateDark() { verifyOffline(dark: true, largeText: false) }
     func testOfflineEmptyStateAccessibility() { verifyOffline(dark: false, largeText: true) }
@@ -19,8 +78,7 @@ final class NavigationTests: XCTestCase {
         XCTAssertTrue(title.waitForExistence(timeout: 8))
         XCTAssertTrue(retry.isHittable)
         XCTAssertGreaterThanOrEqual(retry.frame.height, 44)
-        XCTAssertTrue(app.buttons["Sync with Strava"].exists)
-        XCTAssertLessThan(app.buttons["Sync with Strava"].frame.width, 80)
+        XCTAssertFalse(app.buttons["Sync with Strava"].exists)
         XCTAssertGreaterThan(title.frame.minY, app.navigationBars.firstMatch.frame.maxY + 40)
         XCTAssertFalse(app.staticTexts["No activities yet"].exists)
         XCTAssertFalse(app.staticTexts["Couldn’t refresh"].exists)
@@ -55,7 +113,9 @@ final class NavigationTests: XCTestCase {
         app.launch()
         app.tabBars.buttons["Activities"].tap()
         XCTAssertTrue(app.buttons["activity-card-42"].waitForExistence(timeout: 8))
+        app.tabBars.buttons["Profile"].tap()
         app.buttons["Sync with Strava"].tap()
+        app.tabBars.buttons["Activities"].tap()
         XCTAssertTrue(app.staticTexts["You’re offline"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.buttons["activity-refresh-retry"].label, "Retry sync")
         XCTAssertTrue(app.buttons["activity-card-42"].exists)

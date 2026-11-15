@@ -111,6 +111,8 @@ final class APITests: XCTestCase {
         let model = AppModel(apiClient: APIClient(session: URLSession(configuration: config)), tokenProvider: { "test-only" })
         let task = Task { await model.refresh() }
         while HeldProtocol.requests.count < 2 { await Task.yield() }
+        await model.refresh()
+        XCTAssertTrue(model.isLoading, "An overlapping refresh must not finish the pending read")
         XCTAssertEqual(Set(HeldProtocol.requests.map { $0.request.httpMethod ?? "" }), ["GET"])
         XCTAssertEqual(HeldProtocol.requests.count, 2)
         XCTAssertEqual(Set(HeldProtocol.requests.compactMap { $0.request.url?.path }), ["/api/mobile/me", "/api/mobile/activities"])
@@ -186,6 +188,32 @@ final class APITests: XCTestCase {
     func testInvalidGPSCoordinatesAreRejected() throws {
         let points = try JSONDecoder().decode([RoutePoint].self, from: Data(#"[{"lat":91,"lon":10},{"lat":52,"lon":181},{"lat":52,"lon":13}]"#.utf8))
         XCTAssertEqual(points.filter(\.isValid).count, 1)
+    }
+
+    @MainActor func testSameYearRefreshKeepsCacheAndDoesNotDuplicateRequests() async {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [HeldProtocol.self]
+        HeldProtocol.requests = []
+        let model = AppModel(apiClient: APIClient(session: URLSession(configuration: configuration)), tokenProvider: { "synthetic-only" })
+        model.history = MobileHistory(days: [], year: 2024, totalEffort: 4)
+        let first = Task { await model.loadHistory(year: 2024) }
+        while HeldProtocol.requests.isEmpty { await Task.yield() }
+        XCTAssertEqual(model.history?.totalEffort, 4, "Keep the displayed year while refreshing")
+        let duplicate = Task { await model.loadHistory(year: 2024) }
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(HeldProtocol.requests.count, 1)
+        for request in HeldProtocol.requests { request.finish(status: 503, body: "synthetic failure") }
+        await first.value
+        await duplicate.value
+        XCTAssertEqual(model.history?.totalEffort, 4, "A failed refresh must not erase the year")
+        XCTAssertFalse(model.historyError.isEmpty)
+        XCTAssertFalse(model.isLoadingHistory)
+        let count = HeldProtocol.requests.count
+        let differentYear = Task { await model.loadHistory(year: 2025) }
+        while HeldProtocol.requests.count == count { await Task.yield() }
+        XCTAssertNil(model.history, "Do not display another year's cache")
+        HeldProtocol.requests.last?.finish(status: 503, body: "synthetic failure")
+        await differentYear.value
     }
 
     @MainActor func testHistoryFailureDoesNotLeaveSpinnerOrClearFeed() async {

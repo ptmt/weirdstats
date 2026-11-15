@@ -46,11 +46,6 @@ private struct ActivitiesView: View {
                         } else {
                             ContentUnavailableView("No activities yet", systemImage: "figure.run", description: Text("Imported Strava activities will appear here. Check import progress in Profile."))
                         }
-                        if model.isSyncing { CompactRefreshStatus(message: "Requesting Strava sync…", isWorking: true) }
-                        else if model.activityFailure == nil, let status = model.syncStatus {
-                            CompactRefreshStatus(message: status.message, isWorking: status.isImporting)
-                                .accessibilityIdentifier("feed-sync-status")
-                        }
                     }
                     .frame(maxWidth: .infinity)
                     .frame(minHeight: geometry.size.height)
@@ -68,11 +63,6 @@ private struct ActivitiesView: View {
                             .padding(16)
                             .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
 
-                        } else if model.isSyncing {
-                            CompactRefreshStatus(message: "Requesting Strava sync…", isWorking: true)
-                        } else if let status = model.syncStatus {
-                            CompactRefreshStatus(message: status.message, isWorking: status.isImporting)
-                                .accessibilityIdentifier("feed-sync-status")
                         }
                         ForEach(model.activities) { activity in
                             NavigationLink { ActivityDetailView(activityID: activity.id) } label: { ActivityCard(activity: activity) }
@@ -82,26 +72,17 @@ private struct ActivitiesView: View {
                         if model.nextCursor != nil {
                             Button("Load older activities") { Task { await model.loadMore() } }.disabled(isBusy)
                         }
-                        if model.isLoading { CompactRefreshStatus(message: "Refreshing activities…", isWorking: true) }
                     }.padding()
                 }
             }
             .background(Color(.systemGroupedBackground))
-            .refreshable { await model.refresh() }
+            // SwiftUI can cancel its refresh task when published loading state redraws
+            // the scroll content. Await an independent task; model guards still dedupe
+            // reads and fence completion after sign-out/account replacement.
+            .refreshable { await Task { await model.refresh() }.value }
         }
         .navigationTitle("Activities")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { Task { await model.syncWithStrava() } } label: {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .frame(minWidth: 44, minHeight: 44)
-                }
-                .accessibilityLabel("Sync with Strava")
-                .accessibilityHint("Checks Strava for missing activities")
-                .disabled(isBusy)
-            }
-        }
     }
 
     private func retryButton(_ failure: ActivityRefreshFailure) -> some View {
@@ -112,21 +93,6 @@ private struct ActivitiesView: View {
         .buttonStyle(.borderedProminent)
         .disabled(isBusy)
         .accessibilityIdentifier("activity-refresh-retry")
-    }
-}
-
-// A quiet, wrapping status row, shared by empty and populated feed states.
-struct CompactRefreshStatus: View {
-    let message: String
-    var isWorking = false
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            if isWorking { ProgressView().controlSize(.mini).accessibilityHidden(true) }
-            Text(message).font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
     }
 }
 
@@ -260,7 +226,7 @@ private struct YearView: View {
                         if let history = model.history, history.year == year { annualTotal(history) }
                     }
                 }
-                if model.isLoadingHistory { ProgressView("Loading year…").frame(maxWidth: .infinity).padding() }
+                if model.isLoadingHistory && model.history?.year != year { ProgressView("Loading year…").frame(maxWidth: .infinity).padding() }
                 if !model.historyError.isEmpty { ErrorNotice(message: model.historyError) { await model.loadHistory(year: year) } }
                 if let history = model.history, history.year == year {
                     ForEach(YearCalendarMonth.make(year: year, days: history.days)) { month in
@@ -310,7 +276,7 @@ private struct YearView: View {
         .accessibilityIdentifier("year-calendar")
         .toolbar(.hidden, for: .navigationBar)
         .task(id: year) { selectedDay = nil; await model.loadHistory(year: year) }
-        .refreshable { await model.loadHistory(year: year) }
+        .refreshable { await Task { await model.loadHistory(year: year) }.value }
     }
 
     private func dayColor(_ day: HistoryDay?) -> Color {
@@ -325,7 +291,7 @@ private struct FactsView: View {
         List {
             Section { Text("Real discoveries from your imported activities. Load older activities to grow your collection.").font(.subheadline).foregroundStyle(.secondary) }
             if !model.errorMessage.isEmpty { ErrorNotice(message: model.errorMessage) { await model.refresh() } }
-            if model.isLoading { ProgressView("Loading facts…") }
+            if model.isLoading && model.activities.isEmpty { ProgressView("Loading facts…") }
             if !model.isLoading && model.activities.allSatisfy({ ($0.facts ?? []).isEmpty }) {
                 ContentUnavailableView("No collected facts yet", systemImage: "sparkles", description: Text("Only facts detected by the server appear here. Import or process activities in Profile."))
             }
@@ -346,7 +312,7 @@ private struct FactsView: View {
             if model.activities.contains(where: { $0.factsStatus == "pending" }) { Text("Some activities are still waiting for fact processing. Check Profile for import status.").font(.caption).foregroundStyle(.secondary) }
             if model.activities.contains(where: { $0.factsStatus == nil }) { Text("This server does not provide collected facts yet. A backend update is required.").font(.caption).foregroundStyle(.secondary) }
             if model.nextCursor != nil { Button("Load older activities and facts") { Task { await model.loadMore() } }.disabled(model.isLoading) }
-        }.navigationTitle("Facts").refreshable { await model.refresh() }
+        }.navigationTitle("Facts").refreshable { await Task { await model.refresh() }.value }
     }
 }
 
@@ -357,12 +323,11 @@ private struct ProfileView: View {
             Section("Account") {
                 Label(model.athleteName.isEmpty ? "Your Strava account" : model.athleteName, systemImage: "person.crop.circle.fill")
                 LabeledContent("Backend", value: model.serverURLText).font(.caption)
-                Button("Reload profile and imported activities") { Task { await model.refresh() } }.disabled(model.isLoading)
-                if model.isLoading { ProgressView("Refreshing…") }
             }
             Section("Activity import") {
                 Button("Sync with Strava") { Task { await model.syncWithStrava() } }.disabled(model.isSyncing || model.isLoading)
-                Text("Sync checks Strava for missing activities. Reload only reads saved activities.").font(.caption).foregroundStyle(.secondary)
+                Text("Sync checks Strava for missing activities.").font(.caption).foregroundStyle(.secondary)
+                if model.isSyncing { ProgressView("Requesting Strava sync…") }
                 if let sync = model.syncStatus {
                     Text(sync.message)
                     Text("\(sync.completed) imported and analyzed · \(sync.pending) waiting").foregroundStyle(.secondary)
@@ -373,11 +338,11 @@ private struct ProfileView: View {
                     ForEach(sync.errors) { error in Text("\(error.message) Reference #\(error.jobID)").font(.caption) }
                     if sync.blocked + sync.publishingBlocked + sync.mapBlocked > 0 { Button("Reconnect Strava") { Task { await model.signIn() } }.disabled(model.isAuthenticating) }
                     if sync.canRetryWork { Button("Retry failed work") { Task { await model.retryActivities() } } }
-                } else { Text("Refresh to check your import status.").foregroundStyle(.secondary) }
+                }
             }
             if !model.errorMessage.isEmpty { Section("Connection") { ErrorNotice(message: model.errorMessage) { await model.refresh() } } }
             Section { Button("Sign Out", role: .destructive) { model.signOut() } }
-        }.navigationTitle("Profile").refreshable { await model.refresh() }
+        }.navigationTitle("Profile").refreshable { await Task { await model.refresh() }.value }
     }
 }
 

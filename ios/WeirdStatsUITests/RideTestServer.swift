@@ -4,25 +4,56 @@ import Network
 // Explicit synthetic HTTP fixture. Never included in the application target.
 final class RideTestServer {
     private let listener: NWListener
+    private let state = State()
     let url: String
+
+    private final class State {
+        let lock = NSLock()
+        var delay: TimeInterval = 0
+        var requests: [String] = []
+        var connections: [NWConnection] = []
+    }
+    var requests: [String] {
+        state.lock.lock(); defer { state.lock.unlock() }
+        return state.requests
+    }
+    func delayResponses(_ seconds: TimeInterval) {
+        state.lock.lock(); defer { state.lock.unlock() }
+        state.delay = seconds
+    }
     init() throws {
         listener = try NWListener(using: .tcp, on: .any)
         let ready = DispatchSemaphore(value: 0)
         listener.stateUpdateHandler = { state in if case .ready = state { ready.signal() } }
-        listener.newConnectionHandler = { connection in
+        listener.newConnectionHandler = { [state] connection in
+            state.lock.lock()
+            state.connections.append(connection)
+            state.lock.unlock()
             connection.start(queue: .global())
             connection.receive(minimumIncompleteLength: 1, maximumLength: 8192) { data, _, _, _ in
                 let path = String(data: data ?? Data(), encoding: .utf8)?.components(separatedBy: " ").dropFirst().first ?? ""
                 let body = Self.body(path: path)
-                let response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n\(body)"
-                connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in connection.cancel() })
+                let response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nCache-Control: no-store\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n\(body)"
+                let reply = { connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in connection.cancel() }) }
+                state.lock.lock()
+                state.requests.append(String(data: data ?? Data(), encoding: .utf8)?.components(separatedBy: "\r\n").first ?? "")
+                let delay = state.delay
+                state.lock.unlock()
+                DispatchQueue.global().asyncAfter(deadline: .now() + delay, execute: reply)
             }
         }
         listener.start(queue: .global())
         guard ready.wait(timeout: .now() + 5) == .success, let port = listener.port else { throw NSError(domain: "RideTestServer", code: 1) }
         url = "http://127.0.0.1:\(port.rawValue)"
     }
-    deinit { listener.cancel() }
+    deinit {
+        listener.cancel()
+        state.lock.lock()
+        let connections = state.connections
+        state.connections = []
+        state.lock.unlock()
+        connections.forEach { $0.cancel() }
+    }
     static func activity(_ id: Int) -> [String: Any] {
         let route = id == 42 ? [["lat": 52.5, "lon": 13.4], ["lat": 52.51, "lon": 13.41]] : []
         return ["id": id, "name": "Test ride \(id)", "type": "Ride", "type_label": "Ride", "start_time": "2025-01-02T12:00:00Z", "distance": "1 km", "duration": "5m", "stop_count": 0, "light_stops": 0, "road_crossings": 0, "detected_fact_count": 1, "route": route, "route_status": id == 42 ? "available" : "no_gps", "facts_status": "available", "facts": [["id": "segment", "kind": "segment", "title": "Stored test segment", "summary": "Synthetic test evidence only", "path": route]]]

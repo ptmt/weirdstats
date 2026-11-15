@@ -43,6 +43,7 @@ final class AppModel: ObservableObject {
     @Published var isLoadingHistory = false
     @Published var years: [Int] = [Calendar.current.component(.year, from: Date())]
     private var historyRequest = UUID()
+    private var loadingHistoryYear: Int?
     private let apiClient: APIClient
     private let tokenProvider: (() -> String?)?
     private var accessToken: String? { tokenProvider?() ?? tokenStore.readToken() }
@@ -253,12 +254,19 @@ final class AppModel: ObservableObject {
 
     func loadHistory(year: Int) async {
         guard !isEmptyUITest, let baseURL = normalizedBaseURL(), let token = accessToken else { return }
+        guard !isLoadingHistory || loadingHistoryYear != year else { return }
         let requestID = UUID()
         historyRequest = requestID
+        loadingHistoryYear = year
         isLoadingHistory = true
         historyError = ""
-        history = nil
-        defer { if historyRequest == requestID { isLoadingHistory = false } }
+        if history?.year != year { history = nil }
+        defer {
+            if historyRequest == requestID {
+                isLoadingHistory = false
+                loadingHistoryYear = nil
+            }
+        }
         do {
             let feed = try await apiClient.fetchActivities(baseURL: baseURL, accessToken: token, limit: 1, year: year)
             guard historyRequest == requestID, isSignedIn else { return }
